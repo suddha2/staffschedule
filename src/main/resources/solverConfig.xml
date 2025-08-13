@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<solver>
+	<solutionClass>com.midco.rota.model.Rota</solutionClass>
+	<entityClass>com.midco.rota.model.ShiftAssignment</entityClass>
+	<environmentMode>FULL_ASSERT</environmentMode>
+	<scoreDirectorFactory>
+		<!-- <scoreDefinitionType>HARD_SOFT</scoreDefinitionType> -->
+		<constraintProviderClass>
+			com.midco.rota.opt.RotaConstraintProvider
+		</constraintProviderClass>
+		<constraintMatchEnabledPreference>ALWAYS
+		</constraintMatchEnabledPreference>
+	</scoreDirectorFactory>
+	<termination>
+		<secondsSpentLimit>25</secondsSpentLimit>
+	</termination>
+</solver>

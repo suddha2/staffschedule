@@ -1,0 +1,16 @@
+<configuration>
+	<appender name="CONSOLE"
+		class="ch.qos.logback.core.ConsoleAppender">
+		<encoder>
+			<pattern>%d [%thread] %-5level %logger{36} - %msg%n</pattern>
+		</encoder>
+	</appender>
+
+	<logger name="org.optaplanner" level="ERROR" />
+	<logger name="dev.morphia" level="ERROR" />
+	<logger name="org.mongodb.driver" level="ERROR" />
+	<logger name="dev.morphia.mapping.codec.pojo.PojoCodec" level="ERROR"/>
+	<root level="INFO">
+		<appender-ref ref="CONSOLE" />
+	</root>
+</configuration>
