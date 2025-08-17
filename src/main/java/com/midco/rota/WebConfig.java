@@ -1,21 +1,25 @@
 package com.midco.rota;
 
-import org.springframework.context.annotation.Bean;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 @Configuration
-public class WebConfig {
+@EnableConfigurationProperties(CorsProperties.class)
+public class WebConfig implements WebMvcConfigurer {
 
-	@Bean
-	public WebMvcConfigurer corsConfigurer() {
-		return new WebMvcConfigurer() {
-			@Override
-			public void addCorsMappings(CorsRegistry registry) {
-				registry.addMapping("/api/**").allowedOrigins("*")
-						.allowedMethods("GET", "POST", "PUT", "DELETE").allowedHeaders("*");
-			}
-		};
+	private final CorsProperties corsProperties;
+
+	public WebConfig(CorsProperties corsProperties) {
+		this.corsProperties = corsProperties;
+	}
+
+	@Override
+	public void addCorsMappings(CorsRegistry registry) {
+		registry.addMapping("/api/**").allowedOrigins(corsProperties.getAllowedOrigins().toArray(new String[0]))
+				.allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS").allowedHeaders("*").allowCredentials(true);
+		registry.addMapping("/login").allowedOrigins("*")
+				.allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS").allowedHeaders("*").allowCredentials(false);
 	}
 }

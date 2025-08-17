@@ -1,4 +1,4 @@
-package com.midco.rota;
+package com.midco.rota.service;
 
 import java.util.List;
 
@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
+import com.midco.rota.RotaUpdatePayload;
 import com.midco.rota.model.Rota;
 
 @Service

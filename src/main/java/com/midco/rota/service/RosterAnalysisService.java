@@ -1,4 +1,4 @@
-package com.midco.rota;
+package com.midco.rota.service;
 
 import java.util.Comparator;
 import java.util.Map;

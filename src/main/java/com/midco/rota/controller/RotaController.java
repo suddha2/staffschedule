@@ -8,7 +8,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.optaplanner.core.api.score.constraint.ConstraintMatchTotal;
@@ -21,10 +20,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.github.javaparser.Problem;
-import com.midco.rota.ConstraintExplanationService;
-import com.midco.rota.RosterAnalysisService;
-import com.midco.rota.RosterUpdateService;
 import com.midco.rota.model.DeferredSolveRequest;
 import com.midco.rota.model.Employee;
 import com.midco.rota.model.Rota;
@@ -33,6 +28,9 @@ import com.midco.rota.model.ShiftAssignment;
 import com.midco.rota.repository.DeferredSolveRequestRepository;
 import com.midco.rota.repository.EmployeeRepository;
 import com.midco.rota.repository.ShiftRepository;
+import com.midco.rota.service.ConstraintExplanationService;
+import com.midco.rota.service.RosterAnalysisService;
+import com.midco.rota.service.RosterUpdateService;
 
 @RestController
 @RequestMapping("/api")

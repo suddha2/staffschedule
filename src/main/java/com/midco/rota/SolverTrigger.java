@@ -19,6 +19,7 @@ import com.midco.rota.model.ShiftAssignment;
 import com.midco.rota.repository.DeferredSolveRequestRepository;
 import com.midco.rota.repository.EmployeeRepository;
 import com.midco.rota.repository.ShiftRepository;
+import com.midco.rota.service.SolverService;
 
 @Component
 
@@ -39,7 +40,7 @@ public class SolverTrigger {
 		this.shiftRepository = shiftRepository;
 	}
 
-	@Scheduled(cron = "0 */2 * * * *") // Every hour
+	//@Scheduled(cron = "0 */2 * * * *") // Every hour
 
 	public void triggerSolver() {
 

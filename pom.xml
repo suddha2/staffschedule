@@ -74,17 +74,30 @@
 			<artifactId>jackson-databind</artifactId>
 		</dependency>
 
-		<!--
 		<dependency>
-			<groupId>dev.morphia.morphia</groupId>
-			<artifactId>morphia-core</artifactId>
-			<version>2.5.0</version>
-		</dependency>
+   <groupId>dev.paseto</groupId>
+   <artifactId>jpaseto-api</artifactId>
+   <version>0.7.0</version>
+</dependency>
+<dependency>
+   <groupId>dev.paseto</groupId>
+   <artifactId>jpaseto-impl</artifactId>
+   <version>0.7.0</version>
+</dependency>
+<dependency>
+   <groupId>dev.paseto</groupId>
+   <artifactId>jpaseto-jackson</artifactId>
+   <version>0.7.0</version>
+</dependency>
+<dependency>
+   <groupId>dev.paseto</groupId>
+   <artifactId>jpaseto-sodium</artifactId>
+   <version>0.7.0</version>
+</dependency>
 		<dependency>
-			<groupId>org.mongodb</groupId>
-			<artifactId>mongodb-driver-sync</artifactId>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-security</artifactId>
 		</dependency>
-		-->
 		<dependency>
 			<groupId>org.postgresql</groupId>
 			<artifactId>postgresql</artifactId>

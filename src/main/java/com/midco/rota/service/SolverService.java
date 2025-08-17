@@ -1,4 +1,4 @@
-package com.midco.rota;
+package com.midco.rota.service;
 
 import java.time.LocalDate;
 import java.util.List;
