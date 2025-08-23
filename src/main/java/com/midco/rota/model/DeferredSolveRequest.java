@@ -19,6 +19,8 @@ public class DeferredSolveRequest {
     private LocalDate endDate;
     private boolean completed;
     private LocalDate completedAt;
+    private String createdBy;
+    
 
     public LocalDate getCompletedAt() {
 		return completedAt;
@@ -76,6 +78,14 @@ public class DeferredSolveRequest {
 
 	public void setRegion(String region) {
 		this.region = region;
+	}
+
+	public String getCreatedBy() {
+		return createdBy;
+	}
+
+	public void setCreatedBy(String createdBy) {
+		this.createdBy = createdBy;
 	}
     
 }

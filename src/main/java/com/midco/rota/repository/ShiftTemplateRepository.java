@@ -6,14 +6,14 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
-import com.midco.rota.model.Shift;
+import com.midco.rota.model.ShiftTemplate;
 
 @Repository
-public interface ShiftRepository extends JpaRepository<Shift, Integer>  {
+public interface ShiftTemplateRepository extends JpaRepository<ShiftTemplate, Integer>  {
 	
-	@Query(name="Shift.findAllRegion")
+	@Query(name="ShiftTemplate.findAllRegion")
 	List<String>  findAllRegion();
 	
-	List<Shift> findAllByRegion(String region);
+	List<ShiftTemplate> findAllByRegion(String region);
 	
 }

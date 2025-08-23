@@ -7,22 +7,22 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.midco.rota.model.Shift;
-import com.midco.rota.repository.ShiftRepository;
+import com.midco.rota.model.ShiftTemplate;
+import com.midco.rota.repository.ShiftTemplateRepository;
 
 @RestController
 @RequestMapping("/api/shifts")
 public class ShiftController {
 
-	private final ShiftRepository shiftRepository;
+	private final ShiftTemplateRepository shiftRepository;
 
-	public ShiftController(ShiftRepository shiftRepository) {
+	public ShiftController(ShiftTemplateRepository shiftRepository) {
 		this.shiftRepository = shiftRepository;
 	}
 
 	@GetMapping
-	public ResponseEntity<List<Shift>> getAllShits() {
-		List<Shift> shift = shiftRepository.findAll();
-		return ResponseEntity.ok(shift);
+	public ResponseEntity<List<ShiftTemplate>> getAllShits() {
+		List<ShiftTemplate> shiftTemplate = shiftRepository.findAll();
+		return ResponseEntity.ok(shiftTemplate);
 	}
 }

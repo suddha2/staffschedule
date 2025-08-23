@@ -82,4 +82,10 @@ public class Rota {
 		this.idealShiftCountList = idealShiftCountList;
 	}
 
+	@Override
+	public String toString() {
+		return "Rota [id=" + id + ", employeeList=" + employeeList + ", shiftAssignmentList=" + shiftAssignmentList
+				+ ", score=" + score + ", idealShiftCountList=" + idealShiftCountList + "]";
+	}
+
 }

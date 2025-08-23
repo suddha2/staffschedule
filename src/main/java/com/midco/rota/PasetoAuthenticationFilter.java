@@ -15,7 +15,6 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
-
 @Component
 public class PasetoAuthenticationFilter extends OncePerRequestFilter {
 
@@ -30,11 +29,18 @@ public class PasetoAuthenticationFilter extends OncePerRequestFilter {
 			throws ServletException, IOException {
 		String token = request.getHeader("Authorization");
 		if (token != null && token.startsWith("Bearer ")) {
-			tokenService.validateToken(token.substring(7)).ifPresent(username -> {
-				UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(username, null,
-						List.of());
-				SecurityContextHolder.getContext().setAuthentication(auth);
-			});
+			try {
+				tokenService.validateToken(token.substring(7)).ifPresent(username -> {
+					UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(username, null,
+							List.of());
+					SecurityContextHolder.getContext().setAuthentication(auth);
+				});
+			} catch (TokenValidationException ex) {
+				response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+				response.setContentType("application/json");
+				response.getWriter().write("{\"error\": \"" + ex.getMessage() + "\"}");
+				return;
+			}
 		}
 		chain.doFilter(request, response);
 	}

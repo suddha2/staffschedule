@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,10 +16,12 @@ import com.midco.rota.model.DeferredSolveRequest;
 import com.midco.rota.model.Employee;
 import com.midco.rota.model.Rota;
 import com.midco.rota.model.Shift;
+import com.midco.rota.model.ShiftTemplate;
 import com.midco.rota.model.ShiftAssignment;
 import com.midco.rota.repository.DeferredSolveRequestRepository;
 import com.midco.rota.repository.EmployeeRepository;
-import com.midco.rota.repository.ShiftRepository;
+ 
+import com.midco.rota.repository.ShiftTemplateRepository;
 import com.midco.rota.service.SolverService;
 
 @Component
@@ -30,17 +33,17 @@ public class SolverTrigger {
 	private final SolverService solverService;
 	private final DeferredSolveRequestRepository deferredSolveRequestRepository;
 	private final EmployeeRepository employeeRepository;
-	private final ShiftRepository shiftRepository;
+	private final ShiftTemplateRepository  shiftTemplateRepository;
 
 	public SolverTrigger(SolverService solverService, DeferredSolveRequestRepository deferredSolveRequestRepository,
-			EmployeeRepository employeeRepository, ShiftRepository shiftRepository) {
+			EmployeeRepository employeeRepository, ShiftTemplateRepository shiftTemplateRepository) {
 		this.solverService = solverService;
 		this.deferredSolveRequestRepository = deferredSolveRequestRepository;
 		this.employeeRepository = employeeRepository;
-		this.shiftRepository = shiftRepository;
+		this.shiftTemplateRepository = shiftTemplateRepository;
 	}
 
-	//@Scheduled(cron = "0 */2 * * * *") // Every hour
+	@Scheduled(cron = "0 */2 * * * *") // Every hour
 
 	public void triggerSolver() {
 
@@ -58,36 +61,45 @@ public class SolverTrigger {
 
 		// Query all employees
 		List<Employee> employees = employeeRepository.findAll();
-		List<Shift> shifts = shiftRepository.findAllByRegion(deferredSolveRequest.getRegion());
+		List<ShiftTemplate> shiftTemplates = shiftTemplateRepository.findAllByRegion(deferredSolveRequest.getRegion());
 		List<ShiftAssignment> shiftAssignments = new ArrayList<>();
 		shiftAssignments = this.generateShiftInstances(deferredSolveRequest.getStartDate(),
-				deferredSolveRequest.getEndDate(), shifts);
+				deferredSolveRequest.getEndDate(), shiftTemplates);
 		Rota problem = new Rota(employees, shiftAssignments, deferredSolveRequest.getId());
 
 		return problem;
 	}
 
 	private List<ShiftAssignment> generateShiftInstances(LocalDate startDate, LocalDate endDate,
-			List<Shift> templates) {
+			List<ShiftTemplate> templates) {
 
-		List<ShiftAssignment> results = new ArrayList<>();
+		List<ShiftAssignment> assignments = new ArrayList<>();
+		List<Shift> instances = new ArrayList<>();
 
-		for (LocalDate date = startDate; !date.isAfter(endDate); date = date.plusDays(1)) {
-			results.addAll(generateShiftsForDate(date, templates));
+		// Create shift instance for the date range 
+		AtomicLong id = new AtomicLong(1L);
+		for (ShiftTemplate template : templates) {
+			LocalDate current = startDate;
+			while (!current.isAfter(endDate)) {
+				if (current.getDayOfWeek().equals(template.getDayOfWeek())) {
+					instances.add(new Shift(id.getAndIncrement(), current, template));
+
+				}
+				current = current.plusDays(1);
+
+			}
 		}
-
-		return results;
+		
+		  
+		// Add shift assignments to enable multiple employee assignment for each shift ( 2 to 1 scenario)
+		for (Shift shift : instances) {
+		    for (int i = 0; i < shift.getShiftTemplate().getEmpCount(); i++) {
+		        ShiftAssignment assignment = new ShiftAssignment(shift, id.getAndIncrement());
+		        assignments.add(assignment);
+		    }
+		}
+		return assignments;
+		
 	}
 
-	private List<ShiftAssignment> generateShiftsForDate(LocalDate targetDate, List<Shift> templates) {
-		DayOfWeek targetDay = targetDate.getDayOfWeek();
-		return templates.stream().filter(t -> (t.getDay()) == targetDay).map(t -> {
-
-			ShiftAssignment instance = new ShiftAssignment(targetDate, new Random().nextLong(), t.getLocation(),
-					t.getShiftType(), t.getDay(), t.getStartTime(), t.getEndTime(), t.getTotalHours(), t.getGender(),
-					null);
-			return instance;
-
-		}).toList();
-	}
 }

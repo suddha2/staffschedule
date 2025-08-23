@@ -27,7 +27,7 @@ public class SecurityConfig {
 		http.cors(Customizer.withDefaults()).csrf(csrf -> csrf.disable()) // ✅ modern style
 				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 				.authorizeHttpRequests(auth -> auth.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-						.requestMatchers("/login").permitAll()
+						.requestMatchers("/login").permitAll().requestMatchers("/ws/**").permitAll()
 						.anyRequest().authenticated())
 				.addFilterBefore(pasetoAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
@@ -37,5 +37,6 @@ public class SecurityConfig {
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder(); 
     }
+	
 
 }

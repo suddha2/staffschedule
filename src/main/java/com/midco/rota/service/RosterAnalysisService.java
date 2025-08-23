@@ -8,6 +8,8 @@ import org.optaplanner.core.api.score.ScoreManager;
 import org.optaplanner.core.api.score.buildin.hardsoft.HardSoftScore;
 import org.optaplanner.core.api.score.constraint.ConstraintMatch;
 import org.optaplanner.core.api.score.constraint.Indictment;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import com.midco.rota.model.Rota;
@@ -15,45 +17,41 @@ import com.midco.rota.model.Rota;
 @Service
 public class RosterAnalysisService {
 
-    private final ScoreManager<Rota, HardSoftScore> scoreManager;
+	private final ScoreManager<Rota, HardSoftScore> scoreManager;
 
-    public RosterAnalysisService(ScoreManager<Rota, HardSoftScore> scoreManager) {
-        this.scoreManager = scoreManager;
-    }
+	public RosterAnalysisService(ScoreManager<Rota, HardSoftScore> scoreManager) {
+		this.scoreManager = scoreManager;
+	}
+	private static final Logger logger = LoggerFactory.getLogger(RosterAnalysisService.class);
 
-    public void printHighImpactViolations(Rota solution) {
-        ScoreExplanation<Rota, HardSoftScore> explanation = scoreManager.explain(solution);
-        Map<Object, Indictment<HardSoftScore>> indictmentMap = explanation.getIndictmentMap();
+	public void printHighImpactViolations(Rota solution) {
+		ScoreExplanation<Rota, HardSoftScore> explanation = scoreManager.explain(solution);
+		Map<Object, Indictment<HardSoftScore>> indictmentMap = explanation.getIndictmentMap();
 
-       solution.getShiftAssignmentList().forEach(System.out::println);
-        
-        System.out.println("=== High-Impact Violations Report ===");
+		solution.getShiftAssignmentList().forEach(System.out::println);
 
-        indictmentMap.entrySet().stream()
-            .sorted(Comparator.comparing(entry -> entry.getValue().getScore()))
-            .filter(entry -> {
-                HardSoftScore score = entry.getValue().getScore();
-                return score.getHardScore() < 0 || score.getSoftScore() < -10;
-            })
-            .forEach(entry -> {
-                Object entity = entry.getKey();
-                Indictment<HardSoftScore> indictment = entry.getValue();
-                HardSoftScore score = indictment.getScore();
+		logger.info("=== High-Impact Violations Report ===");
 
-                System.out.println("🔴 Entity: " + entity);
-                System.out.println("    Total Impact: " + score);
+		indictmentMap.entrySet().stream().sorted(Comparator.comparing(entry -> entry.getValue().getScore()))
+				.filter(entry -> {
+					HardSoftScore score = entry.getValue().getScore();
+					return score.getHardScore() < 0 || score.getSoftScore() < -10;
+				}).forEach(entry -> {
+					Object entity = entry.getKey();
+					Indictment<HardSoftScore> indictment = entry.getValue();
+					HardSoftScore score = indictment.getScore();
 
-                indictment.getConstraintMatchSet().stream()
-                    .sorted(Comparator.comparing(ConstraintMatch::getScore))
-                    .limit(3)
-                    .forEach(match -> {
-                        System.out.println("    ⚠️ Constraint: " + match.getConstraintName());
-                        System.out.println("       Impact: " + match.getScore());
-                        System.out.println("       Justification: " + match.getJustificationList());
-                    });
+					logger.info("🔴 Entity: " + entity);
+					logger.info("    Total Impact: " + score);
 
-                System.out.println();
-            });
-    }
+					indictment.getConstraintMatchSet().stream().sorted(Comparator.comparing(ConstraintMatch::getScore))
+							.limit(3).forEach(match -> {
+								logger.info("    ⚠️ Constraint: " + match.getConstraintName());
+								logger.info("       Impact: " + match.getScore());
+								logger.info("       Justification: " + match.getJustificationList());
+							});
+
+					System.out.println();
+				});
+	}
 }
-

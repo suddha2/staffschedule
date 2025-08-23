@@ -117,6 +117,11 @@
 			<version>10.0.0</version>
 		</dependency>
 		<dependency>
+  <groupId>org.optaplanner</groupId>
+  <artifactId>optaplanner-constraint-streams-bavet</artifactId>
+  <version>10.0.0</version>
+</dependency>
+		<dependency>
 			<groupId>org.optaplanner</groupId>
 			<artifactId>optaplanner-test</artifactId>
 			<version>10.0.0</version>

@@ -21,25 +21,28 @@ public class SolverService {
 	private final RosterUpdateService rosterUpdateService;
 	private final ConstraintExplanationService explanationService;
 	private final DeferredSolveRequestRepository deferredSolveRequestRepository;
+	private final RosterAnalysisService rosterAnalysisService;
 
 	public SolverService(SolverManager<Rota, Long> solverManager, RosterUpdateService rosterUpdateService,
 			ConstraintExplanationService explanationService,
-			DeferredSolveRequestRepository deferredSolveRequestRepository) {
+			DeferredSolveRequestRepository deferredSolveRequestRepository,RosterAnalysisService rosterAnalysisService) {
 		this.solverManager = solverManager;
 		this.rosterUpdateService = rosterUpdateService;
 		this.explanationService = explanationService;
 		this.deferredSolveRequestRepository = deferredSolveRequestRepository;
+		this.rosterAnalysisService = rosterAnalysisService;
 	}
 
 	public void solveAsync(Rota schedule, Long problemId, DeferredSolveRequest deferredSolveRequest) {
 		logger.info("solveAsync===== " + problemId);
 		solverManager.solve(problemId, id -> schedule, bestSolution -> {
 			List<ConstraintMatchTotal<?>> violations = explanationService.getConstraintViolations(bestSolution);
-			rosterUpdateService.pushUpdate(bestSolution, violations, null);
 			// Update request as completed .
 			deferredSolveRequest.setCompleted(true);
 			deferredSolveRequest.setCompletedAt(LocalDate.now());
-			deferredSolveRequestRepository.save(deferredSolveRequest);
+			DeferredSolveRequest deferredSolveRequestObj = deferredSolveRequestRepository.save(deferredSolveRequest);
+			rosterUpdateService.pushUpdate(deferredSolveRequestObj);
+			rosterAnalysisService.printHighImpactViolations(bestSolution);
 		});
 	}
 }

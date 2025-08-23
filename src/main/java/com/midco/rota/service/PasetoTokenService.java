@@ -20,7 +20,11 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 
+import com.midco.rota.TokenValidationException;
+
+import dev.paseto.jpaseto.ExpiredPasetoException;
 import dev.paseto.jpaseto.Paseto;
+import dev.paseto.jpaseto.PasetoException;
 import dev.paseto.jpaseto.PasetoParser;
 import dev.paseto.jpaseto.Pasetos;
 
@@ -92,9 +96,12 @@ public class PasetoTokenService {
 			return Optional.ofNullable(parsed.getClaims().getSubject());
 
 
-		} catch (Exception e) {
-			e.printStackTrace();
-			return Optional.empty();
-		}
+		} catch (ExpiredPasetoException e) {
+	        throw new TokenValidationException("Invalid or malformed token", e);
+	    } catch (PasetoException  e) {
+	        throw new TokenValidationException("Token expired", e);
+	    } catch (Exception e) {
+	        throw new TokenValidationException("Token validation failed", e);
+	    }
 	}
 }
