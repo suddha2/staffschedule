@@ -65,7 +65,7 @@ public class SolverTrigger {
 		List<ShiftAssignment> shiftAssignments = new ArrayList<>();
 		shiftAssignments = this.generateShiftInstances(deferredSolveRequest.getStartDate(),
 				deferredSolveRequest.getEndDate(), shiftTemplates);
-		Rota problem = new Rota(employees, shiftAssignments, deferredSolveRequest.getId());
+		Rota problem = new Rota(employees, shiftAssignments);
 
 		return problem;
 	}
@@ -82,7 +82,7 @@ public class SolverTrigger {
 			LocalDate current = startDate;
 			while (!current.isAfter(endDate)) {
 				if (current.getDayOfWeek().equals(template.getDayOfWeek())) {
-					instances.add(new Shift(id.getAndIncrement(), current, template));
+					instances.add(new Shift( current, template));
 
 				}
 				current = current.plusDays(1);
@@ -94,7 +94,7 @@ public class SolverTrigger {
 		// Add shift assignments to enable multiple employee assignment for each shift ( 2 to 1 scenario)
 		for (Shift shift : instances) {
 		    for (int i = 0; i < shift.getShiftTemplate().getEmpCount(); i++) {
-		        ShiftAssignment assignment = new ShiftAssignment(shift, id.getAndIncrement());
+		        ShiftAssignment assignment = new ShiftAssignment(shift);
 		        assignments.add(assignment);
 		    }
 		}

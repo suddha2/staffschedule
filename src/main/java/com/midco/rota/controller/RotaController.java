@@ -6,10 +6,11 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
-import org.hibernate.query.Page;
 import org.optaplanner.core.api.score.constraint.ConstraintMatchTotal;
 import org.optaplanner.core.api.solver.SolverJob;
 import org.optaplanner.core.api.solver.SolverManager;
@@ -32,6 +33,7 @@ import com.midco.rota.model.ShiftAssignment;
 import com.midco.rota.model.ShiftTemplate;
 import com.midco.rota.repository.DeferredSolveRequestRepository;
 import com.midco.rota.repository.EmployeeRepository;
+import com.midco.rota.repository.RotaRepository;
 import com.midco.rota.repository.ShiftTemplateRepository;
 import com.midco.rota.service.ConstraintExplanationService;
 import com.midco.rota.service.RosterAnalysisService;
@@ -49,6 +51,7 @@ public class RotaController {
 	private final RosterAnalysisService rosterAnalysisService;
 	private final EmployeeRepository employeeRepository;
 	private final ShiftTemplateRepository shiftTemplateRepository;
+	private final RotaRepository rotaRepository;
 
 	private final DeferredSolveRequestRepository deferredSolveRequestRepository;
 
@@ -58,7 +61,7 @@ public class RotaController {
 	public RotaController(SolverManager<Rota, Long> solverManager, RosterUpdateService updateService,
 			ConstraintExplanationService explanationService, RosterAnalysisService rosterAnalysisService,
 			EmployeeRepository employeeRepository, ShiftTemplateRepository shiftTemplateRepository,
-			DeferredSolveRequestRepository deferredSolveRequestRepository, AuthController authController) {
+			DeferredSolveRequestRepository deferredSolveRequestRepository, AuthController authController,RotaRepository rotaRepository) {
 		this.solverManager = solverManager;
 		this.updateService = updateService;
 		this.explanationService = explanationService;
@@ -67,6 +70,7 @@ public class RotaController {
 		this.shiftTemplateRepository = shiftTemplateRepository;
 		this.deferredSolveRequestRepository = deferredSolveRequestRepository;
 		this.authController = authController;
+		this.rotaRepository =rotaRepository;
 	}
 
 	@GetMapping("/regions")
@@ -160,7 +164,13 @@ public class RotaController {
 		
 		return ResponseEntity.ok("Success"); 
 	}
-
+	
+	@GetMapping("/solved")
+	public ResponseEntity<?> solvedSolution(@RequestBody Map<String, Object> payload ) {
+		Optional<Rota> rota = rotaRepository.findById((Integer) payload.get("id"));
+		return ResponseEntity.ok(rota);
+	}
+	
 	@GetMapping("/wsUsers")
 	public List<String> getWsUsers() {
 		return simpUserRegistry.getUsers().stream().map(SimpUser::getName).collect(Collectors.toList());
@@ -179,8 +189,8 @@ public class RotaController {
 
 		shiftAssignments = this.generateShiftInstances(startDate, endDate, shiftTemplates);
 //		System.out.println("shiftAssignments - " + shiftAssignments.size());
-		long id = idGenerator.incrementAndGet();
-		Rota solution = new Rota(employees, shiftAssignments, id);
+		Long id = idGenerator.incrementAndGet();
+		Rota solution = new Rota(employees, shiftAssignments);
 
 		return solution;
 
@@ -193,12 +203,12 @@ public class RotaController {
 		List<Shift> instances = new ArrayList<>();
 
 		// Create shift instance for the date range
-		AtomicLong id = new AtomicLong(1L);
+		AtomicLong id = new AtomicLong();
 		for (ShiftTemplate template : templates) {
 			LocalDate current = startDate;
 			while (!current.isAfter(endDate)) {
 				if (current.getDayOfWeek().equals(template.getDayOfWeek())) {
-					instances.add(new Shift(id.getAndIncrement(), current, template));
+					instances.add(new Shift( current, template));
 
 				}
 				current = current.plusDays(1);
@@ -210,7 +220,7 @@ public class RotaController {
 		// each shift ( N to 1 scenario)
 		for (Shift shift : instances) {
 			for (int i = 0; i < shift.getShiftTemplate().getEmpCount(); i++) {
-				ShiftAssignment assignment = new ShiftAssignment(shift, id.getAndIncrement());
+				ShiftAssignment assignment = new ShiftAssignment(shift);
 				assignments.add(assignment);
 			}
 		}

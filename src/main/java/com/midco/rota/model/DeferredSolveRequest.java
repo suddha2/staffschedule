@@ -18,15 +18,15 @@ public class DeferredSolveRequest {
     private LocalDate startDate;
     private LocalDate endDate;
     private boolean completed;
-    private LocalDate completedAt;
+    private LocalDateTime completedAt;
     private String createdBy;
-    
+    private Long rotaId;
 
-    public LocalDate getCompletedAt() {
+    public LocalDateTime getCompletedAt() {
 		return completedAt;
 	}
 
-	public void setCompletedAt(LocalDate completedAt) {
+	public void setCompletedAt(LocalDateTime completedAt) {
 		this.completedAt = completedAt;
 	}
 
@@ -86,6 +86,14 @@ public class DeferredSolveRequest {
 
 	public void setCreatedBy(String createdBy) {
 		this.createdBy = createdBy;
+	}
+
+	public Long getRotaId() {
+		return rotaId;
+	}
+
+	public void setRotaId(Long rotaId) {
+		this.rotaId = rotaId;
 	}
     
 }

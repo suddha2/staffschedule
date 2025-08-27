@@ -1,5 +1,6 @@
 package com.midco.rota.service;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 import org.optaplanner.core.api.score.constraint.ConstraintMatchTotal;
@@ -13,6 +14,10 @@ import org.springframework.stereotype.Service;
 import com.midco.rota.RotaUpdatePayload;
 import com.midco.rota.model.DeferredSolveRequest;
 import com.midco.rota.model.Rota;
+import com.midco.rota.repository.DeferredSolveRequestRepository;
+import com.midco.rota.repository.RotaRepository;
+
+import jakarta.transaction.Transactional;
 
 @Service
 public class RosterUpdateService {
@@ -21,9 +26,20 @@ public class RosterUpdateService {
 
 	@Autowired
 	private SimpMessagingTemplate messagingTemplate;
+	@Autowired
+	private RotaRepository rotaRepository;
+	@Autowired
+	private DeferredSolveRequestRepository deferredSolveRequestRepository;
+	@Autowired
+	private RosterAnalysisService rosterAnalysisService;
 
-	public RosterUpdateService(SimpMessagingTemplate messagingTemplate) {
+	public RosterUpdateService(SimpMessagingTemplate messagingTemplate, RotaRepository rotaRepository,
+			DeferredSolveRequestRepository deferredSolveRequestRepository,
+			RosterAnalysisService rosterAnalysisService) {
 		this.messagingTemplate = messagingTemplate;
+		this.rotaRepository = rotaRepository;
+		this.deferredSolveRequestRepository = deferredSolveRequestRepository;
+		this.rosterAnalysisService = rosterAnalysisService;
 	}
 
 	public void pushUpdate(Rota rota, List<ConstraintMatchTotal<?>> violations, SolverStatus status, String user) {
@@ -41,11 +57,28 @@ public class RosterUpdateService {
 	}
 
 	public void pushUpdate(DeferredSolveRequest deferredSolveRequest) {
-		messagingTemplate.convertAndSendToUser(deferredSolveRequest.getCreatedBy(),"/queue/req-update",deferredSolveRequest);
+		messagingTemplate.convertAndSendToUser(deferredSolveRequest.getCreatedBy(), "/queue/req-update",
+				deferredSolveRequest);
 	}
-	
+
 	public void pushUpdate(String link, String msg, String user) {
 		messagingTemplate.convertAndSendToUser(user, link, msg);
 	}
-	
+
+	@Transactional
+	public void persistSolvedRota(Rota bestSolution, Long problemId, DeferredSolveRequest deferredSolveRequest) {
+		// Optional: merge if detached
+		Rota managedRota = rotaRepository.save(bestSolution);
+
+		// Update DeferredSolveRequest
+		// DeferredSolveRequest request =
+		// deferredSolveRequestRepository.findByRotaId(problemId);
+		deferredSolveRequest.setCompleted(true);
+		deferredSolveRequest.setCompletedAt(LocalDateTime.now());
+		deferredSolveRequestRepository.save(deferredSolveRequest);
+
+		// Push updates and log violations
+		this.pushUpdate(deferredSolveRequest);
+		rosterAnalysisService.printHighImpactViolations(bestSolution);
+	}
 }

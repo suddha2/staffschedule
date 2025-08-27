@@ -72,6 +72,24 @@ public class ShiftTemplate {
 	public ShiftTemplate() {
 	}
 
+	public ShiftTemplate( String location, String region, DayOfWeek day_of_week, LocalTime start_time,
+			LocalTime end_time, Gender required_gender, List<String> required_skills, int empCount) {
+
+		
+	
+		this.location=location;
+		this.region=region;
+		this.dayOfWeek=day_of_week;
+		this.startTime=start_time;
+		this.endTime=end_time;
+		this.requiredGender=required_gender;
+		this.requiredSkills=required_skills;
+		this.empCount=empCount;
+		
+		
+		
+	}
+
 	public Integer getId() {
 		return id;
 	}
