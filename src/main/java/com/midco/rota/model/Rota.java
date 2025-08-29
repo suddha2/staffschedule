@@ -2,6 +2,7 @@ package com.midco.rota.model;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.optaplanner.core.api.domain.lookup.PlanningId;
 import org.optaplanner.core.api.domain.solution.PlanningEntityCollectionProperty;
@@ -26,23 +27,27 @@ import jakarta.persistence.Transient;
 @Entity
 @PlanningSolution
 public class Rota {
-
+	
+	@Transient
+	private static final AtomicLong COUNTER = new AtomicLong();	
+	
 	@Transient
 	@PlanningId
-	private String planningId;
+	private Long planningId;
 
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
 
-	@OneToMany(cascade = CascadeType.ALL)
+	@OneToMany(cascade = CascadeType.MERGE)
 	@JoinTable(name = "rota_employee", // your actual join table
 			joinColumns = @JoinColumn(name = "rota_id"), inverseJoinColumns = @JoinColumn(name = "employee_id"))
 	@ValueRangeProvider(id = "employeeRange")
 	@ProblemFactCollectionProperty
 	private List<Employee> employeeList;
 
-	@OneToMany(mappedBy = "rota", cascade = CascadeType.ALL)
+
+	@OneToMany(mappedBy = "rota", cascade = CascadeType.ALL, orphanRemoval = true)
 	@PlanningEntityCollectionProperty
 	private List<ShiftAssignment> shiftAssignmentList;
 
@@ -62,7 +67,7 @@ public class Rota {
 		this.shiftAssignmentList = shiftAssignmentList;
 		int ideal = shiftAssignmentList.size() / employeeList.size();
 		this.idealShiftCountList = List.of(new IdealShiftCount(ideal));
-		this.planningId = UUID.randomUUID().toString();
+		this.planningId = COUNTER.incrementAndGet();
 		
 		 for (ShiftAssignment sa : this.shiftAssignmentList) {
 	            sa.setRota(this); // safe linkage
@@ -116,11 +121,11 @@ public class Rota {
 				+ ", score=" + score + ", idealShiftCountList=" + idealShiftCountList + "]";
 	}
 
-	public String getPlanningId() {
+	public Long getPlanningId() {
 		return planningId;
 	}
 
-	public void setPlanningId(String planningId) {
+	public void setPlanningId(Long planningId) {
 		this.planningId = planningId;
 	}
 

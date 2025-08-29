@@ -6,6 +6,8 @@ import org.optaplanner.core.api.domain.entity.PlanningEntity;
 import org.optaplanner.core.api.domain.lookup.PlanningId;
 import org.optaplanner.core.api.domain.variable.PlanningVariable;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -37,6 +39,7 @@ public class ShiftAssignment {
 	
 	@ManyToOne
 	@JoinColumn(name = "rota_id")
+	@JsonIgnore
 	private Rota rota;
 	
 	public ShiftAssignment() {

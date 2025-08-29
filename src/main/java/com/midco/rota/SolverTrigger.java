@@ -50,7 +50,7 @@ public class SolverTrigger {
 		deferredSolveRequestRepository.findFirstByCompletedFalse().ifPresentOrElse(deferredSolveRequest -> {
 			Rota problem = loadData(deferredSolveRequest); 
 			logger.info("triggerSolver=== ");
-			solverService.solveAsync(problem, problem.getId(), deferredSolveRequest);
+			solverService.solveAsync(problem, problem.getPlanningId(), deferredSolveRequest);
 		}, () -> {
 			logger.info("no sovler request available to process");
 		});

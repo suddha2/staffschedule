@@ -1,5 +1,6 @@
 package com.midco.rota.repository;
 
+import java.time.LocalTime;
 import java.util.List;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -15,5 +16,7 @@ public interface ShiftTemplateRepository extends JpaRepository<ShiftTemplate, In
 	List<String>  findAllRegion();
 	
 	List<ShiftTemplate> findAllByRegion(String region);
+
+	ShiftTemplate findByLocationAndShiftTypeAndStartTime(String location, String shiftType, LocalTime startTime);
 	
 }

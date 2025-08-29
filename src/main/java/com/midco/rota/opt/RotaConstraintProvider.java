@@ -39,7 +39,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 				.groupBy(assignment -> assignment.getShift(), assignment -> assignment.getEmployee(),
 						ConstraintCollectors.count())
 				.filter((shift, employee, count) -> count > 1)
-				.penalize("Duplicate assignment of employee to same shift", HardSoftScore.ONE_HARD);
+				.penalize(HardSoftScore.ONE_HARD).asConstraint("Duplicate assignment of employee to same shift");
 	}
 
 	private Constraint rewardOneShiftPerDay(ConstraintFactory factory) {
@@ -269,7 +269,20 @@ public class RotaConstraintProvider implements ConstraintProvider {
 	private Constraint tooManyEmployeesPerShift(ConstraintFactory factory) {
 		return factory.from(ShiftAssignment.class).groupBy(ShiftAssignment::getShift, ConstraintCollectors.count())
 				.filter((shift, count) -> count > shift.getShiftTemplate().getEmpCount())
-				.penalize("Too many employees for shift", HardSoftScore.ONE_HARD);
+				.penalize(HardSoftScore.ONE_HARD).asConstraint("Too many employees for shift");
+	}
+	
+	private Constraint prioritizedAllocation(ConstraintFactory factory) {
+		factory
+	    .from(ShiftAssignment.class)
+	    .filter(assignment -> assignment.getEmployee() == null)
+	    .penalize("Unassigned shift weighted by type", HardSoftScore.ONE_SOFT,
+	        assignment -> switch (assignment.getShiftType()) {
+	            case NIGHT -> 3;
+	            case DAY -> 2;
+	            case FLOATING -> 0;
+	            default -> 1;
+	        });
 	}
 
 }

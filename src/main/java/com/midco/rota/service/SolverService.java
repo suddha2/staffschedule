@@ -48,10 +48,10 @@ public class SolverService {
 			// Update request as completed .
 			deferredSolveRequest.setCompleted(true);
 			deferredSolveRequest.setCompletedAt(LocalDateTime.now());
-			deferredSolveRequest.setRotaId(problemId);
+			//deferredSolveRequest.setRotaId(problemId);
 //			DeferredSolveRequest deferredSolveRequestObj = deferredSolveRequestRepository.save(deferredSolveRequest);
 //			rotaRepository.saveAndFlush(bestSolution);
-			rosterUpdateService.persistSolvedRota(bestSolution,problemId,deferredSolveRequest);
+			rosterUpdateService.persistSolvedRota(bestSolution,deferredSolveRequest);
 //			rosterAnalysisService.printHighImpactViolations(bestSolution);
 		});
 	}

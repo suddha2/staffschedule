@@ -66,15 +66,13 @@ public class RosterUpdateService {
 	}
 
 	@Transactional
-	public void persistSolvedRota(Rota bestSolution, Long problemId, DeferredSolveRequest deferredSolveRequest) {
-		// Optional: merge if detached
+	public void persistSolvedRota(Rota bestSolution, DeferredSolveRequest deferredSolveRequest) {
+
 		Rota managedRota = rotaRepository.save(bestSolution);
 
-		// Update DeferredSolveRequest
-		// DeferredSolveRequest request =
-		// deferredSolveRequestRepository.findByRotaId(problemId);
 		deferredSolveRequest.setCompleted(true);
 		deferredSolveRequest.setCompletedAt(LocalDateTime.now());
+		deferredSolveRequest.setRotaId(managedRota.getId());
 		deferredSolveRequestRepository.save(deferredSolveRequest);
 
 		// Push updates and log violations

@@ -51,17 +51,21 @@ public class Shift {
 	public void setShiftTemplate(ShiftTemplate shiftTemplate) {
 		this.shiftTemplate = shiftTemplate;
 	}
+	
+	public Shift() {
+		
+	}
 
 	public Shift(LocalDate shiftDate, ShiftTemplate shiftTemplate) {
 		
 		this.shiftStart = shiftDate;// LocalDateTime.of(shiftDate, shiftTemplate.getStartTime());
 		this.shiftTemplate = shiftTemplate;
+		this.shiftEnd=LocalDateTime.of(shiftDate, shiftTemplate.getEndTime()).toLocalDate();
 
 		// adjust date to cover overnight shifts
 		if (LocalDateTime.of(shiftDate, shiftTemplate.getEndTime())
 				.isBefore(LocalDateTime.of(shiftDate, shiftTemplate.getStartTime()))) {
 			this.shiftEnd = this.shiftStart.plusDays(1);
-
 		}
 	}
 
