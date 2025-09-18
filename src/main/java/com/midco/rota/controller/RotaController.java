@@ -42,16 +42,18 @@ import com.midco.rota.repository.RotaRepository;
 import com.midco.rota.repository.ShiftRepository;
 import com.midco.rota.repository.ShiftTemplateRepository;
 import com.midco.rota.service.ConstraintExplanationService;
+import com.midco.rota.service.PayCycleDataService;
 import com.midco.rota.service.RosterAnalysisService;
 import com.midco.rota.service.RosterUpdateService;
+import com.midco.rota.util.PayCycleRow;
 
 @RestController
 @RequestMapping("/api")
 public class RotaController {
 
-    private final ShiftRepository shiftRepository;
+	private final ShiftRepository shiftRepository;
 
-    private final AuthController authController;
+	private final AuthController authController;
 
 	private final SolverManager<Rota, Long> solverManager;
 	private final RosterUpdateService updateService;
@@ -60,17 +62,16 @@ public class RotaController {
 	private final EmployeeRepository employeeRepository;
 	private final ShiftTemplateRepository shiftTemplateRepository;
 	private final RotaRepository rotaRepository;
-
-
+	private final PayCycleDataService payCycleDataService;
 	private final DeferredSolveRequestRepository deferredSolveRequestRepository;
-
 	@Autowired
 	private SimpUserRegistry simpUserRegistry;
 
 	public RotaController(SolverManager<Rota, Long> solverManager, RosterUpdateService updateService,
 			ConstraintExplanationService explanationService, RosterAnalysisService rosterAnalysisService,
 			EmployeeRepository employeeRepository, ShiftTemplateRepository shiftTemplateRepository,
-			DeferredSolveRequestRepository deferredSolveRequestRepository, AuthController authController,RotaRepository rotaRepository, ShiftRepository shiftRepository) {
+			DeferredSolveRequestRepository deferredSolveRequestRepository, AuthController authController,
+			RotaRepository rotaRepository, ShiftRepository shiftRepository, PayCycleDataService payCycleDataService) {
 		this.solverManager = solverManager;
 		this.updateService = updateService;
 		this.explanationService = explanationService;
@@ -79,8 +80,9 @@ public class RotaController {
 		this.shiftTemplateRepository = shiftTemplateRepository;
 		this.deferredSolveRequestRepository = deferredSolveRequestRepository;
 		this.authController = authController;
-		this.rotaRepository =rotaRepository;
+		this.rotaRepository = rotaRepository;
 		this.shiftRepository = shiftRepository;
+		this.payCycleDataService = payCycleDataService;
 	}
 
 	@GetMapping("/regions")
@@ -129,11 +131,10 @@ public class RotaController {
 
 	@GetMapping("/enqueue/latest")
 	public ResponseEntity<List<DeferredSolveRequest>> listRequests() {
-		
+
 		List<DeferredSolveRequest> response = deferredSolveRequestRepository.findTop5ByOrderByCreatedAtDesc();
 		return ResponseEntity.ok(response);
 
-		
 	}
 
 	@PostMapping("/solveAsync")
@@ -162,116 +163,111 @@ public class RotaController {
 	}
 
 	@PostMapping("/updateMsgTest")
-	public ResponseEntity<String> updateMsgTest(Authentication authentication) {
-		updateService.pushUpdate("/queue/req-update", "Test message", authentication.getName());
+	public ResponseEntity<String> updateMsgTest(@RequestBody String rawJson,Authentication authentication) {
+		updateService.pushUpdate("/queue/req-update", rawJson, authentication.getName());
 		return ResponseEntity.ok("success ");
 	}
 
 	@PostMapping("/save")
 	public ResponseEntity<?> saveSchedule(@RequestBody Map<String, Object> payload, Authentication auth) {
-		
-		System.out.println("======================================== "+payload.toString());
-		
+
 		String bodyJson = (String) payload.get("body");
 
 		ObjectMapper mapper = new ObjectMapper();
 		Map<String, Object> bodyMap;
 		try {
-			bodyMap = mapper.readValue(bodyJson, new TypeReference<>() {});
+			bodyMap = mapper.readValue(bodyJson, new TypeReference<>() {
+			});
 		} catch (JsonProcessingException e) {
-			return ResponseEntity
-			        .status(HttpStatus.NOT_FOUND)
-			        .body(Map.of("error", "Json format error: " + e.toString()));
+			return ResponseEntity.status(HttpStatus.NOT_FOUND)
+					.body(Map.of("error", "Json format error: " + e.toString()));
 		}
 
 		@SuppressWarnings("unchecked")
-		Map<String, List<Map<String, Object>>> assignments =
-		    (Map<String, List<Map<String, Object>>>) bodyMap.get("assignments");
-		
-//		@SuppressWarnings("unchecked")
-//		Map<String, List<Map<String, Object>>> assignments =
-//			    (Map<String, List<Map<String, Object>>>) payload.get("assignments");
-		
+		Map<String, List<Map<String, Object>>> assignments = (Map<String, List<Map<String, Object>>>) bodyMap
+				.get("assignments");
+
 		Integer rotaId = Integer.valueOf(bodyMap.get("rota").toString());
-		
+
 		List<ShiftAssignment> allAssignments = new ArrayList<>();
 
 		for (Map.Entry<String, List<Map<String, Object>>> entry : assignments.entrySet()) {
-		    String slotKey = entry.getKey(); // e.g. "8-Barford|LONG_DAY|2025-09-01|07:00:00"
-		    List<Map<String, Object>> employeeList = entry.getValue();
+			String slotKey = entry.getKey(); // e.g. "8-Barford|LONG_DAY|2025-09-01|07:00:00"
+			List<Map<String, Object>> employeeList = entry.getValue();
 
-		    String[] parts = slotKey.split("|");
-		    if (parts.length != 4) continue; // skip malformed keys
+			String[] parts = slotKey.split("|");
+			if (parts.length != 4)
+				continue; // skip malformed keys
 
-		    String location = parts[0];//.contains("-") ? parts[0].split("-")[1] : parts[0];
-		    String shiftType = parts[1];
-		    LocalDate date = LocalDate.parse(parts[2]);
-		    LocalTime startTime = LocalTime.parse(parts[3]);
+			String location = parts[0];// .contains("-") ? parts[0].split("-")[1] : parts[0];
+			String shiftType = parts[1];
+			LocalDate date = LocalDate.parse(parts[2]);
+			LocalTime startTime = LocalTime.parse(parts[3]);
 
-		    // Lookup or create ShiftTemplate
-		    ShiftTemplate template = shiftTemplateRepository.findByLocationAndShiftTypeAndStartTime(
-		        location, shiftType, startTime
-		    );
+			// Lookup or create ShiftTemplate
+			ShiftTemplate template = shiftTemplateRepository.findByLocationAndShiftTypeAndStartTime(location, shiftType,
+					startTime);
 
-		    if (template == null) {
-		        // Optionally create or skip
-		        continue;
-		    }
+			if (template == null) {
+				// Optionally create or skip
+				continue;
+			}
 
-		    Shift shift = shiftRepository.findByShiftTemplateAndStartTime(
-		    		template, date
-			    );
-		    
+			Shift shift = shiftRepository.findByShiftTemplateAndStartTime(template, date);
 
-		    // Create ShiftAssignments
-		    for (Map<String, Object> empMap : employeeList) {
-		        Integer empId = Integer.valueOf(empMap.get("id").toString());
-		        Employee emp = employeeRepository.findById(empId).orElseThrow();
-		        
-		        
-		        ShiftAssignment assignment = new ShiftAssignment();
-		        assignment.setShift(shift);
-		        assignment.setEmployee(emp);
-		        allAssignments.add(assignment);
-		        
-		        
-		    }
+			// Create ShiftAssignments
+			for (Map<String, Object> empMap : employeeList) {
+				Integer empId = Integer.valueOf(empMap.get("id").toString());
+				Employee emp = employeeRepository.findById(empId).orElseThrow();
+
+				ShiftAssignment assignment = new ShiftAssignment();
+				assignment.setShift(shift);
+				assignment.setEmployee(emp);
+				allAssignments.add(assignment);
+
+			}
 		}
-		Optional<Rota> rotaOpt  = rotaRepository.findById(rotaId);
-		
+		Optional<Rota> rotaOpt = rotaRepository.findById(rotaId);
+
 		if (rotaOpt.isPresent()) {
-		    Rota rota = rotaOpt.get();
-		    //rota.getShiftAssignmentList().clear();
-		    for (ShiftAssignment assignment : allAssignments) {
-		        assignment.setRota(rota);
-		        rota.getShiftAssignmentList().add(assignment);
-		    }
-		    rotaRepository.save(rota);
-		    return ResponseEntity.ok("Success"); 
+			Rota rota = rotaOpt.get();
+			// rota.getShiftAssignmentList().clear();
+			for (ShiftAssignment assignment : allAssignments) {
+				assignment.setRota(rota);
+				rota.getShiftAssignmentList().add(assignment);
+			}
+			rotaRepository.save(rota);
+			return ResponseEntity.ok("Success");
 		} else {
-			return ResponseEntity
-			        .status(HttpStatus.NOT_FOUND)
-			        .body(Map.of("error", "Rota not found for ID: " + rotaId));
+			return ResponseEntity.status(HttpStatus.NOT_FOUND)
+					.body(Map.of("error", "Rota not found for ID: " + rotaId));
 		}
-		
-		
+
 	}
-	
+
 	@GetMapping("/solved")
 	public ResponseEntity<?> solvedSolution(@RequestParam String id) {
 		Optional<Rota> rota = rotaRepository.findById(Integer.valueOf(id));
-		
+
 		if (rota.isPresent()) {
-		    
+
 			return ResponseEntity.ok(rota);
 		} else {
-			return ResponseEntity
-			        .status(HttpStatus.NOT_FOUND)
-			        .body(Map.of("error", "Rota not found for ID: " + id));
+			return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "Rota not found for ID: " + id));
 		}
-		
+
 	}
-	
+
+	@GetMapping("/payCycle")
+	public ResponseEntity<?> payCycleList(@RequestParam String location) {
+		List<PayCycleRow> pcr = payCycleDataService.fetchRows(location);
+
+		if (pcr.size() < 1)
+			return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "payCycleList is empty"));
+
+		return ResponseEntity.ok(pcr);
+	}
+
 	@GetMapping("/wsUsers")
 	public List<String> getWsUsers() {
 		return simpUserRegistry.getUsers().stream().map(SimpUser::getName).collect(Collectors.toList());
@@ -309,7 +305,7 @@ public class RotaController {
 			LocalDate current = startDate;
 			while (!current.isAfter(endDate)) {
 				if (current.getDayOfWeek().equals(template.getDayOfWeek())) {
-					instances.add(new Shift( current, template));
+					instances.add(new Shift(current, template));
 
 				}
 				current = current.plusDays(1);

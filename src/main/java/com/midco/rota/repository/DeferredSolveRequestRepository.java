@@ -9,7 +9,10 @@ import com.midco.rota.model.DeferredSolveRequest;
 
 public interface DeferredSolveRequestRepository extends JpaRepository<DeferredSolveRequest, Long> {
 
-	Optional<DeferredSolveRequest>  findFirstByCompletedFalse();
-	
+	Optional<DeferredSolveRequest> findFirstByCompletedFalse();
+
 	List<DeferredSolveRequest> findTop5ByOrderByCreatedAtDesc();
+
+	List<DeferredSolveRequest> findByRegion(String location);
+
 }

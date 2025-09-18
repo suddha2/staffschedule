@@ -8,4 +8,6 @@ import com.midco.rota.model.Rota;
 @Repository
 public interface RotaRepository extends JpaRepository<Rota, Integer> {
 
+	
+	
 }

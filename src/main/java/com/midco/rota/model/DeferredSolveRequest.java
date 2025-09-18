@@ -2,11 +2,13 @@ package com.midco.rota.model;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Map;
 
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Transient;
 
 @Entity
 public class DeferredSolveRequest {
@@ -21,6 +23,9 @@ public class DeferredSolveRequest {
     private LocalDateTime completedAt;
     private String createdBy;
     private Long rotaId;
+    
+    @Transient 
+    private Map<String, Map<String, Integer>> scheduleSummary;
 
     public LocalDateTime getCompletedAt() {
 		return completedAt;
@@ -94,6 +99,14 @@ public class DeferredSolveRequest {
 
 	public void setRotaId(Long rotaId) {
 		this.rotaId = rotaId;
+	}
+
+	public Map<String, Map<String, Integer>> getScheduleSummary() {
+		return scheduleSummary;
+	}
+
+	public void setScheduleSummary(Map<String, Map<String, Integer>> scheduleSummary) {
+		this.scheduleSummary = scheduleSummary;
 	}
     
 }

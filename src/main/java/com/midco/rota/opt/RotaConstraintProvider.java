@@ -31,11 +31,11 @@ public class RotaConstraintProvider implements ConstraintProvider {
 				preferedShiftTypeConstraint(factory), restrictedDayOfWeekConstraint(factory),
 				restrictedShiftTypeConstraint(factory), restrictedServiceConstraint(factory),
 				maxWeeklyHoursConstraint(factory), minWeeklyHoursConstraint(factory),
-				preventDuplicateAssignments(factory), tooManyEmployeesPerShift(factory) };
+				preventDuplicateAssignments(factory), tooManyEmployeesPerShift(factory) ,prioritizedAllocation(factory)};
 	}
 
 	private Constraint preventDuplicateAssignments(ConstraintFactory factory) {
-		return factory.from(ShiftAssignment.class).filter(assignment -> assignment.getEmployee() != null)
+		return factory.forEach(ShiftAssignment.class).filter(assignment -> assignment.getEmployee() != null)
 				.groupBy(assignment -> assignment.getShift(), assignment -> assignment.getEmployee(),
 						ConstraintCollectors.count())
 				.filter((shift, employee, count) -> count > 1)
@@ -267,22 +267,34 @@ public class RotaConstraintProvider implements ConstraintProvider {
 	}
 
 	private Constraint tooManyEmployeesPerShift(ConstraintFactory factory) {
-		return factory.from(ShiftAssignment.class).groupBy(ShiftAssignment::getShift, ConstraintCollectors.count())
+		return factory.forEach(ShiftAssignment.class).groupBy(ShiftAssignment::getShift, ConstraintCollectors.count())
 				.filter((shift, count) -> count > shift.getShiftTemplate().getEmpCount())
 				.penalize(HardSoftScore.ONE_HARD).asConstraint("Too many employees for shift");
 	}
 	
 	private Constraint prioritizedAllocation(ConstraintFactory factory) {
-		factory
-	    .from(ShiftAssignment.class)
+		return factory.forEach(ShiftAssignment.class)
 	    .filter(assignment -> assignment.getEmployee() == null)
-	    .penalize("Unassigned shift weighted by type", HardSoftScore.ONE_SOFT,
-	        assignment -> switch (assignment.getShiftType()) {
-	            case NIGHT -> 3;
+	    .penalize(HardSoftScore.ONE_SOFT,
+	        assignment -> switch (assignment.getShift().getShiftTemplate().getShiftType()) {
+	            case WAKING_NIGHT -> 4;
+	            case LONG_DAY ->3;
 	            case DAY -> 2;
 	            case FLOATING -> 0;
 	            default -> 1;
-	        });
+	        }).asConstraint("Unassigned shift weighted by type");
 	}
+	private Constraint oneShiftPerDayPerEmp(ConstraintFactory factory) {
+	    return factory
+	            .forEach(ShiftAssignment.class)
+	            .groupBy(
+	                ShiftAssignment::getEmployee,
+	                ShiftAssignment::getShift,
+	                ConstraintCollectors.count()
+	            )
+	            .filter((employee, date, count) -> count > 1)
+	            .penalize("Employee has multiple shifts per day", HardSoftScore.ONE_HARD,
+	                (employee, date, count) -> count - 1);
+	    }
 
 }

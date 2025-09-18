@@ -42,7 +42,7 @@ public class ShiftAssignment {
 	@JsonIgnore
 	private Rota rota;
 	
-	public ShiftAssignment() {
+	public ShiftAssignment() { 
 	}
 
 	public ShiftAssignment(Shift shift) {

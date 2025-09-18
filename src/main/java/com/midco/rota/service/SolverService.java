@@ -42,15 +42,11 @@ public class SolverService {
 	}
 
 	public void solveAsync(Rota schedule, Long problemId, DeferredSolveRequest deferredSolveRequest) {
-		logger.info("solveAsync===== " + problemId);
 		solverManager.solve(problemId, id -> schedule, bestSolution -> {
 			List<ConstraintMatchTotal<?>> violations = explanationService.getConstraintViolations(bestSolution);
-			// Update request as completed .
+			// Update request as completed . 
 			deferredSolveRequest.setCompleted(true);
 			deferredSolveRequest.setCompletedAt(LocalDateTime.now());
-			//deferredSolveRequest.setRotaId(problemId);
-//			DeferredSolveRequest deferredSolveRequestObj = deferredSolveRequestRepository.save(deferredSolveRequest);
-//			rotaRepository.saveAndFlush(bestSolution);
 			rosterUpdateService.persistSolvedRota(bestSolution,deferredSolveRequest);
 //			rosterAnalysisService.printHighImpactViolations(bestSolution);
 		});

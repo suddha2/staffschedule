@@ -43,7 +43,7 @@ public class SolverTrigger {
 		this.shiftTemplateRepository = shiftTemplateRepository;
 	}
 
-	@Scheduled(cron = "0 */2 * * * *") // Every hour
+	@Scheduled(cron = "0 */2 * * * *") // Every 2 Mins
 
 	public void triggerSolver() {
 

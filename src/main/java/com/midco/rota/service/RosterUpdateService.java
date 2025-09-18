@@ -16,6 +16,7 @@ import com.midco.rota.model.DeferredSolveRequest;
 import com.midco.rota.model.Rota;
 import com.midco.rota.repository.DeferredSolveRequestRepository;
 import com.midco.rota.repository.RotaRepository;
+import com.midco.rota.util.PayCycleRow;
 
 import jakarta.transaction.Transactional;
 
@@ -30,27 +31,28 @@ public class RosterUpdateService {
 	private RotaRepository rotaRepository;
 	@Autowired
 	private DeferredSolveRequestRepository deferredSolveRequestRepository;
+
+	@Autowired
+	private PayCycleDataService payCycleDataService;
 	@Autowired
 	private RosterAnalysisService rosterAnalysisService;
 
 	public RosterUpdateService(SimpMessagingTemplate messagingTemplate, RotaRepository rotaRepository,
-			DeferredSolveRequestRepository deferredSolveRequestRepository,
-			RosterAnalysisService rosterAnalysisService) {
+			DeferredSolveRequestRepository deferredSolveRequestRepository, RosterAnalysisService rosterAnalysisService,
+			PayCycleDataService payCycleDataService) {
 		this.messagingTemplate = messagingTemplate;
 		this.rotaRepository = rotaRepository;
 		this.deferredSolveRequestRepository = deferredSolveRequestRepository;
 		this.rosterAnalysisService = rosterAnalysisService;
+		this.payCycleDataService = payCycleDataService;
 	}
 
 	public void pushUpdate(Rota rota, List<ConstraintMatchTotal<?>> violations, SolverStatus status, String user) {
-		logger.info("pushUpdate======= count of violations " + violations.size());
-
 		RotaUpdatePayload payload = new RotaUpdatePayload();
 		payload.setRota(rota);
 		payload.setViolations(violations);
 		payload.setStatus("SOLVED"); // TODO:
 
-//        messagingTemplate.convertAndSend("/topic/rotaUpdate", rota);
 		logger.info(" Rota ", payload.toString());
 		messagingTemplate.convertAndSendToUser(user, "/queue/rotaUpdate", rota);
 
@@ -61,6 +63,10 @@ public class RosterUpdateService {
 				deferredSolveRequest);
 	}
 
+	public void pushUpdate(List<PayCycleRow> pcr, String user) {
+		messagingTemplate.convertAndSendToUser(user, "/queue/req-update", pcr);
+	}
+
 	public void pushUpdate(String link, String msg, String user) {
 		messagingTemplate.convertAndSendToUser(user, link, msg);
 	}
@@ -69,14 +75,16 @@ public class RosterUpdateService {
 	public void persistSolvedRota(Rota bestSolution, DeferredSolveRequest deferredSolveRequest) {
 
 		Rota managedRota = rotaRepository.save(bestSolution);
-
+		deferredSolveRequest.setScheduleSummary(managedRota.rotaSummaryStats());
 		deferredSolveRequest.setCompleted(true);
 		deferredSolveRequest.setCompletedAt(LocalDateTime.now());
 		deferredSolveRequest.setRotaId(managedRota.getId());
 		deferredSolveRequestRepository.save(deferredSolveRequest);
 
+		this.pushUpdate(payCycleDataService.fetchRows(deferredSolveRequest), deferredSolveRequest.getCreatedBy());
+
 		// Push updates and log violations
-		this.pushUpdate(deferredSolveRequest);
+		//this.pushUpdate(deferredSolveRequest);
 		rosterAnalysisService.printHighImpactViolations(bestSolution);
 	}
 }
