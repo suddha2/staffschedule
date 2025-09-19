@@ -1,5 +1,6 @@
 package com.midco.rota.service;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.security.KeyFactory;
 import java.security.PrivateKey;
@@ -18,6 +19,8 @@ import javax.crypto.spec.SecretKeySpec;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 
 import com.midco.rota.TokenValidationException;
@@ -31,77 +34,74 @@ import dev.paseto.jpaseto.Pasetos;
 @Service
 public class PasetoTokenService {
 
-	private final SecretKey secretKey;
-	
-	 @Value("${paseto.issuer}")
-	    private String issuer;
+	@Value("${paseto.issuer}")
+	private String issuer;
 
-	    @Value("${paseto.audience}")
-	    private String audience;
+	@Value("${paseto.audience}")
+	private String audience;
 
-	public PasetoTokenService() {
-		byte[] keyBytes = new byte[32]; // 256-bit key for v2.local
-		new SecureRandom().nextBytes(keyBytes);
-		this.secretKey = new SecretKeySpec(keyBytes, "AES");
-	}
+	@Value("${paseto.public-key}")
+	private String publicKeyPath;
 
-	public String generateToken(String username,Set<String> roles) {
+	@Value("${paseto.private-key}")
+	private String privateKeyPath;
+
+	// ============================
+	// Generate Token (asymmetric)
+	// ============================
+	public String generateToken(String username, Set<String> roles) {
 		Instant now = Instant.now();
-		String token = "";
 
 		try {
+			PrivateKey privateKey = loadPrivateKey();
+			return Pasetos.V2.PUBLIC.builder().setPrivateKey(privateKey).setIssuedAt(now)
+					.setExpiration(now.plus(Duration.ofHours(2))).setSubject(username).setIssuer(issuer)
+					.setAudience(audience).claim("roles", roles).compact();
 
-
-			ClassPathResource resource = new ClassPathResource("private.key");
-
-			try (InputStream inputStream = resource.getInputStream()) {
-				byte[] rawBytes = inputStream.readAllBytes();
-				byte[] privBytes = Base64.getDecoder().decode(rawBytes);
-
-				PKCS8EncodedKeySpec privSpec = new PKCS8EncodedKeySpec(privBytes);
-				PrivateKey privateKey = KeyFactory.getInstance("Ed25519").generatePrivate(privSpec);
-
-				token = Pasetos.V2.PUBLIC.builder().setPrivateKey(privateKey) // ✅ asymmetric signing
-						.setIssuedAt(now).setExpiration(now.plus(Duration.ofHours(2))).setSubject(username)
-						 .setIssuer(issuer).setAudience(audience).claim("roles", roles).compact();
-				
-				System.out.println(this.validateToken(token));
-				return token;
-			}
-
-		} catch (Exception ex) {
-			ex.printStackTrace();
+		} catch (Exception e) {
+			throw new RuntimeException("Failed to generate token", e);
 		}
-		return token;
-
 	}
 
+	// ============================
+	// Validate Token
+	// ============================
 	public Optional<String> validateToken(String token) {
-		
-			ClassPathResource resource = new ClassPathResource("public.key");
-
-			try (InputStream inputStream = resource.getInputStream()) {
-				byte[] rawBytes = inputStream.readAllBytes();
-				byte[] pubBytes = Base64.getDecoder().decode(rawBytes);
-				
-			//byte[] pubBytes = Base64.getDecoder().decode(Files.readAllBytes(Paths.get("public.key")));
-			X509EncodedKeySpec pubSpec = new X509EncodedKeySpec(pubBytes);
-			PublicKey publicKey = KeyFactory.getInstance("Ed25519").generatePublic(pubSpec);
-			
-			PasetoParser parser = Pasetos.parserBuilder().setPublicKey(publicKey).setSharedSecret(secretKey).build();
+		try {
+			PublicKey publicKey = loadPublicKey();
+			PasetoParser parser = Pasetos.parserBuilder().setPublicKey(publicKey).build();
 
 			Paseto parsed = parser.parse(token);
-			
-			System.out.println(parsed.getClaims());
 			return Optional.ofNullable(parsed.getClaims().getSubject());
 
+		} catch (PasetoException e) {
+			throw new TokenValidationException("Token validation failed", e);
+		} catch (Exception e) {
+			throw new TokenValidationException("Unexpected error during token validation", e);
+		}
+	}
 
-		} catch (ExpiredPasetoException e) {
-	        throw new TokenValidationException("Invalid or malformed token", e);
-	    } catch (PasetoException  e) {
-	        throw new TokenValidationException("Token expired", e);
-	    } catch (Exception e) {
-	        throw new TokenValidationException("Token validation failed", e);
-	    }
+	// ============================
+	// Key loaders (flexible)
+	// ============================
+	private PrivateKey loadPrivateKey() throws Exception {
+		byte[] decoded = loadKeyBytes(privateKeyPath);
+		PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(decoded);
+		return KeyFactory.getInstance("Ed25519").generatePrivate(spec);
+	}
+
+	private PublicKey loadPublicKey() throws Exception {
+		byte[] decoded = loadKeyBytes(publicKeyPath);
+		X509EncodedKeySpec spec = new X509EncodedKeySpec(decoded);
+		return KeyFactory.getInstance("Ed25519").generatePublic(spec);
+	}
+
+	private byte[] loadKeyBytes(String path) throws IOException {
+		Resource resource = new FileSystemResource(path);
+		if (!resource.exists()) {
+			resource = new ClassPathResource(path);
+		}
+		byte[] raw = resource.getInputStream().readAllBytes();
+		return Base64.getDecoder().decode(raw);
 	}
 }
