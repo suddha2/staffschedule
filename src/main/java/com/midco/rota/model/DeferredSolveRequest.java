@@ -108,5 +108,13 @@ public class DeferredSolveRequest {
 	public void setScheduleSummary(Map<String, Map<String, Integer>> scheduleSummary) {
 		this.scheduleSummary = scheduleSummary;
 	}
+
+	@Override
+	public String toString() {
+		return "DeferredSolveRequest [id=" + id + ", region=" + region + ", startDate=" + startDate + ", endDate="
+				+ endDate + ", completed=" + completed + ", completedAt=" + completedAt + ", createdBy=" + createdBy
+				+ ", rotaId=" + rotaId + ", scheduleSummary=" + scheduleSummary + ", createdAt=" + createdAt + "]";
+	}
+	
     
 }

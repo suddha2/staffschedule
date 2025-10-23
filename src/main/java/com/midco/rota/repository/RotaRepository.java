@@ -6,7 +6,7 @@ import org.springframework.stereotype.Repository;
 import com.midco.rota.model.Rota;
 
 @Repository
-public interface RotaRepository extends JpaRepository<Rota, Integer> {
+public interface RotaRepository extends JpaRepository<Rota, Long> {
 
 	
 	

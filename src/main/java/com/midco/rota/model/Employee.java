@@ -4,6 +4,8 @@ import java.math.BigDecimal;
 import java.time.DayOfWeek;
 import java.util.List;
 
+import org.optaplanner.core.api.domain.lookup.PlanningId;
+
 import com.midco.rota.converter.DayOfWeekListConverter;
 import com.midco.rota.converter.ShiftTypeListConverter;
 import com.midco.rota.converter.StringListConverter;
@@ -26,6 +28,7 @@ import jakarta.persistence.Table;
 @Table(name = "employee")
 public class Employee {
 	@Id
+	@PlanningId
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Integer id;
 
@@ -34,7 +37,7 @@ public class Employee {
 
 	@Column(name = "last_name", length = 50)
 	private String lastName;
-	
+
 	@Enumerated(EnumType.STRING)
 	@Column(length = 10)
 	private Gender gender;
@@ -48,7 +51,7 @@ public class Employee {
 
 	@Column(name = "max_hours", precision = 5, scale = 2)
 	private BigDecimal maxHrs;
-	
+
 	@Enumerated(EnumType.STRING)
 	@Column(name = "rate_code", length = 10)
 	private RateCode rateCode;
@@ -56,9 +59,9 @@ public class Employee {
 	@Column(name = "rest_days_per_cycle")
 	private Integer restDays;
 
-	@Convert(converter = StringListConverter.class)
-	@Column(name = "preferred_region", length = 50)
-	private List<String> preferredRegion;
+//	@Convert(converter = StringListConverter.class)
+//	@Column(name = "preferred_region", length = 50)
+	private String preferredRegion;
 
 	@Convert(converter = StringListConverter.class)
 	@Column(name = "preferred_service", columnDefinition = "TEXT")
@@ -187,11 +190,11 @@ public class Employee {
 		this.restDays = restDays;
 	}
 
-	public List<String> getPreferredRegion() {
+	public String getPreferredRegion() {
 		return preferredRegion;
 	}
 
-	public void setPreferredRegion(List<String> preferredRegion) {
+	public void setPreferredRegion(String preferredRegion) {
 		this.preferredRegion = preferredRegion;
 	}
 
@@ -273,6 +276,82 @@ public class Employee {
 
 	public void setContWeekOff(Integer contWeekOff) {
 		this.weekOff = contWeekOff;
+	}
+
+	public String getName() {
+		return this.firstName + " " + this.lastName;
+	}
+
+	public List<DayOfWeek> getPreferredDays() {
+		return preferredDays;
+	}
+
+	public void setPreferredDays(List<DayOfWeek> preferredDays) {
+		this.preferredDays = preferredDays;
+	}
+
+	public List<DayOfWeek> getRestrictedDays() {
+		return restrictedDays;
+	}
+
+	public void setRestrictedDays(List<DayOfWeek> restrictedDays) {
+		this.restrictedDays = restrictedDays;
+	}
+
+	public List<ShiftType> getPreferredShifts() {
+		return preferredShifts;
+	}
+
+	public void setPreferredShifts(List<ShiftType> preferredShifts) {
+		this.preferredShifts = preferredShifts;
+	}
+
+	public List<ShiftType> getRestrictedShifts() {
+		return restrictedShifts;
+	}
+
+	public void setRestrictedShifts(List<ShiftType> restrictedShifts) {
+		this.restrictedShifts = restrictedShifts;
+	}
+
+	public List<String> getSkills() {
+		return skills;
+	}
+
+	public void setSkills(List<String> skills) {
+		this.skills = skills;
+	}
+
+	public Integer getDaysOn() {
+		return daysOn;
+	}
+
+	public void setDaysOn(Integer daysOn) {
+		this.daysOn = daysOn;
+	}
+
+	public Integer getDaysOff() {
+		return daysOff;
+	}
+
+	public void setDaysOff(Integer daysOff) {
+		this.daysOff = daysOff;
+	}
+
+	public Integer getWeekOn() {
+		return weekOn;
+	}
+
+	public void setWeekOn(Integer weekOn) {
+		this.weekOn = weekOn;
+	}
+
+	public Integer getWeekOff() {
+		return weekOff;
+	}
+
+	public void setWeekOff(Integer weekOff) {
+		this.weekOff = weekOff;
 	}
 
 }

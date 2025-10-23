@@ -1,18 +1,25 @@
 package com.midco.rota.controller;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.midco.rota.model.LoginRequest;
+import com.midco.rota.model.Role;
 import com.midco.rota.model.User;
 import com.midco.rota.repository.UserRepository;
 import com.midco.rota.service.AuthService;
@@ -34,15 +41,6 @@ public class AuthController {
 	}
 
 	@PostMapping("/login")
-//    public ResponseEntity<?> login(@RequestBody LoginRequest request) {
-//        // Validate credentials (e.g., via UserDetailsService)
-//        if (isValidUser(request.getUserName(), request.getPass())) {
-//            String token = tokenService.generateToken(request.getUserName());
-//            return ResponseEntity.ok(Map.of("token", token));
-//        }
-//        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-//    }
-
 	public ResponseEntity<?> login(@RequestBody LoginRequest request) {
 
 		User user = userRepository.findByUsername(request.getUserName())
@@ -51,8 +49,11 @@ public class AuthController {
 		if (!passwordEncoder.matches(request.getPass(), user.getPassword())) {
 			throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
 		}
-
-		String token = tokenService.generateToken(user.getUsername(), user.getRoles());
+		
+		Set<String> roleNames = user.getRoles().stream()
+                .map(Role::getName)
+                .collect(Collectors.toSet());
+		String token = tokenService.generateToken(user.getUsername(), roleNames);
 		return ResponseEntity.ok(Map.of("token", token));
 
 	}
@@ -67,5 +68,20 @@ public class AuthController {
 		user.setCreatedAt(LocalDateTime.now());
 		userRepository.save(user);
 		return ResponseEntity.ok("User registered");
+	}
+
+	@GetMapping("/me")
+	public ResponseEntity<?> loggedUserInfo(Authentication auth) {
+		Optional<User> user = userRepository.findByUsername(auth.getName());
+
+		Map<String, Object> result = new HashMap<>();
+		if (!user.isPresent()) {
+
+			result.put("userName", user.get().getUsername());
+
+			result.put("roles", user.get().getRoles());
+		}
+		return ResponseEntity.ok(result);
+
 	}
 }

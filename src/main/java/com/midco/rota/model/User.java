@@ -4,15 +4,14 @@ import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.Set;
 
-import jakarta.persistence.CollectionTable;
-import jakarta.persistence.Column;
-import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
+import jakarta.persistence.JoinTable;
+import jakarta.persistence.ManyToMany;
 import jakarta.persistence.Table;
 
 @Entity
@@ -31,10 +30,13 @@ public class User {
 
 	private boolean active;
 
-	@ElementCollection(fetch = FetchType.EAGER)
-	@CollectionTable(name = "user_roles", joinColumns = @JoinColumn(name = "userid"))
-	@Column(name = "roleid")
-	private Set<String> roles = new HashSet<>();
+	@ManyToMany(fetch = FetchType.EAGER)
+    @JoinTable(
+        name = "user_roles",                    // link table
+        joinColumns = @JoinColumn(name = "userid"),   // FK to User
+        inverseJoinColumns = @JoinColumn(name = "roleid") // FK to Role
+    )
+    private Set<Role> roles = new HashSet<>();
 
 	public Long getId() {
 		return id;
@@ -76,11 +78,11 @@ public class User {
 		this.active = active;
 	}
 
-	public Set<String> getRoles() {
+	public Set<Role> getRoles() {
 		return roles;
 	}
 
-	public void setRoles(Set<String> roles) {
+	public void setRoles(Set<Role> roles) {
 		this.roles = roles;
 	}
 

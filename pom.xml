@@ -14,7 +14,7 @@
 	<version>0.0.1-SNAPSHOT</version>
 	<name>rota-service</name>
 	<description>Rota Generation</description>
-	<packaging>war</packaging> 
+	<packaging>war</packaging>
 	<url />
 	<licenses>
 		<license />
@@ -36,7 +36,7 @@
 		<dependency>
 			<groupId>org.optaplanner</groupId>
 			<artifactId>optaplanner-spring-boot-starter</artifactId>
-			<version>10.0.0</version>
+			<version>10.1.0</version>
 		</dependency>
 
 		<dependency>
@@ -76,25 +76,25 @@
 		</dependency>
 
 		<dependency>
-   <groupId>dev.paseto</groupId>
-   <artifactId>jpaseto-api</artifactId>
-   <version>0.7.0</version>
-</dependency>
-<dependency>
-   <groupId>dev.paseto</groupId>
-   <artifactId>jpaseto-impl</artifactId>
-   <version>0.7.0</version>
-</dependency>
-<dependency>
-   <groupId>dev.paseto</groupId>
-   <artifactId>jpaseto-jackson</artifactId>
-   <version>0.7.0</version>
-</dependency>
-<dependency>
-   <groupId>dev.paseto</groupId>
-   <artifactId>jpaseto-sodium</artifactId>
-   <version>0.7.0</version>
-</dependency>
+			<groupId>dev.paseto</groupId>
+			<artifactId>jpaseto-api</artifactId>
+			<version>0.7.0</version>
+		</dependency>
+		<dependency>
+			<groupId>dev.paseto</groupId>
+			<artifactId>jpaseto-impl</artifactId>
+			<version>0.7.0</version>
+		</dependency>
+		<dependency>
+			<groupId>dev.paseto</groupId>
+			<artifactId>jpaseto-jackson</artifactId>
+			<version>0.7.0</version>
+		</dependency>
+		<dependency>
+			<groupId>dev.paseto</groupId>
+			<artifactId>jpaseto-sodium</artifactId>
+			<version>0.7.0</version>
+		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-security</artifactId>
@@ -110,29 +110,35 @@
 		<dependency>
 			<groupId>org.optaplanner</groupId>
 			<artifactId>optaplanner-core</artifactId>
-			<version>10.0.0</version>
+			<version>10.1.0</version>
 		</dependency>
+
 		<dependency>
 			<groupId>org.optaplanner</groupId>
 			<artifactId>optaplanner-constraint-streams-common</artifactId>
-			<version>10.0.0</version>
+			<version>10.1.0</version>
 		</dependency>
 		<dependency>
-  <groupId>org.optaplanner</groupId>
-  <artifactId>optaplanner-constraint-streams-bavet</artifactId>
-  <version>10.0.0</version>
-</dependency>
+			<groupId>org.optaplanner</groupId>
+			<artifactId>optaplanner-constraint-streams-bavet</artifactId>
+			<version>10.1.0</version>
+		</dependency>
+		<dependency>
+			<groupId>org.optaplanner</groupId>
+			<artifactId>optaplanner-benchmark</artifactId>
+			<version>10.1.0</version>
+		</dependency>
 		<dependency>
 			<groupId>org.optaplanner</groupId>
 			<artifactId>optaplanner-test</artifactId>
-			<version>10.0.0</version>
+			<version>10.1.0</version>
 			<scope>test</scope>
 		</dependency>
-<dependency>
-  <groupId>org.springframework.boot</groupId>
-  <artifactId>spring-boot-starter-tomcat</artifactId>
-  <scope>provided</scope>
-</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-tomcat</artifactId>
+			<scope>provided</scope>
+		</dependency>
 	</dependencies>
 
 	<build>

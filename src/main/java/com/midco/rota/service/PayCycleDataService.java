@@ -106,7 +106,7 @@ public class PayCycleDataService {
 			for (DeferredSolveRequest req : matches) {
 				Long rotaIdLong = req.getRotaId();
 				if (rotaIdLong != null) {
-					Optional<Rota> rotaOpt = rotaRepository.findById(req.getRotaId().intValue());
+					Optional<Rota> rotaOpt = rotaRepository.findById(req.getRotaId());
 
 					if (rotaOpt.isPresent()) {
 						Rota rota = rotaOpt.get();

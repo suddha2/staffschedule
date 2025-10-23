@@ -1,12 +1,12 @@
 package com.midco.rota;
 
-import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
-import java.util.Random;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.optaplanner.core.api.solver.SolverStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -16,11 +16,10 @@ import com.midco.rota.model.DeferredSolveRequest;
 import com.midco.rota.model.Employee;
 import com.midco.rota.model.Rota;
 import com.midco.rota.model.Shift;
-import com.midco.rota.model.ShiftTemplate;
 import com.midco.rota.model.ShiftAssignment;
+import com.midco.rota.model.ShiftTemplate;
 import com.midco.rota.repository.DeferredSolveRequestRepository;
 import com.midco.rota.repository.EmployeeRepository;
- 
 import com.midco.rota.repository.ShiftTemplateRepository;
 import com.midco.rota.service.SolverService;
 
@@ -33,7 +32,7 @@ public class SolverTrigger {
 	private final SolverService solverService;
 	private final DeferredSolveRequestRepository deferredSolveRequestRepository;
 	private final EmployeeRepository employeeRepository;
-	private final ShiftTemplateRepository  shiftTemplateRepository;
+	private final ShiftTemplateRepository shiftTemplateRepository;
 
 	public SolverTrigger(SolverService solverService, DeferredSolveRequestRepository deferredSolveRequestRepository,
 			EmployeeRepository employeeRepository, ShiftTemplateRepository shiftTemplateRepository) {
@@ -46,21 +45,25 @@ public class SolverTrigger {
 	@Scheduled(cron = "0 */2 * * * *") // Every 2 Mins
 
 	public void triggerSolver() {
-
 		deferredSolveRequestRepository.findFirstByCompletedFalse().ifPresentOrElse(deferredSolveRequest -> {
-			Rota problem = loadData(deferredSolveRequest); 
-			logger.info("triggerSolver=== ");
-			solverService.solveAsync(problem, problem.getPlanningId(), deferredSolveRequest);
-		}, () -> {
-			logger.info("no sovler request available to process");
-		});
+			if (solverService.getSolverStatus(deferredSolveRequest.getId()) == SolverStatus.NOT_SOLVING) {
 
+				Rota problem = loadData(deferredSolveRequest);
+				problem.setPlanningId(deferredSolveRequest.getId());
+				logger.info("triggerSolver=== ");
+				solverService.solveAsync(problem, deferredSolveRequest.getId(), deferredSolveRequest);
+			} else {
+				logger.info("Solving in progress for reqeust " + deferredSolveRequest.getId());
+			}
+		}, () -> {
+			logger.info("No solver request available to process");
+		});
 	}
 
-	private Rota loadData(DeferredSolveRequest deferredSolveRequest) {
-
+	public Rota loadData(DeferredSolveRequest deferredSolveRequest) {
+		logger.info(deferredSolveRequest.toString());
 		// Query all employees
-		List<Employee> employees = employeeRepository.findAll();
+		List<Employee> employees = employeeRepository.findByPreferredRegion(deferredSolveRequest.getRegion());
 		List<ShiftTemplate> shiftTemplates = shiftTemplateRepository.findAllByRegion(deferredSolveRequest.getRegion());
 		List<ShiftAssignment> shiftAssignments = new ArrayList<>();
 		shiftAssignments = this.generateShiftInstances(deferredSolveRequest.getStartDate(),
@@ -76,30 +79,30 @@ public class SolverTrigger {
 		List<ShiftAssignment> assignments = new ArrayList<>();
 		List<Shift> instances = new ArrayList<>();
 
-		// Create shift instance for the date range 
+		// Create shift instance for the date range
 		AtomicLong id = new AtomicLong(1L);
 		for (ShiftTemplate template : templates) {
 			LocalDate current = startDate;
 			while (!current.isAfter(endDate)) {
 				if (current.getDayOfWeek().equals(template.getDayOfWeek())) {
-					instances.add(new Shift( current, template));
+					instances.add(new Shift(current, template));
 
 				}
 				current = current.plusDays(1);
 
 			}
 		}
-		
-		  
-		// Add shift assignments to enable multiple employee assignment for each shift ( 2 to 1 scenario)
+
+		// Add shift assignments to enable multiple employee assignment for each shift (
+		// 2 to 1 scenario)
 		for (Shift shift : instances) {
-		    for (int i = 0; i < shift.getShiftTemplate().getEmpCount(); i++) {
-		        ShiftAssignment assignment = new ShiftAssignment(shift);
-		        assignments.add(assignment);
-		    }
+			for (int i = 0; i < shift.getShiftTemplate().getEmpCount(); i++) {
+				ShiftAssignment assignment = new ShiftAssignment(shift);
+				assignments.add(assignment);
+			}
 		}
 		return assignments;
-		
+
 	}
 
 }

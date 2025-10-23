@@ -32,8 +32,8 @@ import jakarta.persistence.Transient;
 @PlanningSolution
 public class Rota {
 
-	@Transient
-	private static final AtomicLong COUNTER = new AtomicLong();
+//	@Transient
+//	private static final AtomicLong COUNTER = new AtomicLong();
 
 	@Transient
 	@PlanningId
@@ -70,7 +70,7 @@ public class Rota {
 		this.shiftAssignmentList = shiftAssignmentList;
 		int ideal = shiftAssignmentList.size() / employeeList.size();
 		this.idealShiftCountList = List.of(new IdealShiftCount(ideal));
-		this.planningId = COUNTER.incrementAndGet();
+		//this.planningId = COUNTER.incrementAndGet();
 
 		for (ShiftAssignment sa : this.shiftAssignmentList) {
 			sa.setRota(this); // safe linkage for JPA requirements
@@ -218,4 +218,7 @@ public class Rota {
 
 		return results;
 	}
+	
+
+	
 }

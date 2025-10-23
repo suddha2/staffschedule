@@ -10,6 +10,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.TestPropertySource;
 
 import com.midco.rota.RotaServiceApplication;
+import com.midco.rota.converter.ShiftTypeListConverter;
 import com.midco.rota.service.PayCycleDataService;
 import com.midco.rota.util.PayCycleRow;
 
@@ -40,6 +41,16 @@ class PayCycleDataServiceIntegrationTest {
             System.out.println("ShiftStats: " + row.getShiftStats());
             System.out.println("ShiftAssignmentStats: " + row.getShiftAssignmentStats());
         } 
+    }
+    
+    
+    @Test
+    void shiftTypeConverter() {
+    	String testString="LONG_DAY,FLOAT";
+    	
+    	ShiftTypeListConverter converter= new ShiftTypeListConverter();
+    	converter.convertToEntityAttribute(testString).forEach(System.out::println);;
+    	
     }
 }
 

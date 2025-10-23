@@ -22,7 +22,7 @@ import jakarta.persistence.Table;
 
 @Entity
 @Table(name = "shift_templates")
-@NamedQuery(name="ShiftTemplate.findAllRegion", query = "select distinct s.region from ShiftTemplate s order by 1")
+@NamedQuery(name = "ShiftTemplate.findAllRegion", query = "select distinct s.region from ShiftTemplate s order by 1")
 
 public class ShiftTemplate {
 
@@ -35,7 +35,7 @@ public class ShiftTemplate {
 
 	@Column(length = 50)
 	private String region;
-	
+
 	@Enumerated(EnumType.STRING)
 	@Column(name = "shift_type", length = 20)
 	private ShiftType shiftType;
@@ -57,7 +57,7 @@ public class ShiftTemplate {
 
 	@Column(name = "total_hours", precision = 4, scale = 2)
 	private BigDecimal totalHours;
-	
+
 	@Enumerated(EnumType.STRING)
 	@Column(name = "required_gender", length = 10)
 	private Gender requiredGender;
@@ -65,29 +65,29 @@ public class ShiftTemplate {
 	@Convert(converter = StringListConverter.class)
 	@Column(name = "required_skills", columnDefinition = "TEXT")
 	private List<String> requiredSkills;
-	
+
 	@Column(name = "emp_count")
 	private int empCount;
+
+	@Column(name = "allocation_priority")
+	private int priority;
 
 	public ShiftTemplate() {
 	}
 
-	public ShiftTemplate( String location, String region, DayOfWeek day_of_week, LocalTime start_time,
-			LocalTime end_time, Gender required_gender, List<String> required_skills, int empCount) {
+	public ShiftTemplate(String location, String region, DayOfWeek day_of_week, LocalTime start_time,
+			LocalTime end_time, Gender required_gender, List<String> required_skills, int empCount, int priority) {
 
-		
-	
-		this.location=location;
-		this.region=region;
-		this.dayOfWeek=day_of_week;
-		this.startTime=start_time;
-		this.endTime=end_time;
-		this.requiredGender=required_gender;
-		this.requiredSkills=required_skills;
-		this.empCount=empCount;
-		
-		
-		
+		this.location = location;
+		this.region = region;
+		this.dayOfWeek = day_of_week;
+		this.startTime = start_time;
+		this.endTime = end_time;
+		this.requiredGender = required_gender;
+		this.requiredSkills = required_skills;
+		this.empCount = empCount;
+		this.priority = priority;
+
 	}
 
 	public Integer getId() {
@@ -156,9 +156,10 @@ public class ShiftTemplate {
 
 	@Override
 	public String toString() {
-		return "Shift [id=" + id + ", region="+region+", location=" + location + ", shiftType=" + shiftType + ", day=" + dayOfWeek
-				+ ", startTime=" + startTime + ", endTime=" + endTime + ", totalHours=" + totalHours + ", gender="
-				+ requiredGender + "skills = " + requiredSkills + "empcount ="+empCount +"]";
+		return "Shift [id=" + id + ", region=" + region + ", location=" + location + ", shiftType=" + shiftType
+				+ ", day=" + dayOfWeek + ", startTime=" + startTime + ", endTime=" + endTime + ", totalHours="
+				+ totalHours + ", gender=" + requiredGender + "skills = " + requiredSkills + "empcount =" + empCount +" priority ="+priority
+				+ "]";
 	}
 
 	public String getRegion() {
@@ -216,6 +217,13 @@ public class ShiftTemplate {
 	public void setEmpCount(int empCount) {
 		this.empCount = empCount;
 	}
-	
+
+	public int getPriority() {
+		return priority;
+	}
+
+	public void setPriority(int priority) {
+		this.priority = priority;
+	}
 
 }

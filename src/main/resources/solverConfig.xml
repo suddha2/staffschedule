@@ -5,13 +5,30 @@
 	<environmentMode>FULL_ASSERT</environmentMode>
 	<scoreDirectorFactory>
 		<!-- <scoreDefinitionType>HARD_SOFT</scoreDefinitionType> -->
-		<constraintProviderClass>
-			com.midco.rota.opt.RotaConstraintProvider
-		</constraintProviderClass>
-		<constraintMatchEnabledPreference>ALWAYS
-		</constraintMatchEnabledPreference>
+		<constraintProviderClass>com.midco.rota.opt.RotaConstraintProvider</constraintProviderClass>
+		<constraintMatchEnabledPreference>ALWAYS</constraintMatchEnabledPreference>
+
+		<constraintMatchEnabled>true</constraintMatchEnabled>
+		<indictmentEnabled>true</indictmentEnabled>
+
 	</scoreDirectorFactory>
 	<termination>
-		<secondsSpentLimit>25</secondsSpentLimit>
+		<secondsSpentLimit>900</secondsSpentLimit>
+		<unimprovedSecondsSpentLimit>450</unimprovedSecondsSpentLimit>
 	</termination>
+	<bestScoreFeasible>true</bestScoreFeasible>
+	<moveThreadCount>AUTO</moveThreadCount>
+	<phase>
+		<constructionHeuristic>
+			<constructionHeuristicType>ALLOCATE_TO_ENTITY_FROM_VALUE_RANGE</constructionHeuristicType>
+		</constructionHeuristic>
+	</phase>
+	<phase>
+		<localSearch>
+			<localSearchType>LATE_ACCEPTANCE</localSearchType>
+			<acceptor>
+				<lateAcceptanceSize>300</lateAcceptanceSize>
+			</acceptor>
+		</localSearch>
+	</phase>
 </solver>

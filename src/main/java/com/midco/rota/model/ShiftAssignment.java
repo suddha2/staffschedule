@@ -1,5 +1,7 @@
 package com.midco.rota.model;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 import org.optaplanner.core.api.domain.entity.PlanningEntity;
@@ -21,11 +23,11 @@ import jakarta.persistence.Transient;
 @Entity(name = "rota_shift_assignment")
 @PlanningEntity
 public class ShiftAssignment {
-	
+
 	@Transient
 	@PlanningId
-    private String planningId ; 
-	
+	private String planningId;
+
 	@OneToOne(cascade = CascadeType.PERSIST)
 	private Shift shift;
 
@@ -36,13 +38,19 @@ public class ShiftAssignment {
 	@ManyToOne
 	@PlanningVariable(valueRangeProviderRefs = "employeeRange", nullable = true)
 	private Employee employee; // planning variable
-	
+
 	@ManyToOne
 	@JoinColumn(name = "rota_id")
 	@JsonIgnore
 	private Rota rota;
-	
-	public ShiftAssignment() { 
+
+	@Transient
+	private List<String> diagnosticReasons = new ArrayList<>();
+
+	@Transient
+	private List<String> unassignmentReasons = new ArrayList<>();
+
+	public ShiftAssignment() {
 	}
 
 	public ShiftAssignment(Shift shift) {
@@ -67,7 +75,6 @@ public class ShiftAssignment {
 		this.shift = shift;
 	}
 
-
 	public Employee getEmployee() {
 		return employee;
 	}
@@ -78,21 +85,24 @@ public class ShiftAssignment {
 
 	@Override
 	public String toString() {
-		return shift.getShiftTemplate().getLocation() + " " + shift.getShiftStart() + " "
-				+ shift.getShiftTemplate().getStartTime() + " -> "
+		return shift.getShiftTemplate().getLocation() + " " + shift.getShiftTemplate().getShiftType().toString() + " "
+				+ shift.getShiftStart() + " " + shift.getShiftTemplate().getStartTime() + " -> "
 				+ (employee == null ? "UNASSIGNED" : employee.toString());
 	}
-	@Override
-    public boolean equals(Object o) {
-        if (this == o) return true;
-        if (!(o instanceof ShiftAssignment)) return false;
-        return planningId.equals(((ShiftAssignment) o).planningId);
-    }
 
-    @Override
-    public int hashCode() {
-        return planningId.hashCode();
-    }
+	@Override
+	public boolean equals(Object o) {
+		if (this == o)
+			return true;
+		if (!(o instanceof ShiftAssignment))
+			return false;
+		return planningId.equals(((ShiftAssignment) o).planningId);
+	}
+
+	@Override
+	public int hashCode() {
+		return planningId.hashCode();
+	}
 
 	public String getPlanningId() {
 		return planningId;
@@ -109,4 +119,21 @@ public class ShiftAssignment {
 	public void setRota(Rota rota) {
 		this.rota = rota;
 	}
+
+	public List<String> getDiagnosticReasons() {
+		return diagnosticReasons;
+	}
+
+	public void setDiagnosticReasons(List<String> diagnosticReasons) {
+		this.diagnosticReasons = diagnosticReasons;
+	}
+
+	public List<String> getUnassignmentReasons() {
+		return unassignmentReasons;
+	}
+
+	public void setUnassignmentReasons(List<String> reasons) {
+		this.unassignmentReasons = reasons;
+	}
+
 }

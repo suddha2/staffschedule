@@ -1,18 +1,22 @@
 package com.midco.rota.service;
 
-import java.util.Comparator;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import org.optaplanner.core.api.score.ScoreExplanation;
 import org.optaplanner.core.api.score.ScoreManager;
 import org.optaplanner.core.api.score.buildin.hardsoft.HardSoftScore;
-import org.optaplanner.core.api.score.constraint.ConstraintMatch;
+import org.optaplanner.core.api.score.constraint.ConstraintMatchTotal;
 import org.optaplanner.core.api.score.constraint.Indictment;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import com.midco.rota.model.Employee;
 import com.midco.rota.model.Rota;
+import com.midco.rota.model.Shift;
+import com.midco.rota.model.ShiftAssignment;
+import com.midco.rota.model.ShiftTemplate;
 
 @Service
 public class RosterAnalysisService {
@@ -21,37 +25,78 @@ public class RosterAnalysisService {
 
 	public RosterAnalysisService(ScoreManager<Rota, HardSoftScore> scoreManager) {
 		this.scoreManager = scoreManager;
+
 	}
+
 	private static final Logger logger = LoggerFactory.getLogger(RosterAnalysisService.class);
 
 	public void printHighImpactViolations(Rota solution) {
-		ScoreExplanation<Rota, HardSoftScore> explanation = scoreManager.explain(solution);
-		Map<Object, Indictment<HardSoftScore>> indictmentMap = explanation.getIndictmentMap();
 
-		solution.getShiftAssignmentList().forEach(System.out::println);
+		long unassignedCount = solution.getShiftAssignmentList().stream().filter(sa -> sa.getEmployee() == null)
+				.count();
+		logger.debug("Unassigned shifts: {}", unassignedCount);
 
-		logger.info("=== High-Impact Violations Report ===");
+//		ScoreExplanation<Rota, HardSoftScore> explanation = scoreManager.explain(solution);
+//		Map<Object, Indictment<HardSoftScore>> indictmentMap = explanation.getIndictmentMap();
 
-		indictmentMap.entrySet().stream().sorted(Comparator.comparing(entry -> entry.getValue().getScore()))
-				.filter(entry -> {
-					HardSoftScore score = entry.getValue().getScore();
-					return score.getHardScore() < 0 || score.getSoftScore() < -10;
-				}).forEach(entry -> {
-					Object entity = entry.getKey();
-					Indictment<HardSoftScore> indictment = entry.getValue();
-					HardSoftScore score = indictment.getScore();
-
-					logger.info("🔴 Entity: " + entity);
-					logger.info("    Total Impact: " + score);
-
-					indictment.getConstraintMatchSet().stream().sorted(Comparator.comparing(ConstraintMatch::getScore))
-							.limit(3).forEach(match -> {
-								logger.info("    ⚠️ Constraint: " + match.getConstraintName());
-								logger.info("       Impact: " + match.getScore());
-								logger.info("       Justification: " + match.getJustificationList());
-							});
-
-					System.out.println();
-				});
+		logUnassignedShifts(solution);
+		
+		logUnassignedEmployees(solution);
+		
+		logConstraintViolations(solution,scoreManager);
 	}
+
+	public void logUnassignedShifts(Rota rota) {
+		rota.getShiftAssignmentList().stream().filter(sa -> sa.getEmployee() == null).forEach(sa -> {
+			Shift shift = sa.getShift();
+			ShiftTemplate template = shift.getShiftTemplate();
+			logger.info("❌ Unassigned Shift → Location: {},type: {}, Date: {}, Time: {}–{}, Required Skills: {}, Gender Requirement: {}",
+				    template.getLocation(),
+				    template.getShiftType(),
+				    shift.getShiftStart(),
+				    template.getStartTime(),
+				    template.getEndTime(),
+				    template.getRequiredSkills(),
+				    template.getRequiredGender());
+		});
+	}
+	
+	public void logUnassignedEmployees(Rota rota) {
+	    Map<Employee, Long> assignmentCount = rota.getShiftAssignmentList().stream()
+	        .filter(sa -> sa.getEmployee() != null)
+	        .collect(Collectors.groupingBy(ShiftAssignment::getEmployee, Collectors.counting()));
+
+	    rota.getEmployeeList().stream()
+	        .filter(emp -> assignmentCount.getOrDefault(emp, 0L) == 0)
+	        .forEach(emp -> {
+	            logger.info(emp.toString());
+	        });
+	}
+
+
+	public void logConstraintViolations(Rota rota, ScoreManager<Rota, HardSoftScore> scoreMgr) {
+	    ScoreExplanation<Rota, HardSoftScore> explanation = scoreMgr.explain(rota);
+
+	    logger.info("🔍 Constraint Violations:");
+	    for (ConstraintMatchTotal<?> match : explanation.getConstraintMatchTotalMap().values()) {
+	        if (match.getConstraintName().startsWith("Diagnostic")) {
+	            logger.info("  ⚠️ " + match.getConstraintName() + " | Matches: " + match.getConstraintMatchCount());
+	        }
+	    }
+
+	    logger.info("🧠 Indictments:");
+	    for (Map.Entry<Object, Indictment<HardSoftScore>> entry : explanation.getIndictmentMap().entrySet()) {
+	        Object entity = entry.getKey();
+	        Indictment<HardSoftScore> indictment = entry.getValue();
+
+	        if (!indictment.getConstraintMatchSet().isEmpty()) {
+	            logger.info("  🔸 Entity: " + entity +
+	                        " | Score impact: " + indictment.getScore() +
+	                        " | Constraints: " + indictment.getConstraintMatchSet().stream()
+	                            .map(cm -> cm.getConstraintName())
+	                            .collect(Collectors.toSet()));
+	        }
+	    }
+	}
+
 }

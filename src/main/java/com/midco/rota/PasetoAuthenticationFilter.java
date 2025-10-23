@@ -2,14 +2,18 @@ package com.midco.rota;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import com.midco.rota.service.PasetoTokenService;
 
+import dev.paseto.jpaseto.Claims;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -24,24 +28,28 @@ public class PasetoAuthenticationFilter extends OncePerRequestFilter {
 		this.tokenService = tokenService;
 	}
 
+	
+	
 	@Override
 	protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
 			throws ServletException, IOException {
-		String token = request.getHeader("Authorization");
-		if (token != null && token.startsWith("Bearer ")) {
+
+		String header = request.getHeader("Authorization");
+
+		if (header != null && header.startsWith("Bearer ")) {
 			try {
-				tokenService.validateToken(token.substring(7)).ifPresent(username -> {
-					UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(username, null,
-							List.of());
-					SecurityContextHolder.getContext().setAuthentication(auth);
-				});
+				UsernamePasswordAuthenticationToken auth = tokenService.parseToken(header.substring(7));
+
+				SecurityContextHolder.getContext().setAuthentication(auth);
+
 			} catch (TokenValidationException ex) {
 				response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
 				response.setContentType("application/json");
-				response.getWriter().write("{\"error\": \"" + ex.getMessage() + "\"}");
+				response.getWriter().write("{\"error\":\"" + ex.getMessage() + "\"}");
 				return;
 			}
 		}
+
 		chain.doFilter(request, response);
 	}
 }

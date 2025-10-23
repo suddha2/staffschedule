@@ -14,5 +14,7 @@ public interface DeferredSolveRequestRepository extends JpaRepository<DeferredSo
 	List<DeferredSolveRequest> findTop5ByOrderByCreatedAtDesc();
 
 	List<DeferredSolveRequest> findByRegion(String location);
+	
+	DeferredSolveRequest findByRotaId(Long id);
 
 }
