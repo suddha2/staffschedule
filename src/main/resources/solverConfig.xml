@@ -1,16 +1,12 @@
-<?xml version="1.0" encoding="UTF-8"?>
 <solver>
 	<solutionClass>com.midco.rota.model.Rota</solutionClass>
 	<entityClass>com.midco.rota.model.ShiftAssignment</entityClass>
 	<environmentMode>FULL_ASSERT</environmentMode>
 	<scoreDirectorFactory>
-		<!-- <scoreDefinitionType>HARD_SOFT</scoreDefinitionType> -->
-		<constraintProviderClass>com.midco.rota.opt.RotaConstraintProvider</constraintProviderClass>
-		<constraintMatchEnabledPreference>ALWAYS</constraintMatchEnabledPreference>
-
+		<constraintProviderClass>com.midco.rota.opt.RotaConstraintProvider
+		</constraintProviderClass>
 		<constraintMatchEnabled>true</constraintMatchEnabled>
 		<indictmentEnabled>true</indictmentEnabled>
-
 	</scoreDirectorFactory>
 	<termination>
 		<secondsSpentLimit>900</secondsSpentLimit>
@@ -18,10 +14,42 @@
 	</termination>
 	<bestScoreFeasible>true</bestScoreFeasible>
 	<moveThreadCount>AUTO</moveThreadCount>
+
 	<phase>
 		<constructionHeuristic>
-			<constructionHeuristicType>ALLOCATE_TO_ENTITY_FROM_VALUE_RANGE</constructionHeuristicType>
-		</constructionHeuristic>
+    <constructionHeuristicType>FIRST_FIT_DECREASING</constructionHeuristicType>
+    <entitySorterManner>DECREASING_DIFFICULTY</entitySorterManner>
+    <valueSorterManner>DECREASING_STRENGTH</valueSorterManner>
+</constructionHeuristic>
+	</phase>
+
+	<phase>
+		<localSearch>
+			<localSearchType>TABU_SEARCH</localSearchType>
+			<acceptor>
+				<entityTabuSize>50</entityTabuSize>
+				<valueTabuSize>15</valueTabuSize>
+			</acceptor>
+			<moveSelector>
+				<moveSelectorList>
+					<moveSelector>
+						<moveListFactoryClass>com.midco.rota.opt.FallbackSwapMoveFactory
+						</moveListFactoryClass>
+					</moveSelector>
+					<moveSelector>
+						<changeMoveSelector>
+							<valueSelector>
+								<variableName>employee</variableName>
+								<cacheType>PHASE</cacheType>
+								<selectionOrder>DECREASING_STRENGTH</selectionOrder>
+								<strengthComparatorClass>com.midco.rota.opt.EmployeeStrengthComparator
+								</strengthComparatorClass>
+							</valueSelector>
+						</changeMoveSelector>
+					</moveSelector>
+				</moveSelectorList>
+			</moveSelector>
+		</localSearch>
 	</phase>
 	<phase>
 		<localSearch>
@@ -29,6 +57,34 @@
 			<acceptor>
 				<lateAcceptanceSize>300</lateAcceptanceSize>
 			</acceptor>
+			<moveSelector>
+				<changeMoveSelector>
+					<valueSelector>
+						<variableName>employee</variableName>
+						<cacheType>PHASE</cacheType>
+						<selectionOrder>DECREASING_STRENGTH</selectionOrder>
+						<strengthComparatorClass>com.midco.rota.opt.EmployeeStrengthComparator
+						</strengthComparatorClass>
+					</valueSelector>
+				</changeMoveSelector>
+			</moveSelector>
 		</localSearch>
 	</phase>
+	<phase>
+    <localSearch>
+        <localSearchType>HILL_CLIMBING</localSearchType>
+        <moveSelector>
+            <changeMoveSelector>
+                <valueSelector>
+                    <variableName>employee</variableName>
+                    <cacheType>PHASE</cacheType>
+                    <selectionOrder>DECREASING_STRENGTH</selectionOrder>
+                    <strengthComparatorClass>com.midco.rota.opt.EmployeeStrengthComparator</strengthComparatorClass>
+                </valueSelector>
+            </changeMoveSelector>
+        </moveSelector>
+    </localSearch>
+</phase>
+	
+
 </solver>

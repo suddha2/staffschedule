@@ -306,9 +306,6 @@ public class Employee {
 		this.preferredShifts = preferredShifts;
 	}
 
-	public List<ShiftType> getRestrictedShifts() {
-		return restrictedShifts;
-	}
 
 	public void setRestrictedShifts(List<ShiftType> restrictedShifts) {
 		this.restrictedShifts = restrictedShifts;
