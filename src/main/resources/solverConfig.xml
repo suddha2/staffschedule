@@ -1,20 +1,20 @@
 <solver>
 	<solutionClass>com.midco.rota.model.Rota</solutionClass>
 	<entityClass>com.midco.rota.model.ShiftAssignment</entityClass>
-	<environmentMode>FULL_ASSERT</environmentMode>
+	<environmentMode>REPRODUCIBLE</environmentMode>
 	<scoreDirectorFactory>
 		<constraintProviderClass>com.midco.rota.opt.RotaConstraintProvider
 		</constraintProviderClass>
-		<constraintMatchEnabled>true</constraintMatchEnabled>
-		<indictmentEnabled>true</indictmentEnabled>
+		<constraintMatchEnabled>false</constraintMatchEnabled>
+		<indictmentEnabled>false</indictmentEnabled>
 	</scoreDirectorFactory>
 	<termination>
-		<secondsSpentLimit>900</secondsSpentLimit>
-		<unimprovedSecondsSpentLimit>450</unimprovedSecondsSpentLimit>
+		<secondsSpentLimit>1200</secondsSpentLimit>
+		<unimprovedSecondsSpentLimit>700</unimprovedSecondsSpentLimit>
 	</termination>
 	<bestScoreFeasible>true</bestScoreFeasible>
 	<moveThreadCount>AUTO</moveThreadCount>
-
+	<randomSeed>987654</randomSeed>
 	<phase>
 		<constructionHeuristic>
     <constructionHeuristicType>FIRST_FIT_DECREASING</constructionHeuristicType>
