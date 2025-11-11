@@ -1,21 +1,18 @@
 package com.midco.rota.controller;
 
 import java.io.BufferedWriter;
-import java.io.IOException;
 import java.io.OutputStreamWriter;
-import java.io.PrintWriter;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
@@ -25,14 +22,12 @@ import org.optaplanner.core.api.solver.SolverManager;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.simp.user.SimpUser;
 import org.springframework.messaging.simp.user.SimpUserRegistry;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContext;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.web.context.request.async.SecurityContextCallableProcessingInterceptor;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -40,9 +35,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.context.request.RequestContextHolder;
-import org.springframework.web.context.request.ServletRequestAttributes;
-import org.springframework.web.context.request.async.WebAsyncUtils;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -64,8 +56,6 @@ import com.midco.rota.service.PayCycleDataService;
 import com.midco.rota.service.RosterAnalysisService;
 import com.midco.rota.service.RosterUpdateService;
 import com.midco.rota.util.PayCycleRow;
-
-import jakarta.servlet.http.HttpServletResponse;
 
 @RestController
 @RequestMapping("/api")
@@ -163,52 +153,67 @@ public class RotaController {
 	@Transactional(readOnly = true)
 	@PreAuthorize("isAuthenticated()")
 	public ResponseEntity<StreamingResponseBody> getRotaForCSV(@RequestParam String id) {
-
 		Optional<Rota> rota = rotaRepository.findById(Long.valueOf(id));
-		if (rota.isEmpty())
+
+		if (rota.isEmpty()) {
 			return ResponseEntity.notFound().build();
+		}
 
 		DeferredSolveRequest dsr = deferredSolveRequestRepository.findByRotaId(rota.get().getId());
-		String outputFileName = dsr.getRegion() + "_"
-				+ dsr.getStartDate().format(DateTimeFormatter.ofPattern("yyyyMMdd")) + "_"
-				+ dsr.getEndDate().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+
+		// ✅ Build filename with null checks
+		String outputFileName;
+		if (dsr != null && dsr.getRegion() != null && dsr.getStartDate() != null && dsr.getEndDate() != null) {
+			outputFileName = dsr.getRegion() + "_" + dsr.getStartDate().format(DateTimeFormatter.ofPattern("yyyyMMdd"))
+					+ "_" + dsr.getEndDate().format(DateTimeFormatter.ofPattern("yyyyMMdd")) + ".csv";
+		} else {
+			// Fallback filename
+			outputFileName = "Rota_" + id + "_" + LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"))
+					+ ".csv";
+			System.err.println("Using fallback filename due to missing data: " + outputFileName);
+		}
+
+		System.out.println("Generated filename: " + outputFileName);
 
 		List<ShiftAssignment> saList = rota.get().getShiftAssignmentList();
-		System.out.println("Data rows count " + saList.size());
+		System.out.println("Data rows count: " + saList.size());
+
 		DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm");
 
 		StreamingResponseBody stream = out -> {
-			try (BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(out))) {
+			try (BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(out, StandardCharsets.UTF_8))) {
 				writer.write("Location,Shift Type,Start Date,End Date,Employee\n");
 
 				for (ShiftAssignment sa : saList) {
 					String empName = Optional.ofNullable(sa.getEmployee())
 							.map(e -> e.getFirstName() + " " + e.getLastName()).orElse("UnAssigned");
-					
-					LocalDateTime shiftStart =LocalDateTime.of(sa.getShift().getShiftStart(), sa.getShift().getShiftTemplate().getStartTime());
-					LocalDateTime shiftEnd =LocalDateTime.of(sa.getShift().getShiftEnd(), sa.getShift().getShiftTemplate().getEndTime());
-		
+
+					LocalDateTime shiftStart = LocalDateTime.of(sa.getShift().getShiftStart(),
+							sa.getShift().getShiftTemplate().getStartTime());
+					LocalDateTime shiftEnd = LocalDateTime.of(sa.getShift().getShiftEnd(),
+							sa.getShift().getShiftTemplate().getEndTime());
+
 					writer.write(String.join(",", escapeCsv(sa.getShift().getShiftTemplate().getLocation()),
 							escapeCsv(sa.getShift().getShiftTemplate().getShiftType().name()),
-							escapeCsv(shiftStart.format(formatter)),
-							escapeCsv(shiftEnd.format(formatter)), escapeCsv(empName)) + "\n");
+							escapeCsv(shiftStart.format(formatter)), escapeCsv(shiftEnd.format(formatter)),
+							escapeCsv(empName)) + "\n");
 				}
 
 				writer.flush();
-				out.flush();
-				System.out.println("Streaming finished");
+				System.out.println("Streaming finished successfully");
 			} catch (Exception e) {
-				System.out.println("Streaming failed" + e);
+				System.err.println("Streaming failed: " + e.getMessage());
+				e.printStackTrace();
 			}
 		};
-		return ResponseEntity.ok()
-				.header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + outputFileName + ".csv\"")
-				.header(HttpHeaders.CONTENT_TYPE, "text/csv").header(HttpHeaders.CACHE_CONTROL, "no-store")
-				.body(stream);
 
-//		return ResponseEntity.ok()
-//				.header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + outputFileName + ".csv\"")
-//				.contentType(MediaType.parseMediaType("text/csv")).body(stream);
+		HttpHeaders headers = new HttpHeaders();
+		// ✅ Simple, standard format - no RFC encoding
+		headers.add(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + outputFileName); // No quotes!
+		headers.setContentType(MediaType.parseMediaType("text/csv"));
+		headers.setCacheControl("no-store");
+
+		return ResponseEntity.ok().headers(headers).body(stream);
 	}
 
 	@PostMapping("/solveAsync")
