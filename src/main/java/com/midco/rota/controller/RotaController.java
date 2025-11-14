@@ -3,6 +3,7 @@ package com.midco.rota.controller;
 import java.io.BufferedWriter;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -182,21 +183,28 @@ public class RotaController {
 
 		StreamingResponseBody stream = out -> {
 			try (BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(out, StandardCharsets.UTF_8))) {
-				writer.write("Location,Shift Type,Start Date,End Date,Employee\n");
+				writer.write("Location,Shift Type,Start Date,End Date,Duration,First Name,Last Name\n");
 
 				for (ShiftAssignment sa : saList) {
-					String empName = Optional.ofNullable(sa.getEmployee())
-							.map(e -> e.getFirstName() + " " + e.getLastName()).orElse("UnAssigned");
+
+					String firstName = Optional.ofNullable(sa.getEmployee()).map(Employee::getFirstName)
+							.filter(s -> !s.isBlank()).orElse("UnAssigned");
+
+					String lastName = Optional.ofNullable(sa.getEmployee()).map(Employee::getLastName)
+							.filter(s -> !s.isBlank()).orElse("");
 
 					LocalDateTime shiftStart = LocalDateTime.of(sa.getShift().getShiftStart(),
 							sa.getShift().getShiftTemplate().getStartTime());
 					LocalDateTime shiftEnd = LocalDateTime.of(sa.getShift().getShiftEnd(),
 							sa.getShift().getShiftTemplate().getEndTime());
 
+					Duration duration = Duration.between(shiftStart, shiftEnd);
+
 					writer.write(String.join(",", escapeCsv(sa.getShift().getShiftTemplate().getLocation()),
 							escapeCsv(sa.getShift().getShiftTemplate().getShiftType().name()),
 							escapeCsv(shiftStart.format(formatter)), escapeCsv(shiftEnd.format(formatter)),
-							escapeCsv(empName)) + "\n");
+							escapeCsv(String.valueOf(duration.toMinutes() / 60.0)), escapeCsv(firstName),
+							escapeCsv(lastName)) + "\n");
 				}
 
 				writer.flush();

@@ -136,10 +136,15 @@ public class PaycycleStatsService {
 	}
 
 	public List<EmployeeShiftStatDTO> generateEmpSummary(Long rotaId) {
+		
+		
+		DeferredSolveRequest deferredSolveRequest = deferredSolveRequestRepository.findByRotaId(rotaId);
 		Optional<Rota> rotaOpt = rotaRepository.findById(rotaId);
 		if (rotaOpt.isEmpty()) {
 			return Collections.emptyList();
 		}
+		
+	
 
 		Rota rota = rotaOpt.get();
 		List<Employee> employees = rota.getEmployeeList();
@@ -147,7 +152,7 @@ public class PaycycleStatsService {
 
 		// Group assignments by employee → weekStart → shiftType
 		Map<String, Map<LocalDate, Map<ShiftType, ShiftSummaryDTO>>> empWeekMap = new HashMap<>();
-
+		
 		for (ShiftAssignment a : assignments) {
 			Employee emp = a.getEmployee();
 			if (emp == null)
@@ -192,8 +197,8 @@ public class PaycycleStatsService {
 
 				weeklyStats.add(new WeeklyShiftStatDTO(weekNumber, start, end, entry.getValue()));
 			}
-
-			result.add(new EmployeeShiftStatDTO(name, emp.getContractType(), weeklyStats));
+			
+			result.add(new EmployeeShiftStatDTO(name, emp.getContractType(),deferredSolveRequest.getRegion(),emp.getRateCode(), weeklyStats));
 		}
 
 		return result;

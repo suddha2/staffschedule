@@ -22,7 +22,7 @@ import jakarta.persistence.Table;
 
 @Entity
 @Table(name = "shift_templates")
-@NamedQuery(name = "ShiftTemplate.findAllRegion", query = "select distinct s.region from ShiftTemplate s order by 1")
+@NamedQuery(name = "ShiftTemplate.findAllRegion", query = "select distinct s.region from ShiftTemplate s where active=true order by 1")
 
 public class ShiftTemplate {
 
@@ -72,6 +72,9 @@ public class ShiftTemplate {
 	@Column(name = "allocation_priority")
 	private int priority;
 
+	@Column(name="active")
+	private boolean active;
+	
 	public ShiftTemplate() {
 	}
 
@@ -87,6 +90,7 @@ public class ShiftTemplate {
 		this.requiredSkills = required_skills;
 		this.empCount = empCount;
 		this.priority = priority;
+		this.active=true;
 
 	}
 
@@ -224,6 +228,14 @@ public class ShiftTemplate {
 
 	public void setPriority(int priority) {
 		this.priority = priority;
+	}
+
+	public boolean isActive() {
+		return active;
+	}
+
+	public void setActive(boolean active) {
+		this.active = active;
 	}
 
 }
