@@ -19,20 +19,17 @@ import org.optaplanner.core.api.score.stream.ConstraintProvider;
 import org.optaplanner.core.api.score.stream.Joiners;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 
 import com.midco.rota.ShiftTypeLimitConfig;
 import com.midco.rota.model.Employee;
 import com.midco.rota.model.ShiftAssignment;
-import com.midco.rota.service.PeriodService;
 import com.midco.rota.util.ContractType;
 import com.midco.rota.util.Gender;
 import com.midco.rota.util.ShiftType;
 
 public class RotaConstraintProvider implements ConstraintProvider {
 
-	@Autowired
-	private PeriodService periodService;
+
 	
 	private static final Logger logger = LoggerFactory.getLogger(RotaConstraintProvider.class);
 
@@ -556,7 +553,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 					String loc1 = sa1.getShift().getShiftTemplate().getLocation();
 					String loc2 = sa2.getShift().getShiftTemplate().getLocation();
 					return !loc1.equals(loc2);
-				}).penalize(HardSoftScore.ofSoft(1500000))  
+				}).penalize(HardSoftScore.ofSoft(500000))  
 				.asConstraint("Penalize daily location switches");
 	}
 
@@ -571,7 +568,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 							LocalDate date2 = sa2.getShift().getShiftStart();
 							return date2.equals(date1.plusDays(1));
 						}))
-				.reward(HardSoftScore.ofSoft(500000)).asConstraint("Reward consecutive days at same location");
+				.reward(HardSoftScore.ofSoft(100000)).asConstraint("Reward consecutive days at same location");
 	}
 
 	private Constraint limitLocationChangesPerWeek(ConstraintFactory factory) {
