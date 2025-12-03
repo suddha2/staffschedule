@@ -85,6 +85,6 @@ public class RosterUpdateService {
 
 		// Push updates and log violations
 		//this.pushUpdate(deferredSolveRequest);
-		rosterAnalysisService.printHighImpactViolations(bestSolution);
+		//rosterAnalysisService.printHighImpactViolations(bestSolution);
 	}
 }

@@ -52,15 +52,14 @@ import com.midco.rota.repository.EmployeeRepository;
 import com.midco.rota.repository.RotaRepository;
 import com.midco.rota.repository.ShiftRepository;
 import com.midco.rota.repository.ShiftTemplateRepository;
-import com.midco.rota.service.ConstraintExplanationService;
-import com.midco.rota.service.PayCycleDataService;
-import com.midco.rota.service.RosterAnalysisService;
-import com.midco.rota.service.RosterUpdateService;
+import com.midco.rota.service.*;
 import com.midco.rota.util.PayCycleRow;
 
 @RestController
 @RequestMapping("/api")
 public class RotaController {
+
+	private final PeriodService periodService;
 
 	private final ShiftRepository shiftRepository;
 
@@ -83,7 +82,8 @@ public class RotaController {
 			ConstraintExplanationService explanationService, RosterAnalysisService rosterAnalysisService,
 			EmployeeRepository employeeRepository, ShiftTemplateRepository shiftTemplateRepository,
 			DeferredSolveRequestRepository deferredSolveRequestRepository, AuthController authController,
-			RotaRepository rotaRepository, ShiftRepository shiftRepository, PayCycleDataService payCycleDataService) {
+			RotaRepository rotaRepository, ShiftRepository shiftRepository, PayCycleDataService payCycleDataService,
+			PeriodService periodService) {
 		this.solverManager = solverManager;
 		this.updateService = updateService;
 		this.explanationService = explanationService;
@@ -95,6 +95,7 @@ public class RotaController {
 		this.rotaRepository = rotaRepository;
 		this.shiftRepository = shiftRepository;
 		this.payCycleDataService = payCycleDataService;
+		this.periodService = periodService;
 
 	}
 
@@ -338,7 +339,7 @@ public class RotaController {
 
 		if (rota.isPresent()) {
 
-			return ResponseEntity.ok(rota.get());
+			return ResponseEntity.ok((Rota)rota.get());
 		} else {
 			return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "Rota not found for ID: " + id));
 		}
@@ -392,7 +393,7 @@ public class RotaController {
 			LocalDate current = startDate;
 			while (!current.isAfter(endDate)) {
 				if (current.getDayOfWeek().equals(template.getDayOfWeek())) {
-					instances.add(new Shift(current, template));
+					instances.add(new Shift(current, template, periodService.getAbsoluteWeekNumber(current)));
 
 				}
 				current = current.plusDays(1);

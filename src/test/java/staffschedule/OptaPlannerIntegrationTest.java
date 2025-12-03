@@ -44,14 +44,18 @@ public class OptaPlannerIntegrationTest {
 	@Test
 	void optaIntegrationsTest() {
 
-		Optional<DeferredSolveRequest> deferredSolveRequest = deferredSolveRequestRepository.findById(31L);
+		Optional<DeferredSolveRequest> deferredSolveRequest = deferredSolveRequestRepository.findById(106L);
 		System.out.println("Has data to process : " + !deferredSolveRequest.isEmpty());
 		long rand = new Random().nextLong();
 		Rota problem = solverTrigger.loadData(deferredSolveRequest.get());
 
-		Rota testingProblem = new Rota(problem.getEmployeeList(), problem.getShiftAssignmentList().stream().toList());
+		System.out.println("Emp pool size :" + problem.getEmployeeList().size());
+		System.out.println("Claydon specific shift count : " + problem.getShiftAssignmentList().stream()
+				.filter(sa -> sa.getShift().getShiftTemplate().getLocation().equals("9 CLAYDON")).toList());
+		Rota testingProblem = new Rota(problem.getEmployeeList(), problem.getShiftAssignmentList().stream()
+				.filter(sa -> sa.getShift().getShiftTemplate().getLocation().equals("9 CLAYDON")).toList());
 
-		System.out.println("Emplist count=" + testingProblem.getEmployeeList().size());
+//		System.out.println("Emplist count=" + testingProblem.getEmployeeList().size());
 
 //		Optional<Employee> emp = empRep.findById(294);
 //		problem.getShiftAssignmentList().forEach(sa->{sa.setEmployee(emp.get());});

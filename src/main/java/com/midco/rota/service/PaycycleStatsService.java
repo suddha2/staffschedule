@@ -71,6 +71,11 @@ public class PaycycleStatsService {
 			if (template == null)
 				continue;
 
+			// ✅ CHANGE 1: Exclude SLEEP_IN from service statistics
+			if (template.getShiftType() == ShiftType.SLEEP_IN) {
+				continue;
+			}
+
 			String region = template.getRegion();
 			String location = template.getLocation();
 			ShiftType type = template.getShiftType();
@@ -136,15 +141,12 @@ public class PaycycleStatsService {
 	}
 
 	public List<EmployeeShiftStatDTO> generateEmpSummary(Long rotaId) {
-		
-		
+
 		DeferredSolveRequest deferredSolveRequest = deferredSolveRequestRepository.findByRotaId(rotaId);
 		Optional<Rota> rotaOpt = rotaRepository.findById(rotaId);
 		if (rotaOpt.isEmpty()) {
 			return Collections.emptyList();
 		}
-		
-	
 
 		Rota rota = rotaOpt.get();
 		List<Employee> employees = rota.getEmployeeList();
@@ -152,7 +154,7 @@ public class PaycycleStatsService {
 
 		// Group assignments by employee → weekStart → shiftType
 		Map<String, Map<LocalDate, Map<ShiftType, ShiftSummaryDTO>>> empWeekMap = new HashMap<>();
-		
+
 		for (ShiftAssignment a : assignments) {
 			Employee emp = a.getEmployee();
 			if (emp == null)
@@ -161,6 +163,12 @@ public class PaycycleStatsService {
 			String name = emp.getName();
 			Shift shift = a.getShift();
 			ShiftType type = shift.getShiftTemplate().getShiftType();
+
+			// ✅ CHANGE 2: Exclude SLEEP_IN from employee statistics
+			if (type == ShiftType.SLEEP_IN) {
+				continue;
+			}
+
 			BigDecimal hours = shift.getDurationInHours(); // must be BigDecimal
 
 			LocalDate shiftDate = shift.getShiftStart();
@@ -197,11 +205,16 @@ public class PaycycleStatsService {
 
 				weeklyStats.add(new WeeklyShiftStatDTO(weekNumber, start, end, entry.getValue()));
 			}
-			
-			result.add(new EmployeeShiftStatDTO(name, emp.getContractType(),deferredSolveRequest.getRegion(),emp.getRateCode(), weeklyStats));
+
+			result.add(new EmployeeShiftStatDTO(name, emp.getContractType(), deferredSolveRequest.getRegion(),
+					emp.getRateCode(), weeklyStats));
 		}
 
 		return result;
 	}
 
+	public DeferredSolveRequest getRegionPeriodDetailForRotaID(Long rotaId) {
+		DeferredSolveRequest deferredSolveRequest = deferredSolveRequestRepository.findByRotaId(rotaId);
+		return deferredSolveRequest;
+	}
 }

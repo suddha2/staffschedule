@@ -31,7 +31,7 @@ public class PayCycleDataService {
 	@Autowired
 	private RotaRepository rotaRepository;
 
-	public record PeriodKey(LocalDate start, LocalDate end) {
+	public record PeriodKey(LocalDate start, LocalDate end, String region) {
 		@Override
 		public boolean equals(Object o) {
 			if (this == o)
@@ -84,11 +84,11 @@ public class PayCycleDataService {
 		List<DeferredSolveRequest> dsr = deferredSolveRequestRepository.findByRegion(location);
 
 		Map<PeriodKey, List<DeferredSolveRequest>> requestsByPeriod = dsr.stream()
-				.collect(Collectors.groupingBy(r -> new PeriodKey(r.getStartDate(), r.getEndDate())));
+				.collect(Collectors.groupingBy(r -> new PeriodKey(r.getStartDate(), r.getEndDate(),location)));
 
 		List<PayCycleRow> enriched = pcr.stream().map(row -> {
 
-			PeriodKey key = new PeriodKey(row.getStartDate(), row.getEndDate());
+			PeriodKey key = new PeriodKey(row.getStartDate(), row.getEndDate(),location);
 
 			List<DeferredSolveRequest> matches = requestsByPeriod.getOrDefault(key, List.of());
 

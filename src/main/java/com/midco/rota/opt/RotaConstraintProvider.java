@@ -1,10 +1,7 @@
 package com.midco.rota.opt;
 
 import java.time.DayOfWeek;
-import java.time.Duration;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.time.temporal.WeekFields;
 import java.util.Comparator;
 import java.util.List;
@@ -19,64 +16,61 @@ import org.optaplanner.core.api.score.stream.ConstraintProvider;
 import org.optaplanner.core.api.score.stream.Joiners;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import com.midco.rota.ShiftTypeLimitConfig;
 import com.midco.rota.model.Employee;
 import com.midco.rota.model.ShiftAssignment;
+import com.midco.rota.service.PeriodService;
 import com.midco.rota.util.ContractType;
 import com.midco.rota.util.Gender;
 import com.midco.rota.util.ShiftType;
 
 public class RotaConstraintProvider implements ConstraintProvider {
 
+	@Autowired
+	private PeriodService periodService;
 
-	
 	private static final Logger logger = LoggerFactory.getLogger(RotaConstraintProvider.class);
 
 	@Override
 	public Constraint[] defineConstraints(ConstraintFactory factory) {
 		return new Constraint[] {
-				  // HARD constraints - Must be satisfied
-		        unassignedShiftConstraint(factory), 
-		        preventDuplicateAssignments(factory), 
-		        genderConstraint(factory),
-		        restrictedDayOfWeekConstraint(factory), 
-		        restrictedShiftTypeConstraint(factory),
-		        restrictedServiceConstraint(factory), 
-		        maxWeeklyHoursConstraint(factory),
-		        tooManyEmployeesPerShift(factory), 
-		        maxHoursPerShiftTypePerDay(factory),
-		        limitWeeklyShiftTypeCounts(factory), 
-		        maxShiftsPerLocationPerWeek(factory), 
-		        noBackToBack(factory),
-		        maxDaysOnIn4Weeks(factory), 
-		        minDaysOffIn4Weeks(factory), 
-		        maxConsecutiveWeeksOn(factory),
-		        minWeeksOffAfterStreak(factory), 
-		        maxMonthlyHoursWithExclusions(factory),
-		        employeeSchedulePatternConstraint(factory), 
-		        employeeMaxHours(factory),
-		        minDaysPerLocationPerWeek(factory),
-		        weekOnWeekOffPattern(factory),
-		        maxLocationsPerEmployeePerPeriod(factory),  // ✅ Keep this in HARD
-		        // ❌ REMOVE preferFewerLocationsPerPeriod from here
-		        
-		        // SOFT constraints - Optimization goals
-		        rewardAssignedShift(factory), 
-		        minWeeklyHoursConstraint(factory), 
-		        preferedWorkingDaysConstraint(factory),
-		        preferedShiftTypeConstraint(factory), 
-		        prioritizedAllocation(factory),
-		        prioritizeHighPriorityLocations(factory), 
-		        rewardZeroHoursAssignments(factory),
-		        encourageBalancedHours(factory), 
-		        penalizeOverloading(factory), 
-		        maxDaysPerLocationPerWeek(factory),
-		        penalizeDailyLocationSwitches(factory), 
-		        rewardConsecutiveDaysAtLocation(factory),
-		        limitLocationChangesPerWeek(factory), 
-		        locationPreferences(factory),
-		        
+				// HARD constraints - Must be satisfied
+				unassignedShiftConstraint(factory), 
+				preventDuplicateAssignments(factory), 
+				genderConstraint(factory),
+				restrictedDayOfWeekConstraint(factory), 
+				restrictedShiftTypeConstraint(factory),
+				restrictedServiceConstraint(factory), 
+				maxWeeklyHoursConstraint(factory),
+				tooManyEmployeesPerShift(factory), 
+				maxHoursPerShiftTypePerDay(factory),
+				limitWeeklyShiftTypeCounts(factory), 
+				noBackToBack(factory),
+				//maxShiftsPerLocationPerWeek(factory), 
+				//maxDaysOnIn4Weeks(factory), 
+				//minDaysOffIn4Weeks(factory), 
+				//maxConsecutiveWeeksOn(factory),
+				//minWeeksOffAfterStreak(factory), 
+				//maxMonthlyHoursWithExclusions(factory),
+				//employeeSchedulePatternConstraint(factory), 
+				//weekOnWeekOffPattern(factory),
+				employeeMaxHours(factory),
+				minDaysPerLocationPerWeek(factory),
+				//maxLocationsPerEmployeePerPeriod(factory), // ✅ Keep this in HARD
+				// ❌ REMOVE preferFewerLocationsPerPeriod from here
+
+				// SOFT constraints - Optimization goals
+				rewardAssignedShift(factory), minWeeklyHoursConstraint(factory), preferedWorkingDaysConstraint(factory),
+				preferedShiftTypeConstraint(factory), prioritizedAllocation(factory),
+				prioritizeHighPriorityLocations(factory), rewardZeroHoursAssignments(factory),
+				encourageBalancedHours(factory), penalizeOverloading(factory), 
+				maxDaysPerLocationPerWeek(factory),
+				//penalizeDailyLocationSwitches(factory), 
+				//rewardConsecutiveDaysAtLocation(factory),
+				//limitLocationChangesPerWeek(factory),
+				locationPreferences(factory),
 
 		};
 	}
@@ -85,8 +79,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 		return factory.forEach(ShiftAssignment.class).filter(sa -> sa.getEmployee() != null)
 				.filter(sa -> sa.getEmployee().getMinHrs() != null)
 				// ✅ Exclude SLEEP_IN if you determined you need this
-				 .filter(sa -> sa.getShift().getShiftTemplate().getShiftType() !=
-				 ShiftType.SLEEP_IN)
+				.filter(sa -> sa.getShift().getShiftTemplate().getShiftType() != ShiftType.SLEEP_IN)
 				.groupBy(ShiftAssignment::getEmployee,
 						ConstraintCollectors.sumLong(sa -> sa.getShift().getDurationInMins()))
 				.filter((emp, totalMins) -> {
@@ -265,9 +258,9 @@ public class RotaConstraintProvider implements ConstraintProvider {
 	private Constraint noBackToBack(ConstraintFactory factory) {
 		return factory.forEach(ShiftAssignment.class)
 				.join(ShiftAssignment.class, Joiners.equal(ShiftAssignment::getEmployee),
-						Joiners.lessThan(assignment -> assignment.getShift().getShiftStart()))
-				.filter((sa1, sa2) -> isBackToBack(sa1, sa2)).penalize(HardSoftScore.ofSoft(50000))
-				.asConstraint("No back-to-back shifts");
+						Joiners.lessThan(sa -> sa.getShift().getShiftStart()))
+				.filter((sa1, sa2) -> areIncompatibleBackToBack(sa1, sa2)).penalize(HardSoftScore.ofHard(1))
+				.asConstraint("No incompatible back-to-back shifts");
 	}
 
 	private Constraint maxDaysOnIn4Weeks(ConstraintFactory factory) {
@@ -367,7 +360,6 @@ public class RotaConstraintProvider implements ConstraintProvider {
 		}).reward(HardSoftScore.ONE_SOFT).asConstraint("Prefer working on preferred days");
 	}
 
-
 	private Constraint preferedShiftTypeConstraint(ConstraintFactory factory) {
 		return factory.forEachIncludingNullVars(ShiftAssignment.class).filter(sa -> {
 			Employee emp = sa.getEmployee();
@@ -451,69 +443,78 @@ public class RotaConstraintProvider implements ConstraintProvider {
 
 	// ========== HELPER METHODS ==========
 
-	private boolean isBackToBack(ShiftAssignment sa1, ShiftAssignment sa2) {
+	private boolean areIncompatibleBackToBack(ShiftAssignment sa1, ShiftAssignment sa2) {
 		LocalDate date1 = sa1.getShift().getShiftStart();
 		LocalDate date2 = sa2.getShift().getShiftStart();
-
-		LocalTime start1 = sa1.getShift().getShiftTemplate().getStartTime();
-		LocalTime end1 = sa1.getShift().getShiftTemplate().getEndTime();
-		LocalTime start2 = sa2.getShift().getShiftTemplate().getStartTime();
-		LocalTime end2 = sa2.getShift().getShiftTemplate().getEndTime();
-
-		if (start1 == null || end1 == null || start2 == null || end2 == null) {
-			return false;
-		}
 
 		ShiftType type1 = sa1.getShift().getShiftTemplate().getShiftType();
 		ShiftType type2 = sa2.getShift().getShiftTemplate().getShiftType();
 
-		// Same-day adjacent shift types
-		if (date1.equals(date2) && Math.abs(type1.ordinal() - type2.ordinal()) == 1) {
-			return true;
+		// ========== ALLOWED EXCEPTIONS ==========
+
+		// Exception 1: SLEEP_IN always allowed (live-in care)
+		if (type1 == ShiftType.SLEEP_IN || type2 == ShiftType.SLEEP_IN) {
+			return false; // ✅ Allow LONG_DAY + SLEEP_IN
 		}
 
-		// Overnight transition
-		if (date1.plusDays(1).equals(date2) && type1 == ShiftType.WAKING_NIGHT
-				&& (type2 == ShiftType.DAY || type2 == ShiftType.LONG_DAY)) {
-			return true;
+		// Exception 2: FLOATING + FLOATING same day allowed
+		if (type1 == ShiftType.FLOATING && type2 == ShiftType.FLOATING && date1.equals(date2)) {
+			return false; // ✅ Allow multiple FLOATING same day
 		}
 
-		// Overlapping shifts on same day
-		if (date1.equals(date2) && start1.isBefore(end2) && end1.isAfter(start2)) {
-			return true;
+		// ========== CHECK PROXIMITY ==========
+
+		boolean sameDay = date1.equals(date2);
+		boolean nextDay = date1.plusDays(1).equals(date2);
+
+		if (!sameDay && !nextDay) {
+			return false; // Not close enough
 		}
 
-		// Short rest period (<12 hours)
-		LocalDateTime shift1End = sa1.getShift().getShiftEnd().atTime(sa1.getShift().getShiftTemplate().getEndTime());
-		LocalDateTime shift2Start = sa2.getShift().getShiftStart()
-				.atTime(sa2.getShift().getShiftTemplate().getStartTime());
+		// ========== FORBIDDEN COMBINATIONS ==========
 
-		if (shift1End.isBefore(shift2Start) || shift1End.equals(shift2Start)) {
-			long restHours = Duration.between(shift1End, shift2Start).toHours();
-			if (restHours < 12) {
-				return true;
+		// LONG_DAY cannot be followed by active shifts
+		if (type1 == ShiftType.LONG_DAY) {
+			if (type2 == ShiftType.DAY || type2 == ShiftType.WAKING_NIGHT || type2 == ShiftType.FLOATING) {
+				return true; // ❌ Forbidden
 			}
 		}
 
-		return false;
+		// DAY cannot be followed by active shifts same day
+		if (type1 == ShiftType.DAY && sameDay) {
+			if (type2 == ShiftType.DAY || type2 == ShiftType.WAKING_NIGHT || type2 == ShiftType.FLOATING) {
+				return true; // ❌ Forbidden
+			}
+		}
+
+		// DAY cannot be followed by WAKING_NIGHT next day
+		if (type1 == ShiftType.DAY && nextDay && type2 == ShiftType.WAKING_NIGHT) {
+			return true; // ❌ Forbidden
+		}
+
+		// WAKING_NIGHT cannot be followed by DAY/LONG_DAY next morning
+		if (type1 == ShiftType.WAKING_NIGHT && nextDay) {
+			if (type2 == ShiftType.DAY || type2 == ShiftType.LONG_DAY) {
+				return true; // ❌ Forbidden (night to morning)
+			}
+		}
+
+		return false; // All other combinations allowed
 	}
+
 	private Constraint weekOnWeekOffPattern(ConstraintFactory factory) {
-	    return factory.forEach(ShiftAssignment.class)
-	        .filter(sa -> sa.getEmployee() != null)
-	        .filter(sa -> {
-	            Employee emp = sa.getEmployee();
-	            return emp.getWeekOn() != null && emp.getWeekOff() != null;
-	        })
-	        .filter(sa -> {
-	            Employee emp = sa.getEmployee();
-	            Integer absoluteWeek = sa.getShift().getAbsoluteWeek(); // ✅ Calls transient getter
-	            
-	            if (absoluteWeek == null) return false;
-	            
-	            return !emp.shouldBeWorkingInAbsoluteWeek(absoluteWeek);
-	        })
-	        .penalize(HardSoftScore.ONE_HARD)
-	        .asConstraint("Week-on week-off pattern");
+		return factory.forEach(ShiftAssignment.class).filter(sa -> sa.getEmployee() != null).filter(sa -> {
+			Employee emp = sa.getEmployee();
+			return emp.getWeekOn() != null && emp.getWeekOff() != null;
+		}).filter(sa -> {
+			Employee emp = sa.getEmployee();
+			Integer absoluteWeek = sa.getShift().getAbsoluteWeek(); // ✅ Calls transient getter
+
+			if (absoluteWeek == null)
+				return false;
+
+			return !emp.shouldBeWorkingInAbsoluteWeek(absoluteWeek);
+		}).penalize(HardSoftScore.ONE_HARD).asConstraint("Week-on week-off pattern");
 	}
 
 	private Constraint minDaysPerLocationPerWeek(ConstraintFactory factory) {
@@ -522,8 +523,13 @@ public class RotaConstraintProvider implements ConstraintProvider {
 				.groupBy(ShiftAssignment::getEmployee, sa -> sa.getShift().getShiftTemplate().getLocation(),
 						sa -> getWeekNumber(sa.getShift().getShiftStart()),
 						ConstraintCollectors.countDistinct(sa -> sa.getShift().getShiftStart()))
-				.filter((emp, location, weekNum, dayCount) -> dayCount == 1)
-				.penalize(HardSoftScore.ofSoft(200000))  // ✅ FIXED: Changed from HARD to SOFT
+				.filter((emp, location, weekNum, dayCount) -> dayCount == 1).penalize(HardSoftScore.ofSoft(200000)) // ✅
+																													// FIXED:
+																													// Changed
+																													// from
+																													// HARD
+																													// to
+																													// SOFT
 				.asConstraint("Min 2 days per location per week (SOFT)");
 	}
 
@@ -553,8 +559,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 					String loc1 = sa1.getShift().getShiftTemplate().getLocation();
 					String loc2 = sa2.getShift().getShiftTemplate().getLocation();
 					return !loc1.equals(loc2);
-				}).penalize(HardSoftScore.ofSoft(500000))  
-				.asConstraint("Penalize daily location switches");
+				}).penalize(HardSoftScore.ofSoft(1500000)).asConstraint("Penalize daily location switches");
 	}
 
 	private Constraint rewardConsecutiveDaysAtLocation(ConstraintFactory factory) {
@@ -568,7 +573,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 							LocalDate date2 = sa2.getShift().getShiftStart();
 							return date2.equals(date1.plusDays(1));
 						}))
-				.reward(HardSoftScore.ofSoft(100000)).asConstraint("Reward consecutive days at same location");
+				.reward(HardSoftScore.ofSoft(500000)).asConstraint("Reward consecutive days at same location");
 	}
 
 	private Constraint limitLocationChangesPerWeek(ConstraintFactory factory) {
@@ -576,7 +581,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 				.filter(sa -> sa.getShift().getShiftTemplate().getShiftType() != ShiftType.SLEEP_IN)
 				.groupBy(ShiftAssignment::getEmployee, sa -> getWeekNumber(sa.getShift().getShiftStart()),
 						ConstraintCollectors.countDistinct(sa -> sa.getShift().getShiftTemplate().getLocation()))
-				.penalize(HardSoftScore.ofSoft(1000), (emp, weekNum, locationCount) -> {  // ✅ REDUCED: From 2000 to 1000
+				.penalize(HardSoftScore.ofSoft(1000), (emp, weekNum, locationCount) -> { // ✅ REDUCED: From 2000 to 1000
 					if (locationCount <= 2) {
 						return 0; // Perfect - 1 or 2 locations
 					} else if (locationCount == 3) {
@@ -609,7 +614,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 		return factory.forEach(ShiftAssignment.class).filter(sa -> sa.getEmployee() != null)
 				.filter(sa -> applicableTypes.contains(sa.getShift().getShiftTemplate().getShiftType()))
 				// ✅ KEY FIX: Only filter for employees WITH preferences
-				.filter(sa -> sa.getEmployee().hasServicePreferences()).reward(HardSoftScore.ofSoft(10000), sa -> { 
+				.filter(sa -> sa.getEmployee().hasServicePreferences()).reward(HardSoftScore.ofSoft(100000), sa -> {
 					Employee emp = sa.getEmployee();
 					String location = sa.getShift().getShiftTemplate().getLocation();
 					int weightage = emp.getServiceWeightage(location);
@@ -625,17 +630,17 @@ public class RotaConstraintProvider implements ConstraintProvider {
 					return 0;
 				}).asConstraint("Location preferences (reward only)");
 	}
+
 	private Constraint maxLocationsPerEmployeePerPeriod(ConstraintFactory factory) {
-	    return factory.forEach(ShiftAssignment.class)
-	        .filter(sa -> sa.getEmployee() != null)
-	        .filter(sa -> sa.getShift().getShiftTemplate().getShiftType() != ShiftType.SLEEP_IN)
-	        .groupBy(ShiftAssignment::getEmployee,
-	                 ConstraintCollectors.countDistinct(sa -> sa.getShift().getShiftTemplate().getLocation()))
-	        .filter((emp, locationCount) -> locationCount > 3)
-	        .penalize(HardSoftScore.ONE_HARD, (emp, locationCount) -> locationCount - 3)
-	        .asConstraint("Max 3 locations per period");
+		return factory.forEach(ShiftAssignment.class).filter(sa -> sa.getEmployee() != null)
+				.filter(sa -> sa.getShift().getShiftTemplate().getShiftType() != ShiftType.SLEEP_IN)
+				.groupBy(ShiftAssignment::getEmployee,
+						ConstraintCollectors.countDistinct(sa -> sa.getShift().getShiftTemplate().getLocation()))
+				.filter((emp, locationCount) -> locationCount > 3)
+				.penalize(HardSoftScore.ONE_HARD, (emp, locationCount) -> locationCount - 3)
+				.asConstraint("Max 3 locations per period");
 	}
-	
+
 	private record YearWeek(int year, int week) {
 		public static YearWeek from(LocalDate date) {
 			WeekFields wf = WeekFields.ISO;

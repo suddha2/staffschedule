@@ -3,26 +3,50 @@
 	<entityClass>com.midco.rota.model.ShiftAssignment</entityClass>
 	<environmentMode>FULL_ASSERT</environmentMode>
 	<scoreDirectorFactory>
-		<constraintProviderClass>com.midco.rota.opt.RotaConstraintProvider
-		</constraintProviderClass>
+		<constraintProviderClass>com.midco.rota.opt.RotaConstraintProvider</constraintProviderClass>
 		<constraintMatchEnabled>true</constraintMatchEnabled>
 		<indictmentEnabled>true</indictmentEnabled>
 	</scoreDirectorFactory>
+	
+	<!-- Total solving time: 10 minutes -->
 	<termination>
 		<secondsSpentLimit>600</secondsSpentLimit>
 		<unimprovedSecondsSpentLimit>250</unimprovedSecondsSpentLimit>
 	</termination>
+	
 	<bestScoreFeasible>0</bestScoreFeasible>
 	<moveThreadCount>AUTO</moveThreadCount>
 	<randomSeed>987654</randomSeed>
+	
+	<!-- PHASE 1: Assign PERMANENT employees first -->
 	<phase>
 		<constructionHeuristic>
-    <constructionHeuristicType>FIRST_FIT_DECREASING</constructionHeuristicType>
-    <entitySorterManner>DECREASING_DIFFICULTY</entitySorterManner>
-    <valueSorterManner>DECREASING_STRENGTH</valueSorterManner>
-</constructionHeuristic>
+			<constructionHeuristicType>FIRST_FIT_DECREASING</constructionHeuristicType>
+			<entitySorterManner>DECREASING_DIFFICULTY</entitySorterManner>
+			<valueSorterManner>DECREASING_STRENGTH</valueSorterManner>
+			<!-- Only consider permanent employees in this phase -->
+			<valueSelector>
+				<variableName>employee</variableName>
+				<filterClass>com.midco.rota.opt.PermanentEmployeeFilter</filterClass>
+			</valueSelector>
+		</constructionHeuristic>
 	</phase>
 
+	<!-- PHASE 2: Fill remaining shifts with ZERO_HOURS employees -->
+	<phase>
+		<constructionHeuristic>
+			<constructionHeuristicType>FIRST_FIT_DECREASING</constructionHeuristicType>
+			<entitySorterManner>DECREASING_DIFFICULTY</entitySorterManner>
+			<valueSorterManner>DECREASING_STRENGTH</valueSorterManner>
+			<!-- Only consider zero-hours employees in this phase -->
+			<valueSelector>
+				<variableName>employee</variableName>
+				<filterClass>com.midco.rota.opt.ZeroHoursEmployeeFilter</filterClass>
+			</valueSelector>
+		</constructionHeuristic>
+	</phase>
+
+	<!-- PHASE 3: TABU_SEARCH - Only optimize zero-hours assignments -->
 	<phase>
 		<localSearch>
 			<localSearchType>TABU_SEARCH</localSearchType>
@@ -32,18 +56,25 @@
 			</acceptor>
 			<moveSelector>
 				<moveSelectorList>
+					<!-- FallbackSwapMoveFactory with filter -->
 					<moveSelector>
-						<moveListFactoryClass>com.midco.rota.opt.FallbackSwapMoveFactory
-						</moveListFactoryClass>
+						<moveListFactoryClass>com.midco.rota.opt.FallbackSwapMoveFactory</moveListFactoryClass>
+						<!-- Note: FallbackSwapMoveFactory might not support filtering directly -->
+						<!-- If this causes issues, remove this moveSelector -->
 					</moveSelector>
+					
+					<!-- ChangeMoveSelector - only change zero-hours or unassigned -->
 					<moveSelector>
 						<changeMoveSelector>
+							<entitySelector>
+								<!-- ✅ Only select zero-hours assignments or unassigned -->
+								<filterClass>com.midco.rota.opt.ZeroHoursAssignmentFilter</filterClass>
+							</entitySelector>
 							<valueSelector>
 								<variableName>employee</variableName>
 								<cacheType>PHASE</cacheType>
 								<selectionOrder>DECREASING_STRENGTH</selectionOrder>
-								<strengthComparatorClass>com.midco.rota.opt.EmployeeStrengthComparator
-								</strengthComparatorClass>
+								<strengthComparatorClass>com.midco.rota.opt.EmployeeStrengthComparator</strengthComparatorClass>
 							</valueSelector>
 						</changeMoveSelector>
 					</moveSelector>
@@ -51,6 +82,8 @@
 			</moveSelector>
 		</localSearch>
 	</phase>
+	
+	<!-- PHASE 4: LATE_ACCEPTANCE - Only optimize zero-hours assignments -->
 	<phase>
 		<localSearch>
 			<localSearchType>LATE_ACCEPTANCE</localSearchType>
@@ -59,30 +92,39 @@
 			</acceptor>
 			<moveSelector>
 				<changeMoveSelector>
+					<entitySelector>
+						<!-- ✅ Only select zero-hours assignments or unassigned -->
+						<filterClass>com.midco.rota.opt.ZeroHoursAssignmentFilter</filterClass>
+					</entitySelector>
 					<valueSelector>
 						<variableName>employee</variableName>
 						<cacheType>PHASE</cacheType>
 						<selectionOrder>DECREASING_STRENGTH</selectionOrder>
-						<strengthComparatorClass>com.midco.rota.opt.EmployeeStrengthComparator
-						</strengthComparatorClass>
+						<strengthComparatorClass>com.midco.rota.opt.EmployeeStrengthComparator</strengthComparatorClass>
 					</valueSelector>
 				</changeMoveSelector>
 			</moveSelector>
 		</localSearch>
 	</phase>
+	
+	<!-- PHASE 5: HILL_CLIMBING - Only optimize zero-hours assignments -->
 	<phase>
-    <localSearch>
-        <localSearchType>HILL_CLIMBING</localSearchType>
-        <moveSelector>
-            <changeMoveSelector>
-                <valueSelector>
-                    <variableName>employee</variableName>
-                    <cacheType>PHASE</cacheType>
-                    <selectionOrder>DECREASING_STRENGTH</selectionOrder>
-                    <strengthComparatorClass>com.midco.rota.opt.EmployeeStrengthComparator</strengthComparatorClass>
-                </valueSelector>
-            </changeMoveSelector>
-        </moveSelector>
-    </localSearch>
-</phase>
+		<localSearch>
+			<localSearchType>HILL_CLIMBING</localSearchType>
+			<moveSelector>
+				<changeMoveSelector>
+					<entitySelector>
+						<!-- ✅ Only select zero-hours assignments or unassigned -->
+						<filterClass>com.midco.rota.opt.ZeroHoursAssignmentFilter</filterClass>
+					</entitySelector>
+					<valueSelector>
+						<variableName>employee</variableName>
+						<cacheType>PHASE</cacheType>
+						<selectionOrder>DECREASING_STRENGTH</selectionOrder>
+						<strengthComparatorClass>com.midco.rota.opt.EmployeeStrengthComparator</strengthComparatorClass>
+					</valueSelector>
+				</changeMoveSelector>
+			</moveSelector>
+		</localSearch>
+	</phase>
 </solver>

@@ -5,6 +5,7 @@ import java.math.BigDecimal;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.FormatStyle;
 import java.util.Arrays;
@@ -13,6 +14,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -37,14 +40,20 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
 import com.midco.rota.RateTableProvider;
+import com.midco.rota.model.DeferredSolveRequest;
+import com.midco.rota.model.Employee;
 import com.midco.rota.model.EmployeeShiftStatDTO;
 import com.midco.rota.model.PaycycleStatsDTO;
+import com.midco.rota.model.Rota;
 import com.midco.rota.model.ServiceStatsDTO;
+import com.midco.rota.model.ShiftAssignment;
 import com.midco.rota.model.ShiftSummaryDTO;
 import com.midco.rota.model.ShiftTypeStatsDTO;
 import com.midco.rota.model.WeekStatsDTO;
 import com.midco.rota.model.WeeklyShiftStatDTO;
+import com.midco.rota.repository.RotaRepository;
 import com.midco.rota.service.PaycycleStatsService;
 import com.midco.rota.util.RateCode;
 import com.midco.rota.util.ShiftType;
@@ -60,12 +69,15 @@ public class StatsController {
 
 	@Autowired
 	private final PaycycleStatsService statsService;
+	private final RotaRepository rotaRepository;
 
 	private DateTimeFormatter dateFormat = DateTimeFormatter.ofLocalizedDate(FormatStyle.SHORT).withLocale(Locale.UK);
 
-	public StatsController(PaycycleStatsService statsService, RateTableProvider rateTableProvider) {
+	public StatsController(PaycycleStatsService statsService, RateTableProvider rateTableProvider,
+			RotaRepository rotaRepository) {
 		this.statsService = statsService;
 		this.rateTableProvider = rateTableProvider;
+		this.rotaRepository = rotaRepository;
 	}
 
 	@GetMapping("/serviceStats")
@@ -86,8 +98,15 @@ public class StatsController {
 
 	@GetMapping("/exportStats")
 	public void exportStatsStream(@RequestParam Long id, HttpServletResponse response) throws IOException {
+		
+		String filename = "";
+		DeferredSolveRequest deferredSolveRequest = statsService.getRegionPeriodDetailForRotaID(id);
+		filename=filename+""+deferredSolveRequest.getRegion();
+		filename=filename+"_"+deferredSolveRequest.getStartDate().format(DateTimeFormatter.ofPattern("ddMMYYYY"));
+		filename=filename+"_"+deferredSolveRequest.getEndDate().format(DateTimeFormatter.ofPattern("ddMMYYYY"));
+		filename=filename+"_"+"stats.xlsx";
 		response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-		String filename = "stats.xlsx";
+		//String filename = deferredSolveRequest.getRegion()+"_"+deferredSolveRequest.getStartDate()"stats.xlsx";
 		String encoded = URLEncoder.encode(filename, StandardCharsets.UTF_8.name());
 		response.setHeader("Content-Disposition",
 				"attachment; filename=\"" + filename + "\"; filename*=UTF-8''" + encoded);
@@ -100,6 +119,8 @@ public class StatsController {
 			// populate workbook
 			List<PaycycleStatsDTO> serviceSummary = statsService.generateServiceSummary(id);
 			List<EmployeeShiftStatDTO> empSummary = statsService.generateEmpSummary(id);
+
+			createSheetAllocation(workbook, "Allocation", id);
 			createSheetServiceStats(workbook, "ServiceStats", serviceSummary);
 			createSheetEmpStats(workbook, "EmpStats", empSummary);
 			createSheetProjectedPay(workbook, "ProjectedPay", empSummary);
@@ -120,6 +141,73 @@ public class StatsController {
 			throw e;
 		}
 		// do not explicitly close the servlet output stream; container will handle it
+	}
+
+	private void createSheetAllocation(SXSSFWorkbook workbook, String sheetName, Long id) {
+		Optional<Rota> rota = rotaRepository.findById(Long.valueOf(id));
+
+		if (rota.isEmpty()) {
+			return;
+		}
+		List<ShiftAssignment> saList = rota.get().getShiftAssignmentList();
+		List<Employee> allEmployees = rota.get().getEmployeeList();
+		Sheet sheet = workbook.createSheet(sheetName);
+		int rowIdx = 0;
+
+		// Header row
+		Row header = sheet.createRow(rowIdx++);
+		String[] headers = { "Week", "Location", "Shift Type", "Day", "Shift Start", "Shift End", "Hours", "First Name",
+				"Last Name", "Available Employees" };
+
+		CellStyle headerStyle = createHeaderStyle(workbook);
+
+		for (int i = 0; i < headers.length; i++) {
+			Cell cell = header.createCell(i);
+			cell.setCellValue(headers[i]);
+			cell.setCellStyle(headerStyle);
+		}
+
+		DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm");
+		for (ShiftAssignment sa : saList) {
+
+			Row row = sheet.createRow(rowIdx++);
+			int col = 0;
+
+			String firstName = Optional.ofNullable(sa.getEmployee()).map(Employee::getFirstName)
+					.filter(s -> !s.isBlank()).orElse("UnAssigned");
+
+			String lastName = Optional.ofNullable(sa.getEmployee()).map(Employee::getLastName).filter(s -> !s.isBlank())
+					.orElse("");
+
+			LocalDateTime shiftStart = LocalDateTime.of(sa.getShift().getShiftStart(),
+					sa.getShift().getShiftTemplate().getStartTime());
+
+			LocalDateTime shiftEnd = LocalDateTime.of(sa.getShift().getShiftEnd(),
+					sa.getShift().getShiftTemplate().getEndTime());
+
+			double hours = sa.getShift().getDurationInHours().doubleValue();// Duration.between(shiftStart, shiftEnd);
+			// double hours = duration.toMinutes() / 60.0;
+			row.createCell(col++).setCellValue("Week " + sa.getShift().getAbsoluteWeek()%4);
+			row.createCell(col++).setCellValue(sa.getShift().getShiftTemplate().getLocation());
+			row.createCell(col++).setCellValue(sa.getShift().getShiftTemplate().getShiftType().name());
+			row.createCell(col++).setCellValue(sa.getShift().getShiftTemplate().getDayOfWeek().name());
+			row.createCell(col++).setCellValue(shiftStart.format(formatter));
+			row.createCell(col++).setCellValue(shiftEnd.format(formatter));
+			row.createCell(col++).setCellValue(hours);
+			row.createCell(col++).setCellValue(firstName);
+			row.createCell(col++).setCellValue(lastName);
+			if (sa.getEmployee() == null) {
+				String availableEmployees = getAvailableEmployees(sa, allEmployees, saList); // ✅ Pass saList
+				row.createCell(col++).setCellValue(availableEmployees);
+			} else {
+				row.createCell(col++).setCellValue("");
+			}
+
+		}
+
+		// Freeze the header row
+		sheet.createFreezePane(0, 1);
+
 	}
 
 	private void createSheetServiceStats(Workbook workbook, String sheetName, List<PaycycleStatsDTO> data) {
@@ -186,11 +274,6 @@ public class StatsController {
 			}
 		}
 
-//		// Auto-size columns for better readability (optional)
-//		for (int i = 0; i < headers.length; i++) {
-//			sheet.autoSizeColumn(i);
-//		}
-
 		// Freeze the header row
 		sheet.createFreezePane(0, 1);
 
@@ -242,7 +325,7 @@ public class StatsController {
 		for (EmployeeShiftStatDTO emp : data) {
 			if (emp == null || emp.weeklyStats == null)
 				continue;
-			//String empName = emp.name == null ? "" : emp.name;
+			// String empName = emp.name == null ? "" : emp.name;
 			String contract = emp.contractType == null ? "" : emp.contractType.toString();
 
 			for (WeeklyShiftStatDTO week : emp.weeklyStats) {
@@ -273,7 +356,7 @@ public class StatsController {
 						if (parts.length > 1)
 							lastName = parts[1];
 					}
-					
+
 					// EmployeeName
 					row.createCell(col++).setCellValue(firstName);
 					row.createCell(col++).setCellValue(lastName);
@@ -361,7 +444,7 @@ public class StatsController {
 		style.setBorderBottom(BorderStyle.THIN);
 		style.setBorderLeft(BorderStyle.THIN);
 		style.setBorderRight(BorderStyle.THIN);
-
+		style.setWrapText(true);
 		return style;
 	}
 
@@ -384,27 +467,29 @@ public class StatsController {
 		intStyle.setDataFormat(df.getFormat("0"));
 		CellStyle decStyle = workbook.createCellStyle();
 		decStyle.setDataFormat(df.getFormat("0.00"));
+		CellStyle finStyle = workbook.createCellStyle();
+		finStyle.setDataFormat(df.getFormat("[$£-409] #,##0.00"));
 
 		// --- Top header row ---
 		Row topHeader = sheet.createRow(0);
 		int col = 0;
 
 		// First Name
-		sheet.addMergedRegion(new CellRangeAddress(0, 1, col, col));
+//		sheet.addMergedRegion(new CellRangeAddress(0, 1, col, col));
 		Cell fnHeader = topHeader.createCell(col++);
-		fnHeader.setCellValue("First Name");
+		fnHeader.setCellValue("");
 		fnHeader.setCellStyle(headerStyle);
 
 		// Last Name
-		sheet.addMergedRegion(new CellRangeAddress(0, 1, col, col));
+//		sheet.addMergedRegion(new CellRangeAddress(0, 1, col, col));
 		Cell lnHeader = topHeader.createCell(col++);
-		lnHeader.setCellValue("Last Name");
+		lnHeader.setCellValue("");
 		lnHeader.setCellStyle(headerStyle);
 
 		// Contract Type
-		sheet.addMergedRegion(new CellRangeAddress(0, 1, col, col));
+//		sheet.addMergedRegion(new CellRangeAddress(0, 1, col, col));
 		Cell ctHeader = topHeader.createCell(col++);
-		ctHeader.setCellValue("Contract Type");
+		ctHeader.setCellValue("");
 		ctHeader.setCellStyle(headerStyle);
 
 		// Weeks
@@ -427,12 +512,23 @@ public class StatsController {
 		int payCols = shiftTypes.stream().mapToInt(st -> 2).sum() + 1; // 2 per type + TOTAL PAY
 		sheet.addMergedRegion(new CellRangeAddress(0, 0, col, col + payCols - 1));
 		Cell payHeader = topHeader.createCell(col);
-		payHeader.setCellValue("PROJECTED PAY");
+		payHeader.setCellValue("PROJECTED PAY - ");
 		payHeader.setCellStyle(headerStyle);
 
 		// --- Subheader row ---
 		Row subHeader = sheet.createRow(1);
-		col = 3; // start after FirstName, LastName, ContractType
+		col = 0; // start after FirstName, LastName, ContractType
+		Cell fnHead = subHeader.createCell(col++);
+		fnHead.setCellValue("First Name");
+		fnHead.setCellStyle(headerStyle);
+
+		Cell lnHead = subHeader.createCell(col++);
+		lnHead.setCellValue("Last Name");
+		lnHead.setCellStyle(headerStyle);
+
+		Cell ctHead = subHeader.createCell(col++);
+		ctHead.setCellValue("Contract Type");
+		ctHead.setCellStyle(headerStyle);
 
 		for (int i = 0; i < sortedWeeks.size(); i++) {
 			Cell hCell = subHeader.createCell(col++);
@@ -511,11 +607,17 @@ public class StatsController {
 				double hrs = 0;
 				int shifts = 0;
 				if (ws != null && ws.shiftSummary != null) {
-					for (ShiftSummaryDTO s : ws.shiftSummary.values()) {
+					// ✅ CHANGE 3: Exclude SLEEP_IN hours from weekly totals
+					for (Map.Entry<ShiftType, ShiftSummaryDTO> entry : ws.shiftSummary.entrySet()) {
+						ShiftType shiftType = entry.getKey();
+						ShiftSummaryDTO s = entry.getValue();
+
 						if (s != null) {
 							shifts += s.count;
-							if (s.hours != null)
+							// Exclude SLEEP_IN hours from totals
+							if (shiftType != ShiftType.SLEEP_IN && s.hours != null) {
 								hrs += s.hours.doubleValue();
+							}
 						}
 					}
 				}
@@ -524,8 +626,13 @@ public class StatsController {
 				totalHours += hrs;
 				totalShifts += shifts;
 			}
-			row.createCell(col++).setCellValue(totalHours);
-			row.createCell(col++).setCellValue(totalShifts);
+			Cell thrs = row.createCell(col++);
+			thrs.setCellValue(totalHours);
+			thrs.setCellStyle(decStyle);
+
+			Cell tShifts = row.createCell(col++);
+			tShifts.setCellValue(totalShifts);
+			thrs.setCellStyle(intStyle);
 
 			double totalPay = 0;
 			for (ShiftType st : shiftTypes) {
@@ -538,22 +645,32 @@ public class StatsController {
 								});
 
 				String rateType = getRateTypeForShiftType(st);
-				BigDecimal rate = getRateForShiftType(emp.region, rateType, emp.rateCode);
+				BigDecimal rate = getRateForShiftType(emp.region, rateType, emp.rateCode, st);
 				double pay = 0;
 				if ("HOURLY".equals(rateType)) {
 					double hrs = summary == null ? 0 : summary.hours.doubleValue();
-					row.createCell(col++).setCellValue(hrs);
+					Cell hrsCell = row.createCell(col++);
+					hrsCell.setCellValue(hrs);
+					hrsCell.setCellStyle(decStyle);
 					pay = hrs * (rate == null ? 0 : rate.doubleValue());
-					row.createCell(col++).setCellValue(pay);
+					Cell payCell = row.createCell(col++);
+					payCell.setCellValue(pay);
+					payCell.setCellStyle(finStyle);
 				} else {
 					int cnt = summary == null ? 0 : summary.count;
-					row.createCell(col++).setCellValue(cnt);
+					Cell cntCell = row.createCell(col++);
+					cntCell.setCellValue(cnt);
+					cntCell.setCellStyle(intStyle);
 					pay = cnt * (rate == null ? 0 : rate.doubleValue());
-					row.createCell(col++).setCellValue(pay);
+					Cell payCell = row.createCell(col++);
+					payCell.setCellValue(pay);
+					payCell.setCellStyle(finStyle);
 				}
 				totalPay += pay;
 			}
-			row.createCell(col++).setCellValue(totalPay);
+			Cell tlPayCell = row.createCell(col++);
+			tlPayCell.setCellValue(totalPay);
+			tlPayCell.setCellStyle(finStyle);
 		}
 
 		sheet.createFreezePane(0, 2);
@@ -580,13 +697,44 @@ public class StatsController {
 	}
 
 	// Return the numeric rate for a shift type + contract type
-	private BigDecimal getRateForShiftType(String region, String rateType, RateCode rateCode) {
+	private BigDecimal getRateForShiftType(String region, String rateType, RateCode rateCode, ShiftType shiftType) {
+		if (shiftType == ShiftType.SLEEP_IN) {
+			return BigDecimal.ZERO;
+		}
 		if ("DAILY".equals(rateType)) {
-			// if rate Type is DAILY, override ratecode and pick daily rate 
+			// if rate Type is DAILY, override ratecode and pick daily rate
 			return RateTableProvider.getAmount(region, rateType, RateCode.L1.name());
 		}
 
 		return RateTableProvider.getAmount(region, rateType, rateCode.name());
 	}
 
+	private String getAvailableEmployees(ShiftAssignment shiftAssignment, List<Employee> allEmployees,
+			List<ShiftAssignment> allAssignments) {
+		if (shiftAssignment.getShift() == null) {
+			return "";
+		}
+
+		LocalDate shiftDate = shiftAssignment.getShift().getShiftStart();
+		String location = shiftAssignment.getShift().getShiftTemplate().getLocation();
+		ShiftType shiftType = shiftAssignment.getShift().getShiftTemplate().getShiftType();
+
+		// Build a set of employee IDs who are already working on this date
+		Set<Integer> employeesWorkingThisDate = allAssignments.stream().filter(sa -> sa.getEmployee() != null)
+				.filter(sa -> sa.getShift().getShiftStart().equals(shiftDate)).map(sa -> sa.getEmployee().getId())
+				.collect(Collectors.toSet());
+
+		// Filter employees who can work this shift AND have no shifts on this date
+		List<String> availableNames = allEmployees.stream()
+				.filter(emp -> emp.canWorkShift(location, shiftDate, shiftType))
+				.filter(emp -> !employeesWorkingThisDate.contains(emp.getId())) // ✅ No shifts this day
+				.map(emp -> emp.getFirstName() + " " + emp.getLastName()).sorted() // Alphabetical order
+				.collect(Collectors.toList());
+
+		if (availableNames.isEmpty()) {
+			return "No available employees";
+		}
+
+		return String.join(", ", availableNames);
+	}
 }

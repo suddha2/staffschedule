@@ -38,16 +38,16 @@ public class RosterAnalysisService {
 				.count();
 		logger.debug("Unassigned shifts: {}", unassignedCount);
 
-//		ScoreExplanation<Rota, HardSoftScore> explanation = scoreManager.explain(solution);
-//		Map<Object, Indictment<HardSoftScore>> indictmentMap = explanation.getIndictmentMap();
+		ScoreExplanation<Rota, HardSoftScore> explanation = scoreManager.explain(solution);
+		Map<Object, Indictment<HardSoftScore>> indictmentMap = explanation.getIndictmentMap();
 
-//		logUnassignedShifts(solution);
-//
-//		logUnassignedEmployees(solution);
-//
-//		logConstraintViolations(solution, scoreManager);
-//		
-//		logSkippedPermanentForZeroHours(solution);
+		logUnassignedShifts(solution);
+
+		logUnassignedEmployees(solution);
+
+		logConstraintViolations(solution, scoreManager);
+		
+		logSkippedPermanentForZeroHours(solution);
 	}
 
 	public void logUnassignedShifts(Rota rota) {

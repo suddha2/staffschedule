@@ -5,10 +5,15 @@ import java.util.List;
 import java.util.UUID;
 
 import org.optaplanner.core.api.domain.entity.PlanningEntity;
+import org.optaplanner.core.api.domain.entity.PlanningPin;
 import org.optaplanner.core.api.domain.lookup.PlanningId;
 import org.optaplanner.core.api.domain.variable.PlanningVariable;
 
+import com.fasterxml.jackson.annotation.JsonIdentityInfo;
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.ObjectIdGenerators;
+import com.midco.rota.opt.ShiftAssignmentDifficultyComparator;
+import com.midco.rota.util.ShiftType;
 
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Entity;
@@ -21,7 +26,9 @@ import jakarta.persistence.OneToOne;
 import jakarta.persistence.Transient;
 
 @Entity(name = "rota_shift_assignment")
-@PlanningEntity
+@PlanningEntity(difficultyComparatorClass = ShiftAssignmentDifficultyComparator.class)
+@JsonIdentityInfo(generator = ObjectIdGenerators.PropertyGenerator.class, property = "id")
+
 public class ShiftAssignment {
 
 	@Transient
@@ -49,6 +56,15 @@ public class ShiftAssignment {
 
 	@Transient
 	private List<String> unassignmentReasons = new ArrayList<>();
+
+	@Transient
+	private boolean pinned = false;
+
+	@PlanningPin
+	public boolean isPinned() {
+		return pinned || (shift != null && shift.getShiftTemplate() != null
+				&& shift.getShiftTemplate().getShiftType() == ShiftType.SLEEP_IN);
+	}
 
 	public ShiftAssignment() {
 	}
@@ -136,4 +152,11 @@ public class ShiftAssignment {
 		this.unassignmentReasons = reasons;
 	}
 
+	public void setPinned(boolean pinned) {
+		this.pinned = pinned;
+	}
+
+	public boolean getPinned() {
+		return pinned;
+	}
 }

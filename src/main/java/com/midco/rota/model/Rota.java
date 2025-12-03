@@ -4,7 +4,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 import org.optaplanner.core.api.domain.lookup.PlanningId;
@@ -15,6 +14,9 @@ import org.optaplanner.core.api.domain.solution.ProblemFactCollectionProperty;
 import org.optaplanner.core.api.domain.valuerange.ValueRangeProvider;
 import org.optaplanner.core.api.score.buildin.hardsoft.HardSoftScore;
 
+import com.fasterxml.jackson.annotation.JsonIdentityInfo;
+import com.fasterxml.jackson.annotation.JsonManagedReference;
+import com.fasterxml.jackson.annotation.ObjectIdGenerators;
 import com.midco.rota.util.IdealShiftCount;
 import com.midco.rota.util.ShiftType;
 
@@ -30,6 +32,8 @@ import jakarta.persistence.Transient;
 
 @Entity
 @PlanningSolution
+@JsonIdentityInfo(generator = ObjectIdGenerators.PropertyGenerator.class, property = "id")
+
 public class Rota {
 
 //	@Transient
@@ -52,6 +56,7 @@ public class Rota {
 
 	@OneToMany(mappedBy = "rota", cascade = CascadeType.ALL, orphanRemoval = true)
 	@PlanningEntityCollectionProperty
+	@JsonManagedReference
 	private List<ShiftAssignment> shiftAssignmentList;
 
 	@Transient
@@ -70,7 +75,7 @@ public class Rota {
 		this.shiftAssignmentList = shiftAssignmentList;
 		int ideal = shiftAssignmentList.size() / employeeList.size();
 		this.idealShiftCountList = List.of(new IdealShiftCount(ideal));
-		//this.planningId = COUNTER.incrementAndGet();
+		// this.planningId = COUNTER.incrementAndGet();
 
 		for (ShiftAssignment sa : this.shiftAssignmentList) {
 			sa.setRota(this); // safe linkage for JPA requirements
@@ -150,6 +155,12 @@ public class Rota {
 		HashMap<String, Map<String, Integer>> summaryStats = new HashMap<>();
 
 		for (ShiftAssignment sa : this.getShiftAssignmentList()) {
+
+			if (sa.getShift() == null || sa.getShift().getShiftTemplate() == null
+					|| sa.getShift().getShiftTemplate().getShiftType() == null) {
+				continue; // Skip if any part is null
+			}
+
 			String shiftTypeName = sa.getShift().getShiftTemplate().getShiftType().name();
 			boolean isAssigned = sa.getEmployee() != null;
 
@@ -168,9 +179,11 @@ public class Rota {
 	}
 
 	public Map<ShiftType, Integer> shiftTypeSummary() {
-
 		Map<ShiftType, Integer> shiftTypeCounts = this.getShiftAssignmentList().stream()
-				.map(sa -> sa.getShift().getShiftTemplate().getShiftType()).filter(Objects::nonNull)
+				// ✅ Filter out nulls BEFORE mapping
+				.filter(sa -> sa != null && sa.getShift() != null && sa.getShift().getShiftTemplate() != null
+						&& sa.getShift().getShiftTemplate().getShiftType() != null)
+				.map(sa -> sa.getShift().getShiftTemplate().getShiftType())
 				.collect(Collectors.toMap(shiftType -> shiftType, shiftType -> 1, Integer::sum));
 
 		return shiftTypeCounts;
@@ -200,25 +213,26 @@ public class Rota {
 
 	public Map<String, Integer> shiftAssignmentStats() {
 		Map<String, Integer> results = new HashMap<>();
+
 		Map<ShiftType, Long> assignedShiftCounts = this.getShiftAssignmentList().stream()
-				.filter(sa -> sa.getEmployee() != null).map(sa -> sa.getShift().getShiftTemplate().getShiftType())
+				.filter(sa -> sa != null && sa.getEmployee() != null)
+				// ✅ Filter out nulls BEFORE mapping
+				.filter(sa -> sa.getShift() != null && sa.getShift().getShiftTemplate() != null
+						&& sa.getShift().getShiftTemplate().getShiftType() != null)
+				.map(sa -> sa.getShift().getShiftTemplate().getShiftType())
 				.collect(Collectors.groupingBy(shiftType -> shiftType, Collectors.counting()));
 
+		// Add counts for all shift types (including 0s)
 		for (ShiftType type : ShiftType.values()) {
 			Long count = assignedShiftCounts.getOrDefault(type, 0L);
-			assignedShiftCounts.put(type, count);
+			results.put(type.name(), count.intValue());
 		}
 
-		// Convert each ShiftType entry to String → Integer
-		assignedShiftCounts.forEach((type, count) -> results.put(type.name(), count.intValue()));
-		// Add a "TOTAL" entry
+		// Add total
 		int total = assignedShiftCounts.values().stream().mapToInt(Long::intValue).sum();
-
 		results.put("TotalAssigned", total);
 
 		return results;
 	}
-	
 
-	
 }

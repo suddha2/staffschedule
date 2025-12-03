@@ -16,7 +16,7 @@ public interface ShiftTemplateRepository extends JpaRepository<ShiftTemplate, In
 	@Query(name="ShiftTemplate.findAllRegion")
 	List<String>  findAllRegion();
 	
-	@Query("SELECT s FROM ShiftTemplate s WHERE s.region = :region and s.totalHours > 0")
+	@Query("SELECT s FROM ShiftTemplate s WHERE s.region = :region and s.totalHours > 0 and active=true")
 	List<ShiftTemplate> findAllByRegion(@Param("region") String region);
 
 	ShiftTemplate findByLocationAndShiftTypeAndStartTime(String location, String shiftType, LocalTime startTime);
