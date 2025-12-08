@@ -31,6 +31,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -38,21 +39,25 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.midco.rota.model.DeferredSolveRequest;
 import com.midco.rota.model.Employee;
 import com.midco.rota.model.Rota;
+import com.midco.rota.model.RotaCorrection;
 import com.midco.rota.model.Shift;
 import com.midco.rota.model.ShiftAssignment;
 import com.midco.rota.model.ShiftTemplate;
 import com.midco.rota.repository.DeferredSolveRequestRepository;
 import com.midco.rota.repository.EmployeeRepository;
+import com.midco.rota.repository.RotaCorrectionRepository;
 import com.midco.rota.repository.RotaRepository;
+import com.midco.rota.repository.ShiftAssignmentRepository;
 import com.midco.rota.repository.ShiftRepository;
 import com.midco.rota.repository.ShiftTemplateRepository;
-import com.midco.rota.service.*;
+import com.midco.rota.service.ConstraintExplanationService;
+import com.midco.rota.service.PayCycleDataService;
+import com.midco.rota.service.PeriodService;
+import com.midco.rota.service.RosterAnalysisService;
+import com.midco.rota.service.RosterUpdateService;
 import com.midco.rota.util.PayCycleRow;
 
 @RestController
@@ -74,6 +79,8 @@ public class RotaController {
 	private final RotaRepository rotaRepository;
 	private final PayCycleDataService payCycleDataService;
 	private final DeferredSolveRequestRepository deferredSolveRequestRepository;
+	private final RotaCorrectionRepository rotaCorrectionRepository;
+	private final ShiftAssignmentRepository shiftAssignmentRepository;
 	// private final ExecutorService securityExecutorService;
 	@Autowired
 	private SimpUserRegistry simpUserRegistry;
@@ -83,7 +90,8 @@ public class RotaController {
 			EmployeeRepository employeeRepository, ShiftTemplateRepository shiftTemplateRepository,
 			DeferredSolveRequestRepository deferredSolveRequestRepository, AuthController authController,
 			RotaRepository rotaRepository, ShiftRepository shiftRepository, PayCycleDataService payCycleDataService,
-			PeriodService periodService) {
+			PeriodService periodService, RotaCorrectionRepository rotaCorrectionRepository,
+			ShiftAssignmentRepository shiftAssignmentRepository) {
 		this.solverManager = solverManager;
 		this.updateService = updateService;
 		this.explanationService = explanationService;
@@ -96,7 +104,8 @@ public class RotaController {
 		this.shiftRepository = shiftRepository;
 		this.payCycleDataService = payCycleDataService;
 		this.periodService = periodService;
-
+		this.rotaCorrectionRepository = rotaCorrectionRepository;
+		this.shiftAssignmentRepository = shiftAssignmentRepository;
 	}
 
 	@GetMapping("/regions")
@@ -257,80 +266,109 @@ public class RotaController {
 	}
 
 	@PostMapping("/save")
+	@Transactional
 	public ResponseEntity<?> saveSchedule(@RequestBody Map<String, Object> payload, Authentication auth) {
 
-		String bodyJson = (String) payload.get("body");
-
-		ObjectMapper mapper = new ObjectMapper();
-		Map<String, Object> bodyMap;
-		try {
-			bodyMap = mapper.readValue(bodyJson, new TypeReference<>() {
-			});
-		} catch (JsonProcessingException e) {
-			return ResponseEntity.status(HttpStatus.NOT_FOUND)
-					.body(Map.of("error", "Json format error: " + e.toString()));
+		if (!payload.containsKey("rota") || !payload.containsKey("assignments")) {
+			return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", "Missing required fields"));
 		}
 
+		Long rotaId = Long.valueOf(payload.get("rota").toString());
+
 		@SuppressWarnings("unchecked")
-		Map<String, List<Map<String, Object>>> assignments = (Map<String, List<Map<String, Object>>>) bodyMap
+		Map<String, List<Map<String, Object>>> incomingAssignments = (Map<String, List<Map<String, Object>>>) payload
 				.get("assignments");
 
-		Long rotaId = Long.valueOf(bodyMap.get("rota").toString());
+		Rota rota = rotaRepository.findById(rotaId).orElseThrow(() -> new RuntimeException("Rota not found"));
 
-		List<ShiftAssignment> allAssignments = new ArrayList<>();
+		boolean isFirstSave = rotaCorrectionRepository.countBySourceAndShiftAssignmentRotaId("Auto", rotaId) == 0;
 
-		for (Map.Entry<String, List<Map<String, Object>>> entry : assignments.entrySet()) {
-			String slotKey = entry.getKey(); // e.g. "8-Barford|LONG_DAY|2025-09-01|07:00:00"
+		Map<String, ShiftAssignment> existingAssignmentsByKey = new HashMap<>();
+		for (ShiftAssignment sa : rota.getShiftAssignmentList()) {
+			if (sa.getShift() != null && sa.getShift().getShiftTemplate() != null) {
+				String key = buildShiftKey(sa.getShift().getShiftTemplate().getLocation(),
+						sa.getShift().getShiftTemplate().getShiftType().name(), sa.getShift().getShiftStart(),
+						sa.getShift().getShiftTemplate().getStartTime());
+				existingAssignmentsByKey.put(key, sa);
+			}
+		}
+
+		List<ShiftAssignment> modifiedAssignments = new ArrayList<>();
+		Map<ShiftAssignment, CorrectionInfo> correctionData = new HashMap<>();
+		int updatedCount = 0;
+
+		for (Map.Entry<String, List<Map<String, Object>>> entry : incomingAssignments.entrySet()) {
+			String slotKey = entry.getKey();
 			List<Map<String, Object>> employeeList = entry.getValue();
 
-			String[] parts = slotKey.split("|");
-			if (parts.length != 4)
-				continue; // skip malformed keys
+			ShiftAssignment existingAssignment = existingAssignmentsByKey.get(slotKey);
+			if (existingAssignment == null)
+				continue;
 
-			String location = parts[0];// .contains("-") ? parts[0].split("-")[1] : parts[0];
-			String shiftType = parts[1];
-			LocalDate date = LocalDate.parse(parts[2]);
-			LocalTime startTime = LocalTime.parse(parts[3]);
+			Employee originalEmployee = existingAssignment.getEmployee();
 
-			// Lookup or create ShiftTemplate
-			ShiftTemplate template = shiftTemplateRepository.findByLocationAndShiftTypeAndStartTime(location, shiftType,
-					startTime);
-
-			if (template == null) {
-				// Optionally create or skip
+			if (employeeList.isEmpty()) {
+				if (originalEmployee != null && !isFirstSave) {
+					correctionData.put(existingAssignment, new CorrectionInfo(originalEmployee, null, "Manual"));
+				}
+				existingAssignment.setEmployee(null);
+				modifiedAssignments.add(existingAssignment); // ✅ Track this
+				updatedCount++;
 				continue;
 			}
 
-			Shift shift = shiftRepository.findByShiftTemplateAndStartTime(template, date);
+			Integer empId = Integer.valueOf(employeeList.get(0).get("id").toString());
+			Employee newEmployee = employeeRepository.findById(empId).orElse(null);
+			if (newEmployee == null)
+				continue;
 
-			// Create ShiftAssignments
-			for (Map<String, Object> empMap : employeeList) {
-				Integer empId = Integer.valueOf(empMap.get("id").toString());
-				Employee emp = employeeRepository.findById(empId).orElseThrow();
+			boolean hasChanged = originalEmployee == null || !originalEmployee.getId().equals(newEmployee.getId());
 
-				ShiftAssignment assignment = new ShiftAssignment();
-				assignment.setShift(shift);
-				assignment.setEmployee(emp);
-				allAssignments.add(assignment);
-
+			if (isFirstSave) {
+				correctionData.put(existingAssignment, new CorrectionInfo(null, newEmployee, "Auto"));
+				existingAssignment.setEmployee(newEmployee);
+				modifiedAssignments.add(existingAssignment); // ✅ Track this
+				updatedCount++;
+			} else if (hasChanged) {
+				correctionData.put(existingAssignment, new CorrectionInfo(originalEmployee, newEmployee, "Manual"));
+				existingAssignment.setEmployee(newEmployee);
+				modifiedAssignments.add(existingAssignment); // ✅ Track this
+				updatedCount++;
 			}
 		}
-		Optional<Rota> rotaOpt = rotaRepository.findById(rotaId);
 
-		if (rotaOpt.isPresent()) {
-			Rota rota = rotaOpt.get();
-			// rota.getShiftAssignmentList().clear();
-			for (ShiftAssignment assignment : allAssignments) {
-				assignment.setRota(rota);
-				rota.getShiftAssignmentList().add(assignment);
-			}
-			rotaRepository.save(rota);
-			return ResponseEntity.ok("Success");
-		} else {
-			return ResponseEntity.status(HttpStatus.NOT_FOUND)
-					.body(Map.of("error", "Rota not found for ID: " + rotaId));
+		System.out.println("=== SAVE PROCESS ===");
+		System.out.println("Modified assignments: " + modifiedAssignments.size());
+		System.out.println("Corrections to create: " + correctionData.size());
+
+		// ✅ STEP 1: Save modified assignments FIRST
+		if (!modifiedAssignments.isEmpty()) {
+			System.out.println("Saving " + modifiedAssignments.size() + " modified assignments...");
+			shiftAssignmentRepository.saveAll(modifiedAssignments);
+			shiftAssignmentRepository.flush(); // Force immediate write
+			System.out.println("✅ Assignments saved and flushed");
 		}
 
+		// ✅ STEP 2: Now create corrections (assignments have been updated)
+		List<RotaCorrection> corrections = new ArrayList<>();
+		for (Map.Entry<ShiftAssignment, CorrectionInfo> entry : correctionData.entrySet()) {
+			ShiftAssignment assignment = entry.getKey();
+			CorrectionInfo info = entry.getValue();
+			corrections.add(createCorrection(assignment, info.original, info.corrected, info.source));
+		}
+
+		// ✅ STEP 3: Save corrections
+		if (!corrections.isEmpty()) {
+			System.out.println("Saving " + corrections.size() + " corrections...");
+			rotaCorrectionRepository.saveAll(corrections);
+			rotaCorrectionRepository.flush();
+			System.out.println("✅ Corrections saved and flushed");
+		}
+
+		System.out.println("=== SAVE COMPLETE ===");
+
+		return ResponseEntity.ok(Map.of("message", "Success", "saveType", isFirstSave ? "Auto" : "Manual",
+				"correctionsCreated", corrections.size(), "assignmentsUpdated", updatedCount));
 	}
 
 	@GetMapping("/solved")
@@ -339,7 +377,7 @@ public class RotaController {
 
 		if (rota.isPresent()) {
 
-			return ResponseEntity.ok((Rota)rota.get());
+			return ResponseEntity.ok((Rota) rota.get());
 		} else {
 			return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "Rota not found for ID: " + id));
 		}
@@ -423,4 +461,60 @@ public class RotaController {
 		return "\"" + escaped + "\"";
 	}
 
+	private String buildShiftKey(String location, String shiftType, LocalDate date, LocalTime startTime) {
+		// ✅ Use HH:mm:ss format to match frontend
+		String timeStr = startTime.format(DateTimeFormatter.ofPattern("HH:mm:ss"));
+		return location + "|" + shiftType + "|" + date.toString() + "|" + timeStr;
+	}
+
+	private RotaCorrection createCorrection(ShiftAssignment assignment, Employee originalEmployee,
+			Employee correctedEmployee, String source) {
+		RotaCorrection correction = new RotaCorrection();
+		correction.setShiftAssignment(assignment);
+		correction.setOriginalEmployee(originalEmployee);
+		correction.setCorrectedEmployee(correctedEmployee);
+
+// Extract details from existing assignment
+		correction.setLocation(assignment.getShift().getShiftTemplate().getLocation());
+		correction.setShiftType(assignment.getShift().getShiftTemplate().getShiftType());
+		correction.setDayOfWeek(assignment.getShift().getShiftStart().getDayOfWeek());
+		correction.setShiftDate(assignment.getShift().getShiftStart());
+		correction.setSource(source);
+		correction.setCorrectionDate(LocalDateTime.now());
+
+		if ("Auto".equals(source)) {
+			correction.setCorrectionReason("OptaPlanner initial allocation");
+		} else {
+			correction.setCorrectionReason("Manual correction via UI");
+		}
+
+		return correction;
+	}
+
+	// Helper class
+	private static class CorrectionInfo {
+		Employee original;
+		Employee corrected;
+		String source;
+
+		CorrectionInfo(Employee original, Employee corrected, String source) {
+			this.original = original;
+			this.corrected = corrected;
+			this.source = source;
+		}
+	}
+
+	@GetMapping("/debug/keys/{rotaId}")
+	public ResponseEntity<?> debugKeys(@PathVariable Long rotaId) {
+		Rota rota = rotaRepository.findById(rotaId).orElseThrow();
+
+		List<String> keys = rota.getShiftAssignmentList().stream()
+				.filter(sa -> sa.getShift() != null && sa.getShift().getShiftTemplate() != null)
+				.map(sa -> buildShiftKey(sa.getShift().getShiftTemplate().getLocation(),
+						sa.getShift().getShiftTemplate().getShiftType().name(), sa.getShift().getShiftStart(),
+						sa.getShift().getShiftTemplate().getStartTime()))
+				.limit(10).collect(Collectors.toList());
+
+		return ResponseEntity.ok(Map.of("sampleKeys", keys));
+	}
 }

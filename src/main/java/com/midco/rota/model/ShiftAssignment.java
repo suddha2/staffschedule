@@ -2,6 +2,7 @@ package com.midco.rota.model;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 import org.optaplanner.core.api.domain.entity.PlanningEntity;
@@ -110,14 +111,31 @@ public class ShiftAssignment {
 	public boolean equals(Object o) {
 		if (this == o)
 			return true;
-		if (!(o instanceof ShiftAssignment))
+		if (o == null || getClass() != o.getClass())
 			return false;
-		return planningId.equals(((ShiftAssignment) o).planningId);
+		ShiftAssignment that = (ShiftAssignment) o;
+
+		// ✅ Compare planningId if both have it
+		if (planningId != null && that.planningId != null) {
+			return Objects.equals(planningId, that.planningId);
+		}
+
+		// ✅ Fall back to database id
+		if (id != null && that.id != null) {
+			return Objects.equals(id, that.id);
+		}
+
+		// ✅ If neither has id, they're only equal if same instance
+		return false;
 	}
 
 	@Override
 	public int hashCode() {
-		return planningId.hashCode();
+		// ✅ Use planningId if available, otherwise use id
+		if (planningId != null) {
+			return Objects.hash(planningId);
+		}
+		return id != null ? Objects.hash(id) : 0;
 	}
 
 	public String getPlanningId() {

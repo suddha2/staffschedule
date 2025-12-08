@@ -95,4 +95,12 @@ public interface RotaCorrectionRepository extends JpaRepository<RotaCorrection, 
     
     // Delete corrections older than a date (for cleanup)
     void deleteByCorrectionDateBefore(LocalDateTime dateTime);
+    
+ // ✅ Add this method
+    @Query("SELECT COUNT(rc) FROM RotaCorrection rc WHERE rc.shiftAssignment.rota.id = :rotaId AND rc.source = :source")
+    long countByRotaIdAndSource(@Param("rotaId") Long rotaId, @Param("source") String source);
+       
+    
+    long countBySourceAndShiftAssignmentRotaId(String source, Long rotaId);
+    
 }
