@@ -121,6 +121,12 @@ public class RotaController {
 		return ResponseEntity.ok(result);
 	}
 
+	 @GetMapping("/service-locations/{regionName}")
+	    public ResponseEntity<List<String>> getServicesForRegion(@PathVariable String regionName) {
+	        List<String> services = shiftTemplateRepository.findAllServiceLocation(regionName);
+	        return ResponseEntity.ok(services);
+	    }
+	
 	@PostMapping("/enqueueRequest")
 	public ResponseEntity<?> enqueueSolve(@RequestBody Map<String, Object> payload, Authentication authentication) {
 

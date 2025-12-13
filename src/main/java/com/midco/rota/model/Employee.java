@@ -217,19 +217,19 @@ public class Employee {
 	/**
 	 * Get list of all preferred locations (without weights)
 	 */
-	public List<String> getPreferredLocations() {
-		if (preferredService == null) {
-			return List.of();
-		}
-
-		return preferredService.stream().map(entry -> {
-			// Extract location part (before colon)
-			if (entry.contains(":")) {
-				return entry.split(":")[0].trim();
-			}
-			return entry.trim();
-		}).filter(loc -> !loc.isEmpty()).collect(Collectors.toList());
-	}
+//	public List<String> getPreferredLocations() {
+//		if (preferredService == null) {
+//			return List.of();
+//		}
+//
+//		return preferredService.stream().map(entry -> {
+//			// Extract location part (before colon)
+//			if (entry.contains(":")) {
+//				return entry.split(":")[0].trim();
+//			}
+//			return entry.trim();
+//		}).filter(loc -> !loc.isEmpty()).collect(Collectors.toList());
+//	}
 
 	/**
 	 * Check if employee prefers working at a specific location (any weight > 0)

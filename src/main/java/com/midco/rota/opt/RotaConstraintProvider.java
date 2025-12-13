@@ -523,13 +523,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 				.groupBy(ShiftAssignment::getEmployee, sa -> sa.getShift().getShiftTemplate().getLocation(),
 						sa -> getWeekNumber(sa.getShift().getShiftStart()),
 						ConstraintCollectors.countDistinct(sa -> sa.getShift().getShiftStart()))
-				.filter((emp, location, weekNum, dayCount) -> dayCount == 1).penalize(HardSoftScore.ofSoft(200000)) // ✅
-																													// FIXED:
-																													// Changed
-																													// from
-																													// HARD
-																													// to
-																													// SOFT
+				.filter((emp, location, weekNum, dayCount) -> dayCount == 1).penalize(HardSoftScore.ofSoft(200000)) 
 				.asConstraint("Min 2 days per location per week (SOFT)");
 	}
 

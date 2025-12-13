@@ -16,6 +16,7 @@ import com.midco.rota.model.Rota;
 import com.midco.rota.repository.DeferredSolveRequestRepository;
 import com.midco.rota.repository.EmployeeRepository;
 import com.midco.rota.service.SolverService;
+//import staffschedule.ShiftAssignmentDiagnostics;
 
 import jakarta.transaction.Transactional;
 
@@ -66,10 +67,10 @@ public class OptaPlannerIntegrationTestWithDiagnostics {
 		
 		// ✅ PRE-SOLVE DIAGNOSTICS
 		System.out.println("\n========== PRE-SOLVE ANALYSIS ==========");
-		ShiftAssignmentDiagnostics.diagnoseUnassignedShifts(
-				problem.getShiftAssignmentList(), 
-				problem.getEmployeeList()
-		);
+//		ShiftAssignmentDiagnostics.diagnoseUnassignedShifts(
+//				problem.getShiftAssignmentList(), 
+//				problem.getEmployeeList()
+//		);
 		
 		// Count by shift type
 		System.out.println("\nShifts by type:");
@@ -108,10 +109,10 @@ public class OptaPlannerIntegrationTestWithDiagnostics {
 
 		// ✅ POST-SOLVE DIAGNOSTICS
 		System.out.println("\n========== POST-SOLVE ANALYSIS ==========");
-		ShiftAssignmentDiagnostics.diagnoseUnassignedShifts(
-			solution.getShiftAssignmentList(), 
-			solution.getEmployeeList()
-		);
+//		ShiftAssignmentDiagnostics.diagnoseUnassignedShifts(
+//			solution.getShiftAssignmentList(), 
+//			solution.getEmployeeList()
+//		);
 		
 		// Show sample assignments
 		System.out.println("\nSample assignments:");
