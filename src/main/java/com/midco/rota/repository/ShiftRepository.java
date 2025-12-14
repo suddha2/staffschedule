@@ -9,7 +9,7 @@ import org.springframework.data.repository.query.Param;
 import com.midco.rota.model.Shift;
 import com.midco.rota.model.ShiftTemplate;
 
-public interface ShiftRepository extends JpaRepository<Shift, Integer>  {
+public interface ShiftRepository extends JpaRepository<Shift, Long>  {
 
 //	Shift findByShiftTemplateAndStartTime(ShiftTemplate template, LocalDate date);
 	
