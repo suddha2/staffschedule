@@ -121,12 +121,55 @@ public class RotaController {
 		return ResponseEntity.ok(result);
 	}
 
-	 @GetMapping("/service-locations/{regionName}")
-	    public ResponseEntity<List<String>> getServicesForRegion(@PathVariable String regionName) {
-	        List<String> services = shiftTemplateRepository.findAllServiceLocation(regionName);
-	        return ResponseEntity.ok(services);
-	    }
-	
+	@GetMapping("/service-locations/{regionName}")
+	public ResponseEntity<List<String>> getServicesForRegion(@PathVariable String regionName) {
+		List<String> services = shiftTemplateRepository.findAllServiceLocation(regionName);
+		return ResponseEntity.ok(services);
+	}
+
+	@PostMapping("/reenqueue")
+
+	public ResponseEntity<?> reEnqueueSolve(@RequestBody Map<String, Object> payload, Authentication authentication) {
+		LocalDate startDate = LocalDate.parse(payload.get("startDate").toString()) ;
+		LocalDate endDate = LocalDate.parse(payload.get("endDate").toString()) ;
+		String region = (String) payload.get("location");
+
+		Optional<DeferredSolveRequest> requestOpt = deferredSolveRequestRepository
+				.findByStartDateAndEndDateAndRegionAndCompleted(startDate, endDate, region, true);
+		if (requestOpt.isEmpty()) {
+			return ResponseEntity.badRequest().body(Map.of("error", "No request found"));
+		}
+
+		DeferredSolveRequest request = requestOpt.get();
+		try {
+
+			request.setStartDate(startDate);
+			request.setEndDate(endDate);
+			request.setRegion(region);
+			request.setCreatedAt(LocalDateTime.now());
+			request.setCreatedBy(authentication.getName());
+			request.setCompleted(false);
+			request.setCompletedAt(null);
+			
+
+		} catch (Exception ex) {
+			return ResponseEntity.badRequest().body(ex.getMessage());
+		}
+		long daysBetween = ChronoUnit.DAYS.between(request.getStartDate(), request.getEndDate());
+
+		if (daysBetween < 1) {
+			return ResponseEntity.badRequest().body("End date must be after start date.");
+		}
+
+		if (daysBetween > 30) {
+			return ResponseEntity.badRequest().body("Duration is over a month.");
+		}
+		
+		request = deferredSolveRequestRepository.save(request);
+		System.out.println("============================= "+request.toString()+" : Saved  ");
+		return ResponseEntity.ok(request);
+	}
+
 	@PostMapping("/enqueueRequest")
 	public ResponseEntity<?> enqueueSolve(@RequestBody Map<String, Object> payload, Authentication authentication) {
 
