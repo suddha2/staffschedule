@@ -318,107 +318,117 @@ public class RotaController {
 	@Transactional
 	public ResponseEntity<?> saveSchedule(@RequestBody Map<String, Object> payload, Authentication auth) {
 
-		if (!payload.containsKey("rota") || !payload.containsKey("assignments")) {
-			return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", "Missing required fields"));
-		}
+	    if (!payload.containsKey("rota") || !payload.containsKey("assignments")) {
+	        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", "Missing required fields"));
+	    }
 
-		Long rotaId = Long.valueOf(payload.get("rota").toString());
+	    Long rotaId = Long.valueOf(payload.get("rota").toString());
 
-		@SuppressWarnings("unchecked")
-		Map<String, List<Map<String, Object>>> incomingAssignments = (Map<String, List<Map<String, Object>>>) payload
-				.get("assignments");
+	    @SuppressWarnings("unchecked")
+	    Map<String, List<Map<String, Object>>> incomingAssignments = (Map<String, List<Map<String, Object>>>) payload
+	            .get("assignments");
 
-		Rota rota = rotaRepository.findById(rotaId).orElseThrow(() -> new RuntimeException("Rota not found"));
+	    Rota rota = rotaRepository.findById(rotaId).orElseThrow(() -> new RuntimeException("Rota not found"));
 
-		boolean isFirstSave = rotaCorrectionRepository.countBySourceAndShiftAssignmentRotaId("Auto", rotaId) == 0;
+	    boolean isFirstSave = rotaCorrectionRepository.countBySourceAndShiftAssignmentRotaId("Auto", rotaId) == 0;
 
-		Map<String, ShiftAssignment> existingAssignmentsByKey = new HashMap<>();
-		for (ShiftAssignment sa : rota.getShiftAssignmentList()) {
-			if (sa.getShift() != null && sa.getShift().getShiftTemplate() != null) {
-				String key = buildShiftKey(sa.getShift().getShiftTemplate().getLocation(),
-						sa.getShift().getShiftTemplate().getShiftType().name(), sa.getShift().getShiftStart(),
-						sa.getShift().getShiftTemplate().getStartTime());
-				existingAssignmentsByKey.put(key, sa);
-			}
-		}
+	    Map<String, ShiftAssignment> existingAssignmentsByKey = new HashMap<>();
+	    for (ShiftAssignment sa : rota.getShiftAssignmentList()) {
+	        if (sa.getShift() != null && sa.getShift().getShiftTemplate() != null) {
+	            // ✅ FIXED: Include shift.id in key
+	            String key = buildShiftKey(
+	                sa.getShift().getShiftTemplate().getLocation(),
+	                sa.getShift().getShiftTemplate().getShiftType().name(),
+	                sa.getShift().getShiftStart(),
+	                sa.getShift().getShiftTemplate().getStartTime(),
+	                sa.getShift().getId()  // ✅ ADD THIS LINE
+	            );
+	            existingAssignmentsByKey.put(key, sa);
+	        }
+	    }
 
-		List<ShiftAssignment> modifiedAssignments = new ArrayList<>();
-		Map<ShiftAssignment, CorrectionInfo> correctionData = new HashMap<>();
-		int updatedCount = 0;
+	    List<ShiftAssignment> modifiedAssignments = new ArrayList<>();
+	    Map<ShiftAssignment, CorrectionInfo> correctionData = new HashMap<>();
+	    int updatedCount = 0;
 
-		for (Map.Entry<String, List<Map<String, Object>>> entry : incomingAssignments.entrySet()) {
-			String slotKey = entry.getKey();
-			List<Map<String, Object>> employeeList = entry.getValue();
+	    for (Map.Entry<String, List<Map<String, Object>>> entry : incomingAssignments.entrySet()) {
+	        String slotKey = entry.getKey();
+	        List<Map<String, Object>> employeeList = entry.getValue();
 
-			ShiftAssignment existingAssignment = existingAssignmentsByKey.get(slotKey);
-			if (existingAssignment == null)
-				continue;
+	        ShiftAssignment existingAssignment = existingAssignmentsByKey.get(slotKey);
+	        if (existingAssignment == null) {
+	            System.out.println("⚠️ WARNING: No assignment found for key: " + slotKey);
+	            continue;
+	        }
 
-			Employee originalEmployee = existingAssignment.getEmployee();
+	        Employee originalEmployee = existingAssignment.getEmployee();
 
-			if (employeeList.isEmpty()) {
-				if (originalEmployee != null && !isFirstSave) {
-					correctionData.put(existingAssignment, new CorrectionInfo(originalEmployee, null, "Manual"));
-				}
-				existingAssignment.setEmployee(null);
-				modifiedAssignments.add(existingAssignment); // ✅ Track this
-				updatedCount++;
-				continue;
-			}
+	        if (employeeList.isEmpty()) {
+	            if (originalEmployee != null && !isFirstSave) {
+	                correctionData.put(existingAssignment, new CorrectionInfo(originalEmployee, null, "Manual"));
+	            }
+	            existingAssignment.setEmployee(null);
+	            modifiedAssignments.add(existingAssignment);
+	            updatedCount++;
+	            continue;
+	        }
 
-			Integer empId = Integer.valueOf(employeeList.get(0).get("id").toString());
-			Employee newEmployee = employeeRepository.findById(empId).orElse(null);
-			if (newEmployee == null)
-				continue;
+	        Integer empId = Integer.valueOf(employeeList.get(0).get("id").toString());
+	        Employee newEmployee = employeeRepository.findById(empId).orElse(null);
+	        if (newEmployee == null)
+	            continue;
 
-			boolean hasChanged = originalEmployee == null || !originalEmployee.getId().equals(newEmployee.getId());
+	        boolean hasChanged = originalEmployee == null || !originalEmployee.getId().equals(newEmployee.getId());
 
-			if (isFirstSave) {
-				correctionData.put(existingAssignment, new CorrectionInfo(null, newEmployee, "Auto"));
-				existingAssignment.setEmployee(newEmployee);
-				modifiedAssignments.add(existingAssignment); // ✅ Track this
-				updatedCount++;
-			} else if (hasChanged) {
-				correctionData.put(existingAssignment, new CorrectionInfo(originalEmployee, newEmployee, "Manual"));
-				existingAssignment.setEmployee(newEmployee);
-				modifiedAssignments.add(existingAssignment); // ✅ Track this
-				updatedCount++;
-			}
-		}
+	        if (isFirstSave) {
+	            correctionData.put(existingAssignment, new CorrectionInfo(null, newEmployee, "Auto"));
+	            existingAssignment.setEmployee(newEmployee);
+	            modifiedAssignments.add(existingAssignment);
+	            updatedCount++;
+	        } else if (hasChanged) {
+	            correctionData.put(existingAssignment, new CorrectionInfo(originalEmployee, newEmployee, "Manual"));
+	            existingAssignment.setEmployee(newEmployee);
+	            modifiedAssignments.add(existingAssignment);
+	            updatedCount++;
+	        }
+	    }
 
-		System.out.println("=== SAVE PROCESS ===");
-		System.out.println("Modified assignments: " + modifiedAssignments.size());
-		System.out.println("Corrections to create: " + correctionData.size());
+	    System.out.println("=== SAVE PROCESS ===");
+	    System.out.println("Modified assignments: " + modifiedAssignments.size());
+	    System.out.println("Corrections to create: " + correctionData.size());
 
-		// ✅ STEP 1: Save modified assignments FIRST
-		if (!modifiedAssignments.isEmpty()) {
-			System.out.println("Saving " + modifiedAssignments.size() + " modified assignments...");
-			shiftAssignmentRepository.saveAll(modifiedAssignments);
-			shiftAssignmentRepository.flush(); // Force immediate write
-			System.out.println("✅ Assignments saved and flushed");
-		}
+	    if (!modifiedAssignments.isEmpty()) {
+	        System.out.println("Saving " + modifiedAssignments.size() + " modified assignments...");
+	        shiftAssignmentRepository.saveAll(modifiedAssignments);
+	        shiftAssignmentRepository.flush();
+	        System.out.println("✅ Assignments saved and flushed");
+	    }
 
-		// ✅ STEP 2: Now create corrections (assignments have been updated)
-		List<RotaCorrection> corrections = new ArrayList<>();
-		for (Map.Entry<ShiftAssignment, CorrectionInfo> entry : correctionData.entrySet()) {
-			ShiftAssignment assignment = entry.getKey();
-			CorrectionInfo info = entry.getValue();
-			corrections.add(createCorrection(assignment, info.original, info.corrected, info.source));
-		}
+	    List<RotaCorrection> corrections = new ArrayList<>();
+	    for (Map.Entry<ShiftAssignment, CorrectionInfo> entry : correctionData.entrySet()) {
+	        ShiftAssignment assignment = entry.getKey();
+	        CorrectionInfo info = entry.getValue();
+	        corrections.add(createCorrection(assignment, info.original, info.corrected, info.source));
+	    }
 
-		// ✅ STEP 3: Save corrections
-		if (!corrections.isEmpty()) {
-			System.out.println("Saving " + corrections.size() + " corrections...");
-			rotaCorrectionRepository.saveAll(corrections);
-			rotaCorrectionRepository.flush();
-			System.out.println("✅ Corrections saved and flushed");
-		}
+	    if (!corrections.isEmpty()) {
+	        System.out.println("Saving " + corrections.size() + " corrections...");
+	        rotaCorrectionRepository.saveAll(corrections);
+	        rotaCorrectionRepository.flush();
+	        System.out.println("✅ Corrections saved and flushed");
+	    }
 
-		System.out.println("=== SAVE COMPLETE ===");
+	    System.out.println("=== SAVE COMPLETE ===");
 
-		return ResponseEntity.ok(Map.of("message", "Success", "saveType", isFirstSave ? "Auto" : "Manual",
-				"correctionsCreated", corrections.size(), "assignmentsUpdated", updatedCount));
+	    return ResponseEntity.ok(Map.of(
+	        "message", "Success",
+	        "saveType", isFirstSave ? "Auto" : "Manual",
+	        "correctionsCreated", corrections.size(),
+	        "assignmentsUpdated", updatedCount
+	    ));
 	}
+
+
 
 	@GetMapping("/solved")
 	public ResponseEntity<?> solvedSolution(@RequestParam Long id) {
@@ -510,10 +520,16 @@ public class RotaController {
 		return "\"" + escaped + "\"";
 	}
 
-	private String buildShiftKey(String location, String shiftType, LocalDate date, LocalTime startTime) {
-		// ✅ Use HH:mm:ss format to match frontend
+//	private String buildShiftKey(String location, String shiftType, LocalDate date, LocalTime startTime) {
+//		// ✅ Use HH:mm:ss format to match frontend
+//		String timeStr = startTime.format(DateTimeFormatter.ofPattern("HH:mm:ss"));
+//		return location + "|" + shiftType + "|" + date.toString() + "|" + timeStr;
+//	}
+	
+	// ✅ UPDATED METHOD: Now includes shift.id
+	private String buildShiftKey(String location, String shiftType, LocalDate date, LocalTime startTime, Long shiftId) {
 		String timeStr = startTime.format(DateTimeFormatter.ofPattern("HH:mm:ss"));
-		return location + "|" + shiftType + "|" + date.toString() + "|" + timeStr;
+		return location + "|" + shiftType + "|" + date + "|" + timeStr + "|" + shiftId;
 	}
 
 	private RotaCorrection createCorrection(ShiftAssignment assignment, Employee originalEmployee,
@@ -561,7 +577,7 @@ public class RotaController {
 				.filter(sa -> sa.getShift() != null && sa.getShift().getShiftTemplate() != null)
 				.map(sa -> buildShiftKey(sa.getShift().getShiftTemplate().getLocation(),
 						sa.getShift().getShiftTemplate().getShiftType().name(), sa.getShift().getShiftStart(),
-						sa.getShift().getShiftTemplate().getStartTime()))
+						sa.getShift().getShiftTemplate().getStartTime(),sa.getShift().getId()))
 				.limit(10).collect(Collectors.toList());
 
 		return ResponseEntity.ok(Map.of("sampleKeys", keys));
