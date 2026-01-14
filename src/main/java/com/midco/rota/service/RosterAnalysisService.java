@@ -114,8 +114,8 @@ public class RosterAnalysisService {
 
 	private boolean isEligible(Employee emp, Shift shift) {
 	    ShiftTemplate template = shift.getShiftTemplate();
-	    return (emp.getRestrictedDay() == null || !emp.getRestrictedDay().contains(template.getDay())) &&
-	           (emp.getRestrictedShift() == null || !emp.getRestrictedShift().contains(template.getShiftType())) &&
+	    return (emp.getRestrictedDays() == null || !emp.getRestrictedDays().contains(template.getDay())) &&
+	           (emp.getRestrictedShifts() == null || !emp.getRestrictedShifts().contains(template.getShiftType())) &&
 	           (emp.getRestrictedService() == null || !emp.getRestrictedService().contains(template.getLocation()));
 	}
 

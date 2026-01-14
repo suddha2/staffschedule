@@ -38,9 +38,9 @@ public class FallbackSwapMoveFactory implements MoveListFactory<Rota> {
         String location = sa.getShift().getShiftTemplate().getLocation();
         DayOfWeek day = sa.getShift().getShiftTemplate().getDay();
 
-        return !(emp.getRestrictedShift() != null && emp.getRestrictedShift().contains(type)) &&
+        return !(emp.getRestrictedShifts() != null && emp.getRestrictedShifts().contains(type)) &&
                !(emp.getRestrictedService() != null && emp.getRestrictedService().contains(location)) &&
-               !(emp.getRestrictedDay() != null && emp.getRestrictedDay().contains(day));
+               !(emp.getRestrictedDays() != null && emp.getRestrictedDays().contains(day));
     }
 }
 

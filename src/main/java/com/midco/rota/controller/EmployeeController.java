@@ -80,7 +80,7 @@ public class EmployeeController {
                     employee.setPreferredDays(employeeDetails.getPreferredDays());
                     employee.setRestrictedDays(employeeDetails.getRestrictedDays());
                     employee.setPreferredShifts(employeeDetails.getPreferredShifts());
-                    employee.setRestrictedShifts(employeeDetails.getRestrictedShift());
+                    employee.setRestrictedShifts(employeeDetails.getRestrictedShifts());
                     
                     // Skills and Pattern
                     employee.setSkills(employeeDetails.getSkills());

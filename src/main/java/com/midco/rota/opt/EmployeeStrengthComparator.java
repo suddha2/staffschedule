@@ -69,10 +69,10 @@ public class EmployeeStrengthComparator implements Comparator<Employee> {
         int score = 0;
         if (emp.getPreferredService() != null)
             score += emp.getPreferredService().size() * 5;
-        if (emp.getPreferredDay() != null)
-            score += emp.getPreferredDay().size() * 3;
-        if (emp.getPreferredShift() != null)
-            score += emp.getPreferredShift().size() * 2;
+        if (emp.getPreferredDays() != null)
+            score += emp.getPreferredDays().size() * 3;
+        if (emp.getPreferredShifts() != null)
+            score += emp.getPreferredShifts().size() * 2;
         return score;
     }
     
@@ -80,10 +80,10 @@ public class EmployeeStrengthComparator implements Comparator<Employee> {
         int penalty = 0;
         if (emp.getRestrictedService() != null)
             penalty += emp.getRestrictedService().size() * 5;
-        if (emp.getRestrictedDay() != null)
-            penalty += emp.getRestrictedDay().size() * 3;
-        if (emp.getRestrictedShift() != null)
-            penalty += emp.getRestrictedShift().size() * 2;
+        if (emp.getRestrictedDays() != null)
+            penalty += emp.getRestrictedDays().size() * 3;
+        if (emp.getRestrictedShifts() != null)
+            penalty += emp.getRestrictedShifts().size() * 2;
         return penalty;
     }
 }

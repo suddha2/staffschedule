@@ -101,14 +101,14 @@ public class ShiftAssignmentDiagnostics {
         }
         
         // Check restricted day
-        if (emp.getRestrictedDay() != null && 
-            emp.getRestrictedDay().contains(date.getDayOfWeek())) {
+        if (emp.getRestrictedDays() != null && 
+            emp.getRestrictedDays().contains(date.getDayOfWeek())) {
             reasons.add("Restricted day: " + date.getDayOfWeek());
         }
         
         // Check restricted shift type
-        if (emp.getRestrictedShift() != null && 
-            emp.getRestrictedShift().contains(shiftType)) {
+        if (emp.getRestrictedShifts() != null && 
+            emp.getRestrictedShifts().contains(shiftType)) {
             reasons.add("Restricted shift type: " + shiftType);
         }
         

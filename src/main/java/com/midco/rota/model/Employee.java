@@ -521,37 +521,37 @@ public class Employee {
 		this.preferredServiceWeightsMap = null; // Invalidate cache when preferences change
 	}
 
-	public List<ShiftType> getPreferredShift() {
-		return preferredShifts;
-	}
+//	public List<ShiftType> getPreferredShift() {
+//		return preferredShifts;
+//	}
 
-	public void setPreferredShift(List<ShiftType> preferredShifts) {
-		this.preferredShifts = preferredShifts;
-	}
+//	public void setPreferredShift(List<ShiftType> preferredShifts) {
+//		this.preferredShifts = preferredShifts;
+//	}
 
-	public List<DayOfWeek> getPreferredDay() {
-		return preferredDays;
-	}
+//	public List<DayOfWeek> getPreferredDay() {
+//		return preferredDays;
+//	}
 
-	public void setPreferredDay(List<DayOfWeek> preferredDay) {
-		this.preferredDays = preferredDay;
-	}
+//	public void setPreferredDay(List<DayOfWeek> preferredDay) {
+//		this.preferredDays = preferredDay;
+//	}
 
-	public List<DayOfWeek> getRestrictedDay() {
-		return restrictedDays;
-	}
+//	public List<DayOfWeek> getRestrictedDay() {
+//		return restrictedDays;
+//	}
 
-	public void setRestrictedDay(List<DayOfWeek> restrictedDay) {
-		this.restrictedDays = restrictedDay;
-	}
+//	public void setRestrictedDay(List<DayOfWeek> restrictedDay) {
+//		this.restrictedDays = restrictedDay;
+//	}
 
-	public List<ShiftType> getRestrictedShift() {
-		return restrictedShifts;
-	}
+//	public List<ShiftType> getRestrictedShift() {
+//		return restrictedShifts;
+//	}
 
-	public void setRestrictedShift(List<ShiftType> restrictedShift) {
-		this.restrictedShifts = restrictedShift;
-	}
+//	public void setRestrictedShift(List<ShiftType> restrictedShift) {
+//		this.restrictedShifts = restrictedShift;
+//	}
 
 	public List<String> getRestrictedService() {
 		return restrictedService;
@@ -615,6 +615,10 @@ public class Employee {
 
 	public void setPreferredShifts(List<ShiftType> preferredShifts) {
 		this.preferredShifts = preferredShifts;
+	}
+	
+	public List<ShiftType> getRestrictedShifts() {  // Added 's'
+	    return restrictedShifts;
 	}
 
 	public void setRestrictedShifts(List<ShiftType> restrictedShifts) {

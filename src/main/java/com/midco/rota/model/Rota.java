@@ -13,6 +13,7 @@ import org.optaplanner.core.api.domain.solution.PlanningSolution;
 import org.optaplanner.core.api.domain.solution.ProblemFactCollectionProperty;
 import org.optaplanner.core.api.domain.valuerange.ValueRangeProvider;
 import org.optaplanner.core.api.score.buildin.hardsoft.HardSoftScore;
+import org.optaplanner.core.api.score.buildin.hardsoftlong.HardSoftLongScore;
 
 import com.fasterxml.jackson.annotation.JsonIdentityInfo;
 import com.fasterxml.jackson.annotation.JsonManagedReference;
@@ -61,7 +62,7 @@ public class Rota {
 
 	@Transient
 	@PlanningScore
-	private HardSoftScore score;
+	private HardSoftLongScore score;
 
 	@Transient
 	@ProblemFactCollectionProperty
@@ -107,11 +108,11 @@ public class Rota {
 		return shiftAssignmentList;
 	}
 
-	public HardSoftScore getScore() {
+	public HardSoftLongScore getScore() {
 		return score;
 	}
 
-	public void setScore(HardSoftScore score) {
+	public void setScore(HardSoftLongScore score) {
 		this.score = score;
 	}
 
