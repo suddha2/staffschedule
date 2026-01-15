@@ -187,7 +187,8 @@ public class StatsController {
 
 			double hours = sa.getShift().getDurationInHours().doubleValue();// Duration.between(shiftStart, shiftEnd);
 			// double hours = duration.toMinutes() / 60.0;
-			row.createCell(col++).setCellValue("Week " + sa.getShift().getAbsoluteWeek()%4);
+			row.createCell(col++).setCellValue(
+					"Week " + (sa.getShift().getAbsoluteWeek() % 4 == 0 ? 4 : sa.getShift().getAbsoluteWeek() % 4 ));
 			row.createCell(col++).setCellValue(sa.getShift().getShiftTemplate().getLocation());
 			row.createCell(col++).setCellValue(sa.getShift().getShiftTemplate().getShiftType().name());
 			row.createCell(col++).setCellValue(sa.getShift().getShiftTemplate().getDayOfWeek().name());

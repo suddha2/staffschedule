@@ -37,39 +37,31 @@ public class RotaConstraintProvider implements ConstraintProvider {
 	public Constraint[] defineConstraints(ConstraintFactory factory) {
 		return new Constraint[] {
 				// HARD constraints - Must be satisfied
-				unassignedShiftConstraint(factory), 
-				preventDuplicateAssignments(factory), 
-				genderConstraint(factory),
-				restrictedDayOfWeekConstraint(factory), 
-				restrictedShiftTypeConstraint(factory),
-				restrictedServiceConstraint(factory), 
-				maxWeeklyHoursConstraint(factory),
-				tooManyEmployeesPerShift(factory), 
-				maxHoursPerShiftTypePerDay(factory),
-				limitWeeklyShiftTypeCounts(factory), 
-				noBackToBack(factory),
-				//maxShiftsPerLocationPerWeek(factory), 
-				//maxDaysOnIn4Weeks(factory), 
-				//minDaysOffIn4Weeks(factory), 
-				//maxConsecutiveWeeksOn(factory),
-				//minWeeksOffAfterStreak(factory), 
-				//maxMonthlyHoursWithExclusions(factory),
-				//employeeSchedulePatternConstraint(factory), 
-				//weekOnWeekOffPattern(factory),
-				employeeMaxHours(factory),
-				minDaysPerLocationPerWeek(factory),
-				//maxLocationsPerEmployeePerPeriod(factory), // ✅ Keep this in HARD
+				unassignedShiftConstraint(factory), preventDuplicateAssignments(factory), genderConstraint(factory),
+				restrictedDayOfWeekConstraint(factory), restrictedShiftTypeConstraint(factory),
+				restrictedServiceConstraint(factory), maxWeeklyHoursConstraint(factory),
+				tooManyEmployeesPerShift(factory), maxHoursPerShiftTypePerDay(factory),
+				limitWeeklyShiftTypeCounts(factory), noBackToBack(factory),
+				// maxShiftsPerLocationPerWeek(factory),
+				// maxDaysOnIn4Weeks(factory),
+				// minDaysOffIn4Weeks(factory),
+				// maxConsecutiveWeeksOn(factory),
+				// minWeeksOffAfterStreak(factory),
+				// maxMonthlyHoursWithExclusions(factory),
+				// employeeSchedulePatternConstraint(factory),
+				// weekOnWeekOffPattern(factory),
+				employeeMaxHours(factory), minDaysPerLocationPerWeek(factory),
+				// maxLocationsPerEmployeePerPeriod(factory), // ✅ Keep this in HARD
 				// ❌ REMOVE preferFewerLocationsPerPeriod from here
 
 				// SOFT constraints - Optimization goals
 				rewardAssignedShift(factory), minWeeklyHoursConstraint(factory), preferedWorkingDaysConstraint(factory),
 				preferedShiftTypeConstraint(factory), prioritizedAllocation(factory),
 				prioritizeHighPriorityLocations(factory), rewardZeroHoursAssignments(factory),
-				encourageBalancedHours(factory), penalizeOverloading(factory), 
-				maxDaysPerLocationPerWeek(factory),
-				//penalizeDailyLocationSwitches(factory), 
-				//rewardConsecutiveDaysAtLocation(factory),
-				//limitLocationChangesPerWeek(factory),
+				encourageBalancedHours(factory), penalizeOverloading(factory), maxDaysPerLocationPerWeek(factory),
+				// penalizeDailyLocationSwitches(factory),
+				// rewardConsecutiveDaysAtLocation(factory),
+				// limitLocationChangesPerWeek(factory),
 				locationPreferences(factory),
 
 		};
@@ -480,9 +472,32 @@ public class RotaConstraintProvider implements ConstraintProvider {
 			}
 		}
 
-		// DAY cannot be followed by active shifts same day
-		if (type1 == ShiftType.DAY && sameDay) {
-			if (type2 == ShiftType.DAY || type2 == ShiftType.WAKING_NIGHT || type2 == ShiftType.FLOATING) {
+		// DAY and WAKING_NIGHT cannot be on same day (regardless of order)
+		if (sameDay) {
+			if ((type1 == ShiftType.DAY && type2 == ShiftType.WAKING_NIGHT)
+					|| (type1 == ShiftType.WAKING_NIGHT && type2 == ShiftType.DAY)) {
+				return true; // ❌ Forbidden
+			}
+
+			// DAY cannot be with another DAY same day
+			if (type1 == ShiftType.DAY && type2 == ShiftType.DAY) {
+				return true; // ❌ Forbidden
+			}
+
+			// DAY cannot be with FLOATING same day
+			if ((type1 == ShiftType.DAY && type2 == ShiftType.FLOATING)
+					|| (type1 == ShiftType.FLOATING && type2 == ShiftType.DAY)) {
+				return true; // ❌ Forbidden
+			}
+
+			// WAKING_NIGHT cannot be with another WAKING_NIGHT same day
+			if (type1 == ShiftType.WAKING_NIGHT && type2 == ShiftType.WAKING_NIGHT) {
+				return true; // ❌ Forbidden
+			}
+
+			// WAKING_NIGHT cannot be with FLOATING same day
+			if ((type1 == ShiftType.WAKING_NIGHT && type2 == ShiftType.FLOATING)
+					|| (type1 == ShiftType.FLOATING && type2 == ShiftType.WAKING_NIGHT)) {
 				return true; // ❌ Forbidden
 			}
 		}
@@ -523,7 +538,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 				.groupBy(ShiftAssignment::getEmployee, sa -> sa.getShift().getShiftTemplate().getLocation(),
 						sa -> getWeekNumber(sa.getShift().getShiftStart()),
 						ConstraintCollectors.countDistinct(sa -> sa.getShift().getShiftStart()))
-				.filter((emp, location, weekNum, dayCount) -> dayCount == 1).penalize(HardSoftLongScore.ofSoft(200000)) 
+				.filter((emp, location, weekNum, dayCount) -> dayCount == 1).penalize(HardSoftLongScore.ofSoft(200000))
 				.asConstraint("Min 2 days per location per week (SOFT)");
 	}
 
@@ -575,7 +590,8 @@ public class RotaConstraintProvider implements ConstraintProvider {
 				.filter(sa -> sa.getShift().getShiftTemplate().getShiftType() != ShiftType.SLEEP_IN)
 				.groupBy(ShiftAssignment::getEmployee, sa -> getWeekNumber(sa.getShift().getShiftStart()),
 						ConstraintCollectors.countDistinct(sa -> sa.getShift().getShiftTemplate().getLocation()))
-				.penalize(HardSoftLongScore.ofSoft(1000), (emp, weekNum, locationCount) -> { // ✅ REDUCED: From 2000 to 1000
+				.penalize(HardSoftLongScore.ofSoft(1000), (emp, weekNum, locationCount) -> { // ✅ REDUCED: From 2000 to
+																								// 1000
 					if (locationCount <= 2) {
 						return 0; // Perfect - 1 or 2 locations
 					} else if (locationCount == 3) {
