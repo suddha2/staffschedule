@@ -15,6 +15,7 @@ import com.midco.rota.util.ShiftType;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -24,8 +25,6 @@ import jakarta.persistence.PostLoad;
 import jakarta.persistence.Transient;
 
 @Entity
-@JsonIdentityInfo(generator = ObjectIdGenerators.PropertyGenerator.class, property = "id")
-
 public class Shift {
 
 	@Id
@@ -38,7 +37,7 @@ public class Shift {
 	@Column(name = "shift_end")
 	private LocalDate shiftEnd;
 
-	@OneToOne
+	@OneToOne(fetch = FetchType.EAGER) 
 	@JoinColumn(name = "shift_template_id")
 	private ShiftTemplate shiftTemplate;
 

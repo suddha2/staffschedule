@@ -28,7 +28,7 @@ import jakarta.persistence.Transient;
 
 @Entity(name = "rota_shift_assignment")
 @PlanningEntity(difficultyComparatorClass = ShiftAssignmentDifficultyComparator.class)
-@JsonIdentityInfo(generator = ObjectIdGenerators.PropertyGenerator.class, property = "id")
+
 
 public class ShiftAssignment {
 

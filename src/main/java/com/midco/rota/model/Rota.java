@@ -33,7 +33,6 @@ import jakarta.persistence.Transient;
 
 @Entity
 @PlanningSolution
-@JsonIdentityInfo(generator = ObjectIdGenerators.PropertyGenerator.class, property = "id")
 
 public class Rota {
 
