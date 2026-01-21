@@ -39,6 +39,7 @@ public class ShiftTemplate {
 	@Enumerated(EnumType.STRING)
 	@Column(name = "shift_type", length = 20)
 	private ShiftType shiftType;
+	
 	@Enumerated(EnumType.STRING)
 	@Column(name = "day_of_week", length = 15)
 	private DayOfWeek dayOfWeek;
@@ -110,9 +111,9 @@ public class ShiftTemplate {
 		this.shiftType = shiftType;
 	}
 
-	public void setDay(DayOfWeek day) {
-		this.dayOfWeek = day;
-	}
+//	public void setDay(DayOfWeek day) {
+//		this.dayOfWeek = day;
+//	}
 
 	public void setStartTime(LocalTime startTime) {
 		this.startTime = startTime;

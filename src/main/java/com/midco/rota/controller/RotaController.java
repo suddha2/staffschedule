@@ -39,6 +39,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
+import com.midco.rota.RateTableProvider;
 import com.midco.rota.dto.ScheduleResponseDTO;
 import com.midco.rota.model.DeferredSolveRequest;
 import com.midco.rota.model.Employee;
@@ -82,6 +83,7 @@ public class RotaController {
 	private final DeferredSolveRequestRepository deferredSolveRequestRepository;
 	private final RotaCorrectionRepository rotaCorrectionRepository;
 	private final ShiftAssignmentRepository shiftAssignmentRepository;
+	private final RateTableProvider rateTableProvider;
 	// private final ExecutorService securityExecutorService;
 	@Autowired
 	private SimpUserRegistry simpUserRegistry;
@@ -92,7 +94,7 @@ public class RotaController {
 			DeferredSolveRequestRepository deferredSolveRequestRepository, AuthController authController,
 			RotaRepository rotaRepository, ShiftRepository shiftRepository, PayCycleDataService payCycleDataService,
 			PeriodService periodService, RotaCorrectionRepository rotaCorrectionRepository,
-			ShiftAssignmentRepository shiftAssignmentRepository) {
+			ShiftAssignmentRepository shiftAssignmentRepository, RateTableProvider rateTableProvider) {
 		this.solverManager = solverManager;
 		this.updateService = updateService;
 		this.explanationService = explanationService;
@@ -107,11 +109,12 @@ public class RotaController {
 		this.periodService = periodService;
 		this.rotaCorrectionRepository = rotaCorrectionRepository;
 		this.shiftAssignmentRepository = shiftAssignmentRepository;
+		this.rateTableProvider = rateTableProvider;
 	}
 
 	@GetMapping("/regions")
 	public ResponseEntity<List<Map<String, Object>>> getRegions() {
-		List<String> regions = shiftTemplateRepository.findAllRegion();
+		List<String> regions = RateTableProvider.getAllRegions();
 		List<Map<String, Object>> result = new ArrayList<>();
 		for (int i = 0; i < regions.size(); i++) {
 			Map<String, Object> entry = new HashMap<>();
@@ -119,6 +122,7 @@ public class RotaController {
 			entry.put("region", regions.get(i));
 			result.add(entry);
 		}
+
 		return ResponseEntity.ok(result);
 	}
 

@@ -117,6 +117,9 @@ public class Employee {
 	@Column(name = "invert_pattern")
 	
 	private Boolean invertPattern;
+	
+	@Column(name="active")
+	private boolean active;
 
 	@OneToMany(mappedBy = "employee", fetch = FetchType.EAGER)
 	@JsonIgnore
@@ -688,5 +691,13 @@ public class Employee {
 
 	public static PeriodService getPeriodService() {
 		return periodService;
+	}
+
+	public boolean isActive() {
+		return active;
+	}
+
+	public void setActive(boolean active) {
+		this.active = active;
 	}
 }

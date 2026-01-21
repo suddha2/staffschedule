@@ -1,0 +1,30 @@
+{"properties": [
+  {
+    "name": "rates.care-call.hourly",
+    "type": "java.lang.String",
+    "description": "A description for 'rates.care-call.hourly'"
+  },
+  {
+    "name": "cors.allowed-origins",
+    "type": "java.lang.String",
+    "description": "A description for 'cors.allowed-origins'"
+  },
+  {
+    "name": "paseto.private-key",
+    "type": "java.lang.String",
+    "description": "A description for 'paseto.private-key'"
+  },
+{
+    "name": "paseto.public-key",
+    "type": "java.lang.String",
+    "description": "A description for 'paseto.public-key'"
+  },{
+    "name": "paseto.audience",
+    "type": "java.lang.String",
+    "description": "A description for 'paseto.audience'"
+  },{
+    "name": "paseto.issuer",
+    "type": "java.lang.String",
+    "description": "A description for 'paseto.issuer'"
+  }
+]}

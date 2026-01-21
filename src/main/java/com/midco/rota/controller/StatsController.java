@@ -35,6 +35,7 @@ import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.util.CellRangeAddress;
 import org.apache.poi.xssf.streaming.SXSSFWorkbook;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -67,6 +68,9 @@ public class StatsController {
 
 	private final RateTableProvider rateTableProvider;
 
+	@Value("${rates.care-call.hourly}")
+	private BigDecimal careCallHourlyRate;
+	
 	@Autowired
 	private final PaycycleStatsService statsService;
 	private final RotaRepository rotaRepository;
@@ -706,6 +710,10 @@ public class StatsController {
 			// if rate Type is DAILY, override ratecode and pick daily rate
 			return RateTableProvider.getAmount(region, rateType, RateCode.L1.name());
 		}
+		
+		if (shiftType == ShiftType.CARE_CALL) {
+	        return careCallHourlyRate;
+	    }
 
 		return RateTableProvider.getAmount(region, rateType, rateCode.name());
 	}

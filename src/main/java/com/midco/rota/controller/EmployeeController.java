@@ -5,6 +5,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import com.midco.rota.model.Employee;
+import com.midco.rota.model.ShiftTemplate;
 import com.midco.rota.repository.EmployeeRepository;
 
 @RestController
@@ -29,6 +30,18 @@ public class EmployeeController {
     public ResponseEntity<Employee> getEmployeeById(@PathVariable Integer id) {
         return employeeRepository.findById(id)
                 .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+    
+    
+    @PatchMapping("/{id}/toggle-active")
+    public ResponseEntity<Employee> toggleActive(@PathVariable Integer id) {
+        return employeeRepository.findById(id)
+                .map(template -> {
+                    template.setActive(!template.isActive());
+                    Employee updated = employeeRepository.save(template);
+                    return ResponseEntity.ok(updated);
+                })
                 .orElse(ResponseEntity.notFound().build());
     }
     
