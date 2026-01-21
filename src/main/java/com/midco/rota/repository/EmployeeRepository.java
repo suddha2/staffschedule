@@ -18,7 +18,7 @@ import com.midco.rota.util.ShiftType;
 
 @Repository
 public interface EmployeeRepository extends JpaRepository<Employee, Integer>, JpaSpecificationExecutor<Employee> {
-	@Query(value = "SELECT * FROM employee WHERE preferred_region = :region", nativeQuery = true)
+	@Query(value = "SELECT * FROM employee WHERE preferred_region = :region and active =true ", nativeQuery = true)
 	List<Employee> findByPreferredRegion(@Param("region") String region);
 
 	@Query("SELECT es FROM EmployeeSchedulePattern es " + "WHERE es.location = :location "
