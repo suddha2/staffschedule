@@ -37,58 +37,36 @@ public class RotaConstraintProvider implements ConstraintProvider {
 	public Constraint[] defineConstraints(ConstraintFactory factory) {
 		return new Constraint[] {
 				// HARD constraints - Must be satisfied
-				unassignedShiftConstraint(factory), preventDuplicateAssignments(factory), genderConstraint(factory),
-				restrictedDayOfWeekConstraint(factory), restrictedShiftTypeConstraint(factory),
-				restrictedServiceConstraint(factory), maxWeeklyHoursConstraint(factory),
-				tooManyEmployeesPerShift(factory), maxHoursPerShiftTypePerDay(factory),
-				limitWeeklyShiftTypeCounts(factory), noBackToBack(factory),
-				// maxShiftsPerLocationPerWeek(factory),
-				// maxDaysOnIn4Weeks(factory),
-				// minDaysOffIn4Weeks(factory),
-				// maxConsecutiveWeeksOn(factory),
-				// minWeeksOffAfterStreak(factory),
-				// maxMonthlyHoursWithExclusions(factory),
-				// employeeSchedulePatternConstraint(factory),
-				// weekOnWeekOffPattern(factory),
+				unassignedShiftConstraint(factory), preventDuplicateAssignments(factory),
+				noInvalidSameDayShifts(factory), // ✅ MOVED: Before noBackToBack
+				genderConstraint(factory), restrictedDayOfWeekConstraint(factory),
+				restrictedShiftTypeConstraint(factory), restrictedServiceConstraint(factory),
+				maxWeeklyHoursConstraint(factory), tooManyEmployeesPerShift(factory),
+				maxHoursPerShiftTypePerDay(factory), limitWeeklyShiftTypeCounts(factory), noBackToBack(factory),
 				employeeMaxHours(factory), minDaysPerLocationPerWeek(factory),
-				// maxLocationsPerEmployeePerPeriod(factory), // ✅ Keep this in HARD
-				// ❌ REMOVE preferFewerLocationsPerPeriod from here
 
 				// SOFT constraints - Optimization goals
 				rewardAssignedShift(factory), minWeeklyHoursConstraint(factory), preferedWorkingDaysConstraint(factory),
 				preferedShiftTypeConstraint(factory), prioritizedAllocation(factory),
 				prioritizeHighPriorityLocations(factory), rewardZeroHoursAssignments(factory),
 				encourageBalancedHours(factory), penalizeOverloading(factory), maxDaysPerLocationPerWeek(factory),
-				// penalizeDailyLocationSwitches(factory),
-				// rewardConsecutiveDaysAtLocation(factory),
-				// limitLocationChangesPerWeek(factory),
-				locationPreferences(factory),
-
-		};
+				locationPreferences(factory), };
 	}
 
 	private Constraint penalizeOverloading(ConstraintFactory factory) {
 		return factory.forEach(ShiftAssignment.class).filter(sa -> sa.getEmployee() != null)
 				.filter(sa -> sa.getEmployee().getMinHrs() != null)
-				// ✅ Exclude SLEEP_IN if you determined you need this
 				.filter(sa -> sa.getShift().getShiftTemplate().getShiftType() != ShiftType.SLEEP_IN)
 				.groupBy(ShiftAssignment::getEmployee,
 						ConstraintCollectors.sumLong(sa -> sa.getShift().getDurationInMins()))
 				.filter((emp, totalMins) -> {
 					long minMins = emp.getMinHrs().longValue() * 60;
-					// Only penalize if 30% or more above min hours
 					return totalMins > (minMins * 1.3);
 				}).penalize(HardSoftLongScore.ofSoft(100), (emp, totalMins) -> {
 					long minMins = emp.getMinHrs().longValue() * 60;
 					long threshold = (long) (minMins * 1.3);
 					long excess = totalMins - threshold;
-
 					int excessHours = (int) (excess / 60);
-					// Progressive penalty: quadratic growth
-					// 1 hour over: 1 point
-					// 2 hours over: 4 points
-					// 3 hours over: 9 points
-					// 5 hours over: 25 points
 					return excessHours * excessHours;
 				}).asConstraint("Penalize overloading individual employees");
 	}
@@ -99,28 +77,23 @@ public class RotaConstraintProvider implements ConstraintProvider {
 						ConstraintCollectors.sumLong(sa -> sa.getShift().getDurationInMins()))
 				.reward(HardSoftLongScore.ofSoft(10), (emp, totalMins) -> {
 					double hours = totalMins / 60.0;
-
-					// Get employee's min and max
 					double min = emp.getMinHrs() != null ? emp.getMinHrs().doubleValue() : 0;
 					double max = emp.getMaxHrs() != null ? emp.getMaxHrs().doubleValue() : 999;
-
-					// Calculate midpoint (target hours)
 					double target = (min + max) / 2.0;
-
-					// Reward based on how close to target
 					double distanceFromTarget = Math.abs(hours - target);
 
 					if (distanceFromTarget <= 5) {
-						return 100; // Very close to target
+						return 100;
 					} else if (distanceFromTarget <= 10) {
-						return 50; // Reasonably close
+						return 50;
 					} else if (distanceFromTarget <= 20) {
-						return 20; // Somewhat close
+						return 20;
 					} else {
-						return 5; // Far from target
+						return 5;
 					}
 				}).asConstraint("Encourage balanced hours around midpoint");
 	}
+
 	// ========== HARD CONSTRAINTS ==========
 
 	private Constraint employeeMaxHours(ConstraintFactory factory) {
@@ -247,6 +220,16 @@ public class RotaConstraintProvider implements ConstraintProvider {
 				.asConstraint("Max non-floating shifts per location per week");
 	}
 
+	// ✅ FIXED: Same-day constraint (handles all same-day logic)
+	private Constraint noInvalidSameDayShifts(ConstraintFactory factory) {
+		return factory.forEach(ShiftAssignment.class).filter(sa -> sa.getEmployee() != null && sa.getShift() != null)
+				.groupBy(ShiftAssignment::getEmployee, sa -> sa.getShift().getShiftStart(),
+						ConstraintCollectors.toList())
+				.filter((emp, date, dayAssignments) -> !isAllowedDayAssignments(dayAssignments))
+				.penalize(HardSoftLongScore.ofHard(1000)).asConstraint("No invalid same-day shift combinations");
+	}
+
+	// ✅ FIXED: Back-to-back constraint (handles ONLY next-day transitions)
 	private Constraint noBackToBack(ConstraintFactory factory) {
 		return factory.forEach(ShiftAssignment.class)
 				.join(ShiftAssignment.class, Joiners.equal(ShiftAssignment::getEmployee),
@@ -334,12 +317,10 @@ public class RotaConstraintProvider implements ConstraintProvider {
 				.groupBy(ShiftAssignment::getEmployee, sa -> YearWeek.from(sa.getShift().getShiftStart()),
 						ConstraintCollectors.sumLong(sa -> sa.getShift().getDurationInMins()))
 				.filter((employee, week, totalMinutes) -> totalMinutes < (employee.getMinHrs().longValue() * 60))
-				.penalize(HardSoftLongScore.ofSoft(500), // ✅ CHANGED: Up from 100
-						(employee, week, totalMinutes) -> {
-							long minMinutes = employee.getMinHrs().longValue() * 60;
-							return (int) (minMinutes - totalMinutes);
-						})
-				.asConstraint("Min weekly hours not met");
+				.penalize(HardSoftLongScore.ofSoft(500), (employee, week, totalMinutes) -> {
+					long minMinutes = employee.getMinHrs().longValue() * 60;
+					return (int) (minMinutes - totalMinutes);
+				}).asConstraint("Min weekly hours not met");
 	}
 
 	private Constraint preferedWorkingDaysConstraint(ConstraintFactory factory) {
@@ -367,7 +348,6 @@ public class RotaConstraintProvider implements ConstraintProvider {
 				.reward(HardSoftLongScore.ONE_SOFT, sa -> {
 					ShiftType shiftType = sa.getShift().getShiftTemplate().getShiftType();
 					int priority = sa.getShift().getShiftTemplate().getPriority();
-					String location = sa.getShift().getShiftTemplate().getLocation();
 
 					int shiftWeight = switch (shiftType) {
 					case DAY -> 450;
@@ -395,15 +375,10 @@ public class RotaConstraintProvider implements ConstraintProvider {
 					int priority = sa.getShift().getShiftTemplate().getPriority();
 
 					if (priority < 1) {
-						return 0; // Invalid priority
+						return 0;
 					}
 
-					// Cap at 20 to prevent extreme values
 					int maxPriority = Math.min(priority, 20);
-
-					// Higher priority (lower number) = more reward
-					// Priority 1: 200 points
-					// Priority 20: 10 points
 					return (21 - maxPriority) * 10;
 				}).asConstraint("Prioritize high-priority location assignments");
 	}
@@ -412,8 +387,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 		return factory.forEach(ShiftAssignment.class).filter(sa -> {
 			Employee emp = sa.getEmployee();
 			return emp != null && emp.getContractType() == ContractType.ZERO_HOURS;
-		}).reward(HardSoftLongScore.ofSoft(3000)) // ✅ CHANGED: Up from 100
-				.asConstraint("Allow zero-hours employee assignments");
+		}).reward(HardSoftLongScore.ofSoft(3000)).asConstraint("Allow zero-hours employee assignments");
 	}
 
 	private Constraint employeeSchedulePatternConstraint(ConstraintFactory factory) {
@@ -427,14 +401,57 @@ public class RotaConstraintProvider implements ConstraintProvider {
 			LocalDate date = sa.getShift().getShiftStart();
 			ShiftType shiftType = sa.getShift().getShiftTemplate().getShiftType();
 
-			// Check if employee can work this shift based on pattern
-			// Now uses PeriodService to get correct week number
 			return !emp.canWorkShift(location, date, shiftType);
 		}).penalize(HardSoftLongScore.ONE_HARD).asConstraint("Employee schedule pattern violation");
 	}
 
 	// ========== HELPER METHODS ==========
 
+	private boolean isAllowedDayAssignments(List<ShiftAssignment> dayAssignments) {
+		if (dayAssignments == null || dayAssignments.isEmpty())
+			return true; // nothing assigned is fine at this stage
+		if (dayAssignments.size() == 1)
+			return true; // any single shift is OK
+
+		// Extract type and location
+		List<ShiftType> types = dayAssignments.stream().map(sa -> sa.getShift().getShiftTemplate().getShiftType())
+				.toList();
+		List<String> locations = dayAssignments.stream().map(sa -> sa.getShift().getShiftTemplate().getLocation())
+				.toList();
+
+		boolean allFloating = types.stream().allMatch(t -> t == ShiftType.FLOATING);
+		if (allFloating) {
+			// Allow multiple FLOATING but enforce all at DIFFERENT locations
+			long distinctLocs = locations.stream().distinct().count();
+			return distinctLocs == locations.size();
+		}
+
+		// Disallow mixing FLOATING with any non-floating
+		boolean containsFloating = types.stream().anyMatch(t -> t == ShiftType.FLOATING);
+		boolean containsNonFloating = types.stream().anyMatch(t -> t == ShiftType.DAY || t == ShiftType.LONG_DAY
+				|| t == ShiftType.WAKING_NIGHT || t == ShiftType.SLEEP_IN);
+		if (containsFloating && containsNonFloating) {
+			return false;
+		}
+
+		// Non-floating combos:
+		if (dayAssignments.size() == 2) {
+			// Allow exactly LONG_DAY + SLEEP_IN at the SAME location
+			ShiftType t1 = types.get(0);
+			ShiftType t2 = types.get(1);
+			boolean ldSiPair = (t1 == ShiftType.LONG_DAY && t2 == ShiftType.SLEEP_IN)
+					|| (t1 == ShiftType.SLEEP_IN && t2 == ShiftType.LONG_DAY);
+			boolean sameLocation = locations.get(0) != null && locations.get(0).equals(locations.get(1));
+			return ldSiPair && sameLocation;
+		}
+
+		// Any other case with 2+ non-floating shifts is invalid
+		return false;
+	}
+
+	
+
+	// ✅ FIXED: Only handles NEXT-DAY transitions (skips same-day)
 	private boolean areIncompatibleBackToBack(ShiftAssignment sa1, ShiftAssignment sa2) {
 		LocalDate date1 = sa1.getShift().getShiftStart();
 		LocalDate date2 = sa2.getShift().getShiftStart();
@@ -442,79 +459,47 @@ public class RotaConstraintProvider implements ConstraintProvider {
 		ShiftType type1 = sa1.getShift().getShiftTemplate().getShiftType();
 		ShiftType type2 = sa2.getShift().getShiftTemplate().getShiftType();
 
-		// ========== ALLOWED EXCEPTIONS ==========
-
-		// Exception 1: SLEEP_IN always allowed (live-in care)
-		if (type1 == ShiftType.SLEEP_IN || type2 == ShiftType.SLEEP_IN) {
-			return false; // ✅ Allow LONG_DAY + SLEEP_IN
-		}
-
-		// Exception 2: FLOATING + FLOATING same day allowed
-		if (type1 == ShiftType.FLOATING && type2 == ShiftType.FLOATING && date1.equals(date2)) {
-			return false; // ✅ Allow multiple FLOATING same day
-		}
-
-		// ========== CHECK PROXIMITY ==========
-
 		boolean sameDay = date1.equals(date2);
 		boolean nextDay = date1.plusDays(1).equals(date2);
 
-		if (!sameDay && !nextDay) {
+		// ✅ CRITICAL FIX: Skip same-day checks - let noInvalidSameDayShifts handle them
+		if (sameDay) {
+			return false;
+		}
+
+		if (!nextDay) {
 			return false; // Not close enough
 		}
 
-		// ========== FORBIDDEN COMBINATIONS ==========
+		// ========== NEXT DAY TRANSITION RULES ==========
 
-		// LONG_DAY cannot be followed by active shifts
+		// LONG_DAY cannot be followed by active shifts next day
 		if (type1 == ShiftType.LONG_DAY) {
 			if (type2 == ShiftType.DAY || type2 == ShiftType.WAKING_NIGHT || type2 == ShiftType.FLOATING) {
 				return true; // ❌ Forbidden
 			}
 		}
 
-		// DAY and WAKING_NIGHT cannot be on same day (regardless of order)
-		if (sameDay) {
-			if ((type1 == ShiftType.DAY && type2 == ShiftType.WAKING_NIGHT)
-					|| (type1 == ShiftType.WAKING_NIGHT && type2 == ShiftType.DAY)) {
-				return true; // ❌ Forbidden
-			}
-
-			// DAY cannot be with another DAY same day
-			if (type1 == ShiftType.DAY && type2 == ShiftType.DAY) {
-				return true; // ❌ Forbidden
-			}
-
-			// DAY cannot be with FLOATING same day
-			if ((type1 == ShiftType.DAY && type2 == ShiftType.FLOATING)
-					|| (type1 == ShiftType.FLOATING && type2 == ShiftType.DAY)) {
-				return true; // ❌ Forbidden
-			}
-
-			// WAKING_NIGHT cannot be with another WAKING_NIGHT same day
-			if (type1 == ShiftType.WAKING_NIGHT && type2 == ShiftType.WAKING_NIGHT) {
-				return true; // ❌ Forbidden
-			}
-
-			// WAKING_NIGHT cannot be with FLOATING same day
-			if ((type1 == ShiftType.WAKING_NIGHT && type2 == ShiftType.FLOATING)
-					|| (type1 == ShiftType.FLOATING && type2 == ShiftType.WAKING_NIGHT)) {
-				return true; // ❌ Forbidden
-			}
-		}
-
 		// DAY cannot be followed by WAKING_NIGHT next day
-		if (type1 == ShiftType.DAY && nextDay && type2 == ShiftType.WAKING_NIGHT) {
+		if (type1 == ShiftType.DAY && type2 == ShiftType.WAKING_NIGHT) {
 			return true; // ❌ Forbidden
 		}
 
 		// WAKING_NIGHT cannot be followed by DAY/LONG_DAY next morning
-		if (type1 == ShiftType.WAKING_NIGHT && nextDay) {
+		if (type1 == ShiftType.WAKING_NIGHT) {
 			if (type2 == ShiftType.DAY || type2 == ShiftType.LONG_DAY) {
-				return true; // ❌ Forbidden (night to morning)
+				return true; // ❌ Forbidden
 			}
 		}
 
-		return false; // All other combinations allowed
+		// SLEEP_IN ending in morning cannot be followed by active shifts
+		if (type1 == ShiftType.SLEEP_IN) {
+			if (type2 == ShiftType.DAY || type2 == ShiftType.LONG_DAY || type2 == ShiftType.WAKING_NIGHT) {
+				return true; // ❌ Forbidden
+			}
+		}
+
+		return false; // All other next-day combinations allowed
 	}
 
 	private Constraint weekOnWeekOffPattern(ConstraintFactory factory) {
@@ -523,7 +508,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 			return emp.getWeekOn() != null && emp.getWeekOff() != null;
 		}).filter(sa -> {
 			Employee emp = sa.getEmployee();
-			Integer absoluteWeek = sa.getShift().getAbsoluteWeek(); // ✅ Calls transient getter
+			Integer absoluteWeek = sa.getShift().getAbsoluteWeek();
 
 			if (absoluteWeek == null)
 				return false;
@@ -558,13 +543,11 @@ public class RotaConstraintProvider implements ConstraintProvider {
 				.filter(sa -> sa.getShift().getShiftTemplate().getShiftType() != ShiftType.SLEEP_IN)
 				.join(ShiftAssignment.class, Joiners.equal(ShiftAssignment::getEmployee),
 						Joiners.filtering((sa1, sa2) -> {
-							// Check if shifts are on consecutive days
 							LocalDate date1 = sa1.getShift().getShiftStart();
 							LocalDate date2 = sa2.getShift().getShiftStart();
 							return date2.equals(date1.plusDays(1));
 						}))
 				.filter((sa1, sa2) -> {
-					// Different locations
 					String loc1 = sa1.getShift().getShiftTemplate().getLocation();
 					String loc2 = sa2.getShift().getShiftTemplate().getLocation();
 					return !loc1.equals(loc2);
@@ -577,7 +560,6 @@ public class RotaConstraintProvider implements ConstraintProvider {
 				.join(ShiftAssignment.class, Joiners.equal(ShiftAssignment::getEmployee),
 						Joiners.equal(sa -> sa.getShift().getShiftTemplate().getLocation()),
 						Joiners.filtering((sa1, sa2) -> {
-							// Check if shifts are on consecutive days at same location
 							LocalDate date1 = sa1.getShift().getShiftStart();
 							LocalDate date2 = sa2.getShift().getShiftStart();
 							return date2.equals(date1.plusDays(1));
@@ -590,52 +572,33 @@ public class RotaConstraintProvider implements ConstraintProvider {
 				.filter(sa -> sa.getShift().getShiftTemplate().getShiftType() != ShiftType.SLEEP_IN)
 				.groupBy(ShiftAssignment::getEmployee, sa -> getWeekNumber(sa.getShift().getShiftStart()),
 						ConstraintCollectors.countDistinct(sa -> sa.getShift().getShiftTemplate().getLocation()))
-				.penalize(HardSoftLongScore.ofSoft(1000), (emp, weekNum, locationCount) -> { // ✅ REDUCED: From 2000 to
-																								// 1000
+				.penalize(HardSoftLongScore.ofSoft(1000), (emp, weekNum, locationCount) -> {
 					if (locationCount <= 2) {
-						return 0; // Perfect - 1 or 2 locations
+						return 0;
 					} else if (locationCount == 3) {
-						return 50; // OK but not ideal
+						return 50;
 					} else {
-						return (locationCount - 3) * 100; // Heavy penalty for 4+ locations
+						return (locationCount - 3) * 100;
 					}
 				}).asConstraint("Limit locations per employee per week");
 	}
 
-//	private Constraint preferFewerLocationsPerPeriod(ConstraintFactory factory) {
-//	    return factory.forEach(ShiftAssignment.class)
-//	        .filter(sa -> sa.getEmployee() != null)
-//	        .filter(sa -> sa.getShift().getShiftTemplate().getShiftType() != ShiftType.SLEEP_IN)
-//	        .groupBy(ShiftAssignment::getEmployee,
-//	                 ConstraintCollectors.countDistinct(sa -> sa.getShift().getShiftTemplate().getLocation()))
-//	        .penalize(HardSoftLongScore.ofSoft(1000000), (emp, locationCount) -> {
-//	            if (locationCount == 1) {
-//	                return 0;  // Perfect - no penalty
-//	            } else if (locationCount == 2) {
-//	                return 2;  // 2M penalty (2 × 1M)
-//	            } else {
-//	                return 5;  // 5M penalty for 3 locations (5 × 1M)
-//	            }
-//	        }).asConstraint("Prefer fewer locations per period");
-//	}
 	private Constraint locationPreferences(ConstraintFactory factory) {
 		Set<ShiftType> applicableTypes = Set.of(ShiftType.DAY, ShiftType.WAKING_NIGHT, ShiftType.LONG_DAY);
 
 		return factory.forEach(ShiftAssignment.class).filter(sa -> sa.getEmployee() != null)
 				.filter(sa -> applicableTypes.contains(sa.getShift().getShiftTemplate().getShiftType()))
-				// ✅ KEY FIX: Only filter for employees WITH preferences
 				.filter(sa -> sa.getEmployee().hasServicePreferences()).reward(HardSoftLongScore.ofSoft(10000), sa -> {
 					Employee emp = sa.getEmployee();
 					String location = sa.getShift().getShiftTemplate().getLocation();
 					int weightage = emp.getServiceWeightage(location);
 
-					// Reward based on weightage
 					if (weightage >= 50) {
-						return weightage; // 50 → 50 points (× 10000 = 500,000!)
+						return weightage;
 					} else if (weightage >= 30) {
-						return weightage / 2; // 30 → 15 points (× 10000 = 150,000)
+						return weightage / 2;
 					} else if (weightage > 0) {
-						return weightage / 5; // 10 → 2 points (× 10000 = 20,000)
+						return weightage / 5;
 					}
 					return 0;
 				}).asConstraint("Location preferences (reward only)");
@@ -739,8 +702,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 			return w2.week() - w1.week();
 		}
 
-		// Cross year boundary
-		int weeksInYear1 = 52; // Simplified - could be 52 or 53
+		int weeksInYear1 = 52;
 		return (weeksInYear1 - w1.week()) + w2.week();
 	}
 }

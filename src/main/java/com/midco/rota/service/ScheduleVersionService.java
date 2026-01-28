@@ -406,31 +406,32 @@ public class ScheduleVersionService {
 	}
 
 	private void updateLiveAssignments(Long rotaId, List<ShiftAssignmentVersion> versionAssignments) {
-		// Delete current live assignments
-		rotaShiftAssignmentRepository.deleteByRotaId(rotaId);
+		// ✅ Don't delete - update existing assignments
+		List<ShiftAssignment> existingAssignments = rotaShiftAssignmentRepository.findByRotaId(rotaId);
+		Map<Long, ShiftAssignment> existingMap = existingAssignments.stream()
+				.collect(Collectors.toMap(sa -> sa.getShift().getId(), sa -> sa));
 
-		// Create new live assignments from version
-		List<ShiftAssignment> liveAssignments = new ArrayList<>();
 		for (ShiftAssignmentVersion va : versionAssignments) {
-			ShiftAssignment assignment = new ShiftAssignment();
-			Shift shift = shiftRepository.findById(va.getShiftId())
-					.orElseThrow(() -> new RuntimeException("Shift not found: " + va.getShiftId()));
+			ShiftAssignment assignment = existingMap.get(va.getShiftId());
 
-			Rota rota = rotaRepository.findById(va.getRotaId()) // Returns Optional<Rota>
-					.orElseThrow(() -> new RuntimeException("Rota not found: " + va.getRotaId())); // Unwraps the
-																									// Optional
-			if (va.getEmployeeId() != null) {
-				Employee employee = employeeRepository.findById(va.getEmployeeId())
-						.orElseThrow(() -> new RuntimeException("Employee not found: " + va.getEmployeeId()));
-				assignment.setEmployee(employee);
+			if (assignment == null) {
+				assignment = new ShiftAssignment();
+				Shift shift = shiftRepository.findById(va.getShiftId()).orElseThrow();
+				Rota rota = rotaRepository.findById(va.getRotaId()).orElseThrow();
+				assignment.setShift(shift);
+				assignment.setRota(rota);
 			}
 
-			assignment.setShift(shift);
-			assignment.setRota(rota);
-			liveAssignments.add(assignment);
-		}
+			// ✅ Set or clear employee
+			if (va.getEmployeeId() != null) {
+				Employee employee = employeeRepository.findById(va.getEmployeeId()).orElseThrow();
+				assignment.setEmployee(employee);
+			} else {
+				assignment.setEmployee(null);
+			}
 
-		rotaShiftAssignmentRepository.saveAll(liveAssignments);
+			rotaShiftAssignmentRepository.save(assignment);
+		}
 	}
 
 	private void createAuditLog(Long versionId, ScheduleVersionAudit.AuditAction action, String username,
@@ -562,17 +563,19 @@ public class ScheduleVersionService {
 			Long shiftId = change.getShiftId();
 			Integer newEmployeeId = change.getNewEmployeeId();
 
-			// Find existing assignment
 			List<ShiftAssignment> existing = rotaShiftAssignmentRepository.findByRotaIdAndShiftId(rotaId, shiftId);
 
 			if (newEmployeeId == null) {
-				// UNASSIGN: Delete assignment
-				rotaShiftAssignmentRepository.deleteAll(existing);
+				// ✅ FIXED: Set employee to NULL instead of deleting row
+				if (!existing.isEmpty()) {
+					ShiftAssignment assignment = existing.get(0);
+					assignment.setEmployee(null);
+					rotaShiftAssignmentRepository.save(assignment);
+				}
 			} else {
-				// ASSIGN/REASSIGN: Update or create assignment
+				// ASSIGN/REASSIGN
 				ShiftAssignment assignment = existing.isEmpty() ? new ShiftAssignment() : existing.get(0);
 
-				// Fetch and set entities
 				Shift shift = shiftRepository.findById(shiftId).orElseThrow();
 				Employee employee = employeeRepository.findById(newEmployeeId).orElseThrow();
 				Rota rota = rotaRepository.findById(rotaId).orElseThrow();
