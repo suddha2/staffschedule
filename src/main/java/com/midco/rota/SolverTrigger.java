@@ -3,6 +3,7 @@ package com.midco.rota;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -16,13 +17,14 @@ import org.springframework.stereotype.Component;
 
 import com.midco.rota.model.DeferredSolveRequest;
 import com.midco.rota.model.Employee;
-import com.midco.rota.model.EmployeeSchedulePattern;
+import com.midco.rota.model.PinnedTemplateAssignment;
 import com.midco.rota.model.Rota;
 import com.midco.rota.model.Shift;
 import com.midco.rota.model.ShiftAssignment;
 import com.midco.rota.model.ShiftTemplate;
 import com.midco.rota.repository.DeferredSolveRequestRepository;
 import com.midco.rota.repository.EmployeeRepository;
+import com.midco.rota.repository.PinnedTemplateAssignmentRepository;
 import com.midco.rota.repository.ShiftTemplateRepository;
 import com.midco.rota.service.PeriodService;
 import com.midco.rota.service.SolverService;
@@ -39,15 +41,17 @@ public class SolverTrigger {
 	private final EmployeeRepository employeeRepository;
 	private final ShiftTemplateRepository shiftTemplateRepository;
 	private final PeriodService periodService;
+	private final PinnedTemplateAssignmentRepository pinnedTemplateAssignmentRepository;
 
 	public SolverTrigger(SolverService solverService, DeferredSolveRequestRepository deferredSolveRequestRepository,
 			EmployeeRepository employeeRepository, ShiftTemplateRepository shiftTemplateRepository,
-			PeriodService periodService) {
+			PeriodService periodService, PinnedTemplateAssignmentRepository pinnedTemplateAssignmentRepository) {
 		this.solverService = solverService;
 		this.deferredSolveRequestRepository = deferredSolveRequestRepository;
 		this.employeeRepository = employeeRepository;
 		this.shiftTemplateRepository = shiftTemplateRepository;
 		this.periodService = periodService;
+		this.pinnedTemplateAssignmentRepository = pinnedTemplateAssignmentRepository;
 	}
 
 	@Scheduled(cron = "0 */2 * * * *") // Every 2 Mins
@@ -78,7 +82,7 @@ public class SolverTrigger {
 		shiftAssignments = this.generateShiftInstances(deferredSolveRequest.getStartDate(),
 				deferredSolveRequest.getEndDate(), shiftTemplates);
 
-//		applyPatternBasedPinning(shiftAssignments);
+		applyTemplateBasedPinning(shiftAssignments, employees);
 		Rota problem = new Rota(employees, shiftAssignments);
 
 		return problem;
@@ -116,134 +120,133 @@ public class SolverTrigger {
 
 	}
 
-//	private void applyPatternBasedPinning(List<ShiftAssignment> shiftAssignments) {
-//		for (ShiftAssignment assignment : shiftAssignments) {
-//
-//			// Find employee with matching pattern
-//			List<EmployeeSchedulePattern> pattern = employeeRepository.findByPinnedEmp(
-//					assignment.getShift().getShiftTemplate().getLocation(),
-//					periodService.calculateWeekNumber(assignment.getShift().getShiftStart()),
-//					assignment.getShift().getShiftTemplate().getDayOfWeek().name(),
-//					assignment.getShift().getShiftTemplate().getShiftType());
-//
-//
-//			if (pattern != null&& !pattern.isEmpty() && Boolean.TRUE.equals(pattern.getFirst().getIsAvailable())) {
-//				assignment.setEmployee(pattern.getFirst().getEmployee());
-//				assignment.setPinned(true); // ✅ PIN IT!
-//			}
-//		}
-//	}
-	private void applyPatternBasedPinning(List<ShiftAssignment> shiftAssignments) {
+	/**
+	 * Apply pins from pinned_template_assignment table
+	 */
+	private void applyTemplateBasedPinning(List<ShiftAssignment> shiftAssignments, List<Employee> employees) {
 		int pinnedCount = 0;
-		int rejectedDueToConflict = 0;
-		int rejectedByMaxHours = 0; // ✅ NEW counter
+		int skippedInactive = 0;
+		int skippedConflict = 0;
 
-		// Track what's already pinned per employee per day per location
-		Map<String, Set<String>> pinnedEmployeeDayLocation = new HashMap<>();
+		logger.info("Starting template-based pinning for {} assignments", shiftAssignments.size());
 
-		// ✅ NEW: Track hours per employee per week
-		Map<Integer, Map<YearWeek, Long>> employeeWeeklyHours = new HashMap<>();
+		// Load all pins
+		List<PinnedTemplateAssignment> allPins = pinnedTemplateAssignmentRepository.findAll();
+		logger.info("Found {} pinned template assignments", allPins.size());
 
-		logger.info("Starting pattern-based pinning for {} assignments", shiftAssignments.size());
+		// Build employee lookup map
+		Map<Integer, Employee> employeeMap = new HashMap<>();
+		for (Employee emp : employees) {
+			employeeMap.put(emp.getId(), emp);
+		}
 
+		// Group pins by template ID for faster lookup
+		Map<Long, List<PinnedTemplateAssignment>> pinsByTemplate = new HashMap<>();
+		for (PinnedTemplateAssignment pin : allPins) {
+			pinsByTemplate.computeIfAbsent(pin.getShiftTemplateId(), k -> new ArrayList<>()).add(pin);
+		}
+
+		// Track assignments per employee per day (for conflict detection)
+		Map<String, Set<ShiftType>> employeeDayAssignments = new HashMap<>();
+
+		// Apply pins to matching shift assignments
 		for (ShiftAssignment assignment : shiftAssignments) {
 			Shift shift = assignment.getShift();
-			LocalDate date = shift.getShiftStart();
-			String location = shift.getShiftTemplate().getLocation();
-			ShiftType shiftType = shift.getShiftTemplate().getShiftType();
-			String dayOfWeek = shift.getShiftTemplate().getDayOfWeek().name();
+			Long templateId = shift.getShiftTemplate().getId().longValue();
 
-			int weekInCycle = periodService.calculateWeekNumber(date);
-
-			if (weekInCycle == 0) {
-				continue;
+			// Check if this template has any pins
+			List<PinnedTemplateAssignment> pinsForTemplate = pinsByTemplate.get(templateId);
+			if (pinsForTemplate == null || pinsForTemplate.isEmpty()) {
+				continue; // No pins for this template
 			}
 
-			List<EmployeeSchedulePattern> patterns = employeeRepository.findByPinnedEmp(location, weekInCycle%4,
-					dayOfWeek, shiftType);
-
-			if (patterns == null || patterns.isEmpty()) {
-				continue;
-			}
-
+			// Try each pinned employee for this template
 			boolean assigned = false;
+			for (PinnedTemplateAssignment pin : pinsForTemplate) {
+				Integer empId = pin.getEmployeeId().intValue();
+				Employee employee = employeeMap.get(empId);
 
-			for (EmployeeSchedulePattern pattern : patterns) {
-				Employee employee = pattern.getEmployee();
-				Integer empId = employee.getId();
-				String empName = employee.getName();
-
-				// CHECK 1: Availability
-				if (!Boolean.TRUE.equals(pattern.getIsAvailable())) {
+				// Check 1: Employee exists and is active
+				if (employee == null || !employee.isActive()) {
+					skippedInactive++;
 					continue;
 				}
 
-				// CHECK 2: canWorkShift
-				if (!employee.canWorkShift(location, date, shiftType)) {
-					continue;
-				}
+				// Check 2: Same-day conflict detection
+				String conflictKey = empId + "-" + shift.getShiftStart();
+				Set<ShiftType> existingShifts = employeeDayAssignments.get(conflictKey);
 
-				// CHECK 3: Same day/location conflict
-				String conflictKey = empId + "-" + date + "-" + location;
+				if (existingShifts != null && !existingShifts.isEmpty()) {
+					// Employee already has a shift this day - check if allowed
+					List<ShiftType> todaysShifts = new ArrayList<>(existingShifts);
+					todaysShifts.add(shift.getShiftTemplate().getShiftType());
 
-				if (pinnedEmployeeDayLocation.containsKey(conflictKey)) {
-					logger.debug("⚠️ Skipping {}: already pinned to another shift on {} at {}", empName, date,
-							location);
-					rejectedDueToConflict++;
-					continue;
-				}
-
-				// ✅ CHECK 4 (NEW): Max hours check
-				if (employee.getMaxHrs() != null) {
-					YearWeek week = YearWeek.from(date);
-
-					// Get current hours for this employee this week
-					long currentMins = employeeWeeklyHours.getOrDefault(empId, new HashMap<>()).getOrDefault(week, 0L);
-
-					// Calculate what total would be if we pin this shift
-					long shiftMins = shift.getDurationInMins();
-					long totalMins = currentMins + shiftMins;
-					long maxMins = employee.getMaxHrs().longValue() * 60;
-
-					// Would this exceed max hours?
-					if (totalMins > maxMins) {
-						logger.debug(
-								"⚠️ Skipping {}: would exceed max hours "
-										+ "({} current + {} shift = {} total > {} max)",
-								empName, currentMins / 60, shiftMins / 60, totalMins / 60, maxMins / 60);
-						rejectedByMaxHours++;
-						continue; // Would exceed max hours, try next employee
+					if (!isAllowedDayShiftTypes(todaysShifts)) {
+						logger.debug("⚠️ Skipping pin: {} already assigned conflicting shift on {}", employee.getName(),
+								shift.getShiftStart());
+						skippedConflict++;
+						continue;
 					}
 				}
 
-				// ✅ All checks passed - pin and track
+				// ✅ All checks passed - apply pin
 				assignment.setEmployee(employee);
 				assignment.setPinned(true);
 				pinnedCount++;
 				assigned = true;
 
-				// Track for same-day conflict detection
-				pinnedEmployeeDayLocation.put(conflictKey, Set.of(shiftType.toString()));
+				// Track for conflict detection
+				employeeDayAssignments.computeIfAbsent(conflictKey, k -> new HashSet<>())
+						.add(shift.getShiftTemplate().getShiftType());
 
-				// ✅ NEW: Track hours for max hours check
-				YearWeek week = YearWeek.from(date);
-				employeeWeeklyHours.computeIfAbsent(empId, k -> new HashMap<>()).merge(week, shift.getDurationInMins(),
-						Long::sum);
+				logger.debug("✅ PINNED: {} to {} {} {}", employee.getName(), shift.getShiftTemplate().getLocation(),
+						shift.getShiftStart(), shift.getShiftTemplate().getShiftType());
 
-				// Log with current hours
-				long totalHours = employeeWeeklyHours.get(empId).get(week) / 60;
-				logger.debug("✅ PINNED: {} to {} {} week {} {} (now at {} hours this week)", empName, location,
-						dayOfWeek, weekInCycle, shiftType, totalHours);
-
-				break;
+				break; // Stop after first successful pin
 			}
 		}
 
-		logger.info("Pattern pinning complete:");
+		logger.info("Template pinning complete:");
 		logger.info("  ✅ Successfully pinned: {}", pinnedCount);
-		logger.info("  ⚠️ Rejected (same day/location conflict): {}", rejectedDueToConflict);
-		logger.info("  ⚠️ Rejected (would exceed max hours): {}", rejectedByMaxHours); // ✅ NEW
+		logger.info("  ⚠️ Skipped (inactive employee): {}", skippedInactive);
+		logger.info("  ⚠️ Skipped (same-day conflict): {}", skippedConflict);
 		logger.info("  📋 Unassigned (for solver): {}", shiftAssignments.size() - pinnedCount);
+	}
+
+	/**
+	 * Check if shift types are allowed on same day Uses same business rules as
+	 * PinValidationService
+	 */
+	private boolean isAllowedDayShiftTypes(List<ShiftType> types) {
+		if (types == null || types.isEmpty())
+			return true;
+		if (types.size() == 1)
+			return true;
+
+		// All FLOATING - check would need location info (skip for now, assume valid)
+		boolean allFloating = types.stream().allMatch(t -> t == ShiftType.FLOATING);
+		if (allFloating) {
+			return true; // Can't check locations here
+		}
+
+		// No mixing FLOATING with non-FLOATING
+		boolean hasFloating = types.stream().anyMatch(t -> t == ShiftType.FLOATING);
+		boolean hasNonFloating = types.stream().anyMatch(t -> t == ShiftType.DAY || t == ShiftType.LONG_DAY
+				|| t == ShiftType.WAKING_NIGHT || t == ShiftType.SLEEP_IN);
+
+		if (hasFloating && hasNonFloating) {
+			return false;
+		}
+
+		// Exactly 2: LONG_DAY + SLEEP_IN allowed
+		if (types.size() == 2) {
+			boolean hasLongDay = types.contains(ShiftType.LONG_DAY);
+			boolean hasSleepIn = types.contains(ShiftType.SLEEP_IN);
+			return hasLongDay && hasSleepIn;
+		}
+
+		// Any other 2+ non-floating combo is invalid
+		return false;
 	}
 
 	private record YearWeek(int year, int week) {

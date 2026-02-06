@@ -10,13 +10,12 @@ import org.optaplanner.core.api.domain.entity.PlanningPin;
 import org.optaplanner.core.api.domain.lookup.PlanningId;
 import org.optaplanner.core.api.domain.variable.PlanningVariable;
 
-import com.fasterxml.jackson.annotation.JsonIdentityInfo;
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.fasterxml.jackson.annotation.ObjectIdGenerators;
 import com.midco.rota.opt.ShiftAssignmentDifficultyComparator;
 import com.midco.rota.util.ShiftType;
 
 import jakarta.persistence.CascadeType;
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -28,7 +27,6 @@ import jakarta.persistence.Transient;
 
 @Entity(name = "rota_shift_assignment")
 @PlanningEntity(difficultyComparatorClass = ShiftAssignmentDifficultyComparator.class)
-
 
 public class ShiftAssignment {
 
@@ -58,7 +56,7 @@ public class ShiftAssignment {
 	@Transient
 	private List<String> unassignmentReasons = new ArrayList<>();
 
-	@Transient
+	@Column(name = "is_pinned")
 	private boolean pinned = false;
 
 	@PlanningPin
@@ -172,9 +170,5 @@ public class ShiftAssignment {
 
 	public void setPinned(boolean pinned) {
 		this.pinned = pinned;
-	}
-
-	public boolean getPinned() {
-		return pinned;
 	}
 }

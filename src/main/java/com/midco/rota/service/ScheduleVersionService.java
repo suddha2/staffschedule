@@ -14,10 +14,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.midco.rota.PinConflictException;
 import com.midco.rota.dto.AssignmentDiffDTO;
 import com.midco.rota.dto.AssignmentVersionDTO;
 import com.midco.rota.dto.ChangeDTO;
 import com.midco.rota.dto.ComparisonStatisticsDTO;
+import com.midco.rota.dto.ConflictError;
 import com.midco.rota.dto.RollbackRequest;
 import com.midco.rota.dto.SaveScheduleRequest;
 import com.midco.rota.dto.ShiftAssignmentChangeDTO;
@@ -27,6 +29,7 @@ import com.midco.rota.dto.VersionHistoryDTO;
 import com.midco.rota.dto.VersionStatisticsDTO;
 import com.midco.rota.dto.VersionSummaryDTO;
 import com.midco.rota.model.Employee;
+import com.midco.rota.model.PinnedTemplateAssignment;
 import com.midco.rota.model.Rota;
 import com.midco.rota.model.ScheduleChange;
 import com.midco.rota.model.ScheduleVersion;
@@ -36,6 +39,7 @@ import com.midco.rota.model.ShiftAssignment;
 import com.midco.rota.model.ShiftAssignmentVersion;
 import com.midco.rota.model.ShiftTemplate;
 import com.midco.rota.repository.EmployeeRepository;
+import com.midco.rota.repository.PinnedTemplateAssignmentRepository;
 import com.midco.rota.repository.RotaRepository;
 import com.midco.rota.repository.ScheduleChangeRepository;
 import com.midco.rota.repository.ScheduleVersionAuditRepository;
@@ -66,13 +70,18 @@ public class ScheduleVersionService {
 	private final ShiftTemplateRepository shiftTemplatesRepository;
 	private final RotaRepository rotaRepository;
 
+	private final PinValidationService pinValidationService;
+	private final PinnedTemplateAssignmentRepository pinnedTemplateAssignmentRepository;
+
 	// Constructor (replaces @RequiredArgsConstructor)
 	@Autowired
 	public ScheduleVersionService(ScheduleVersionRepository versionRepository,
 			ShiftAssignmentVersionRepository assignmentVersionRepository, ScheduleChangeRepository changeRepository,
 			ScheduleVersionAuditRepository auditRepository, ShiftAssignmentRepository rotaShiftAssignmentRepository,
 			ShiftRepository shiftRepository, EmployeeRepository employeeRepository,
-			ShiftTemplateRepository shiftTemplatesRepository, RotaRepository rotaRepository) {
+			ShiftTemplateRepository shiftTemplatesRepository, RotaRepository rotaRepository,
+			PinValidationService pinValidationService,
+			PinnedTemplateAssignmentRepository pinnedTemplateAssignmentRepository) {
 
 		this.versionRepository = versionRepository;
 		this.assignmentVersionRepository = assignmentVersionRepository;
@@ -83,33 +92,51 @@ public class ScheduleVersionService {
 		this.employeeRepository = employeeRepository;
 		this.shiftTemplatesRepository = shiftTemplatesRepository;
 		this.rotaRepository = rotaRepository;
+		this.pinnedTemplateAssignmentRepository = pinnedTemplateAssignmentRepository;
+		this.pinValidationService = pinValidationService;
 	}
 
 	/**
 	 * Create a new version from current rota state
 	 */
+
 	@Transactional
 	public VersionDetailDTO createVersion(SaveScheduleRequest request) {
 		log.info("Creating version for rota {} by {}", request.getRotaId(), request.getUsername());
 
-		// CRITICAL FIX: Apply changes to database FIRST, before taking snapshot!
+		// ✅ UPDATED: Validate ALL assignments if pinning
+		if (request.isPinAllChanges()) {
+			log.info("Validating all assignments for pin conflicts");
+
+			List<ShiftAssignment> allAssignments = rotaShiftAssignmentRepository.findByRotaId(request.getRotaId());
+			List<ConflictError> conflicts = pinValidationService.validateAssignments(allAssignments);
+
+			if (!conflicts.isEmpty()) {
+				log.error("Pin validation failed: {} conflicts found", conflicts.size());
+				throw new PinConflictException("Cannot pin assignments with conflicts", conflicts);
+			}
+
+			log.info("Pin validation passed - no conflicts in {} assignments", allAssignments.size());
+		}
+
+		// Apply changes to database FIRST
 		if (request.getChanges() != null && !request.getChanges().isEmpty()) {
 			applyChangesToDatabase(request.getRotaId(), request.getChanges());
 			log.info("Applied {} changes to database", request.getChanges().size());
 		}
 
-		// BUSINESS LOGIC: Get previous current version
+		// Get previous current version
 		ScheduleVersion previousVersion = versionRepository.findCurrentVersionByRotaId(request.getRotaId())
 				.orElse(null);
 
-		// BUSINESS LOGIC: Mark old version as not current
+		// Mark old version as not current
 		if (previousVersion != null) {
 			previousVersion.setIsCurrent(false);
 			versionRepository.save(previousVersion);
 			log.debug("Marked version {} as not current", previousVersion.getVersionNumber());
 		}
 
-		// BUSINESS LOGIC: Calculate next version number
+		// Calculate next version number
 		Integer nextVersionNumber = versionRepository.findMaxVersionNumber(request.getRotaId()).map(v -> v + 1)
 				.orElse(1);
 
@@ -123,33 +150,34 @@ public class ScheduleVersionService {
 		newVersion = versionRepository.save(newVersion);
 		log.info("Created version {} (id={})", nextVersionNumber, newVersion.getId());
 
-		// NOW get current assignments from database (with changes applied)
+		// Get current assignments from database
 		List<ShiftAssignment> currentAssignments = rotaShiftAssignmentRepository.findByRotaId(request.getRotaId());
+
+		// ✅ UPDATED: Pin ALL assignments if requested
+		if (request.isPinAllChanges()) {
+			createPinsFromAllAssignments(request.getRotaId(), request.getUsername());
+		}
 
 		// Create assignment version snapshots
 		List<ShiftAssignmentVersion> assignmentVersions = new ArrayList<>();
 		for (ShiftAssignment assignment : currentAssignments) {
-			// Get employee ID - handle null employee (unassigned shifts)
 			Integer employeeId = null;
 			if (assignment.getEmployee() != null) {
 				employeeId = assignment.getEmployee().getId();
 			}
 
-			// Get shift ID
 			Long shiftId = null;
 			if (assignment.getShift() != null) {
 				shiftId = assignment.getShift().getId();
 			}
 
-			// Get rota ID
 			Long rotaId = null;
 			if (assignment.getRota() != null) {
 				rotaId = assignment.getRota().getId();
 			}
 
 			ShiftAssignmentVersion av = ShiftAssignmentVersion.builder().versionId(newVersion.getId()).shiftId(shiftId)
-					.employeeId(employeeId) // Can be null for unassigned shifts
-					.rotaId(rotaId).build();
+					.employeeId(employeeId).rotaId(rotaId).build();
 			assignmentVersions.add(av);
 		}
 
@@ -171,7 +199,7 @@ public class ScheduleVersionService {
 		// Create audit log
 		createAuditLog(newVersion.getId(), ScheduleVersionAudit.AuditAction.CREATED, request.getUsername(), null, null);
 
-		// BUSINESS LOGIC: Verify only one current version exists
+		// Verify only one current version exists
 		long currentCount = versionRepository.countCurrentVersions(request.getRotaId());
 		if (currentCount > 1) {
 			log.error("INTEGRITY ERROR: Multiple current versions for rota {}", request.getRotaId());
@@ -585,6 +613,118 @@ public class ScheduleVersionService {
 				assignment.setRota(rota);
 
 				rotaShiftAssignmentRepository.save(assignment);
+			}
+		}
+	}
+
+	/**
+	 * Build ShiftAssignments from changes for validation
+	 */
+	private List<ShiftAssignment> buildAssignmentsFromChanges(Long rotaId, List<ShiftAssignmentChangeDTO> changes) {
+		List<ShiftAssignment> assignments = new ArrayList<>();
+
+		for (ShiftAssignmentChangeDTO change : changes) {
+			if (change.getNewEmployeeId() == null) {
+				// Skip unassigned shifts in validation
+				continue;
+			}
+
+			Shift shift = shiftRepository.findById(change.getShiftId()).orElse(null);
+			Employee employee = employeeRepository.findById(change.getNewEmployeeId()).orElse(null);
+			Rota rota = rotaRepository.findById(rotaId).orElse(null);
+
+			if (shift != null && employee != null && rota != null) {
+				ShiftAssignment assignment = new ShiftAssignment();
+				assignment.setShift(shift);
+				assignment.setEmployee(employee);
+				assignment.setRota(rota);
+				assignments.add(assignment);
+			}
+		}
+
+		return assignments;
+	}
+
+	/**
+	 * Create pinned template assignments from ALL current assignments
+	 */
+	private void createPinsFromAllAssignments(Long rotaId, String username) {
+		// Get ALL current assignments from the rota
+		List<ShiftAssignment> allAssignments = rotaShiftAssignmentRepository.findByRotaId(rotaId);
+
+		int created = 0;
+		int skipped = 0;
+
+		for (ShiftAssignment assignment : allAssignments) {
+			// Skip unassigned shifts
+			if (assignment.getEmployee() == null) {
+				continue;
+			}
+
+			// Get shift template
+			Shift shift = assignment.getShift();
+			if (shift == null || shift.getShiftTemplate() == null) {
+				continue;
+			}
+
+			Long templateId = shift.getShiftTemplate().getId().longValue();
+			Integer employeeId = assignment.getEmployee().getId();
+
+			// Check if pin already exists
+			boolean exists = pinnedTemplateAssignmentRepository.existsByShiftTemplateIdAndEmployeeId(templateId,
+					employeeId.longValue());
+
+			if (exists) {
+				skipped++;
+				continue;
+			}
+
+			// Create pin
+			PinnedTemplateAssignment pin = PinnedTemplateAssignment.builder().shiftTemplateId(templateId)
+					.employeeId(Long.valueOf(employeeId)).pinnedByUserId(null) // Can add user lookup if needed
+					.build();
+
+			pinnedTemplateAssignmentRepository.save(pin);
+			created++;
+
+			log.debug("Created pin: template={}, employee={}", templateId, employeeId);
+		}
+
+		log.info("Pinned all assignments: {} created, {} already existed", created, skipped);
+	}
+
+	/**
+	 * Create pinned template assignments from changes
+	 */
+	private void createPinsFromChanges(List<ShiftAssignmentChangeDTO> changes, String username) {
+		for (ShiftAssignmentChangeDTO change : changes) {
+			Integer newEmployeeId = change.getNewEmployeeId();
+
+			// Skip unassigned shifts
+			if (newEmployeeId == null) {
+				continue;
+			}
+
+			// Get shift to find template
+			Shift shift = shiftRepository.findById(change.getShiftId()).orElse(null);
+			if (shift == null || shift.getShiftTemplate() == null) {
+				continue;
+			}
+
+			Long templateId = shift.getShiftTemplate().getId().longValue();
+
+			// Check if pin already exists
+			boolean exists = pinnedTemplateAssignmentRepository.existsByShiftTemplateIdAndEmployeeId(templateId,
+					newEmployeeId.longValue());
+
+			if (!exists) {
+				PinnedTemplateAssignment pin = PinnedTemplateAssignment.builder().shiftTemplateId(templateId)
+						.employeeId(Long.valueOf(newEmployeeId)).pinnedByUserId(null) // You can add user ID lookup if
+																						// needed
+						.build();
+
+				pinnedTemplateAssignmentRepository.save(pin);
+				log.debug("Created pin: template={}, employee={}", templateId, newEmployeeId);
 			}
 		}
 	}
