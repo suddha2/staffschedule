@@ -53,14 +53,16 @@ public class PayCycleDataService {
 		}
 
 	}
-	
-	public List<PayCycleRow> fetchRows(DeferredSolveRequest  deferredSolveRequest){
+
+	public List<PayCycleRow> fetchRows(DeferredSolveRequest deferredSolveRequest) {
 		String sql = "SELECT id, name, start_date, end_date FROM pay_cycle_periods where active is true and start_date=? and end_date=? ";
 
 		List<PayCycleRow> result = jdbcTemplate
-				.query(sql,new Object[] {deferredSolveRequest.getStartDate(),deferredSolveRequest.getEndDate()},
-						(rs, rowNum) -> PayCycleRow.Builder.builder().withCore(rs.getLong("id"), rs.getString("name"),
-								rs.getDate("start_date").toLocalDate(), rs.getDate("end_date").toLocalDate(), deferredSolveRequest.getRegion())
+				.query(sql, new Object[] { deferredSolveRequest.getStartDate(), deferredSolveRequest.getEndDate() },
+						(rs, rowNum) -> PayCycleRow.Builder.builder()
+								.withCore(rs.getLong("id"), rs.getString("name"),
+										rs.getDate("start_date").toLocalDate(), rs.getDate("end_date").toLocalDate(),
+										deferredSolveRequest.getRegion())
 								.build());
 
 		return enrichPayCycleRow(result, deferredSolveRequest.getRegion());
@@ -84,11 +86,11 @@ public class PayCycleDataService {
 		List<DeferredSolveRequest> dsr = deferredSolveRequestRepository.findByRegion(location);
 
 		Map<PeriodKey, List<DeferredSolveRequest>> requestsByPeriod = dsr.stream()
-				.collect(Collectors.groupingBy(r -> new PeriodKey(r.getStartDate(), r.getEndDate(),location)));
+				.collect(Collectors.groupingBy(r -> new PeriodKey(r.getStartDate(), r.getEndDate(), location)));
 
 		List<PayCycleRow> enriched = pcr.stream().map(row -> {
 
-			PeriodKey key = new PeriodKey(row.getStartDate(), row.getEndDate(),location);
+			PeriodKey key = new PeriodKey(row.getStartDate(), row.getEndDate(), location);
 
 			List<DeferredSolveRequest> matches = requestsByPeriod.getOrDefault(key, List.of());
 
@@ -128,5 +130,38 @@ public class PayCycleDataService {
 
 		}).toList();
 		return enriched;
+	}
+
+	/**
+	 * Fetch archived periods for a specific year range Returns data in PayCycleRow
+	 * format (same as active periods)
+	 */
+	public List<PayCycleRow> fetchArchivedRows(String yearRange, String location) {
+		// Parse year range
+		int startYear, endYear;
+		if (yearRange.contains("-")) {
+			String[] parts = yearRange.split("-");
+			startYear = Integer.parseInt(parts[0]);
+			endYear = Integer.parseInt(parts[1]);
+		} else {
+			startYear = endYear = Integer.parseInt(yearRange);
+		}
+
+		// Build date range for the year(s)
+		LocalDate yearStartDate = LocalDate.of(startYear, 1, 1);
+		LocalDate yearEndDate = LocalDate.of(endYear, 12, 31);
+
+		// Query archived periods that overlap with this year range
+		String sql = "SELECT id, name, start_date, end_date FROM pay_cycle_periods " + "WHERE active = false "
+				+ "AND start_date <= ? " + "AND end_date >= ? " + "ORDER BY start_date";
+
+		List<PayCycleRow> result = jdbcTemplate
+				.query(sql, new Object[] { yearEndDate, yearStartDate },
+						(rs, rowNum) -> PayCycleRow.Builder.builder().withCore(rs.getLong("id"), rs.getString("name"),
+								rs.getDate("start_date").toLocalDate(), rs.getDate("end_date").toLocalDate(), location)
+								.build());
+
+		// Enrich with rota data (same logic as active periods)
+		return enrichPayCycleRow(result, location);
 	}
 }
