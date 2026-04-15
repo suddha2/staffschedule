@@ -95,4 +95,11 @@ public interface ShiftTemplateRepository extends JpaRepository<ShiftTemplate, In
 	 * Find templates by region ordered by priority
 	 */
 	List<ShiftTemplate> findByRegionAndActiveTrueOrderByPriorityAsc(String region);
+	
+	
+	List<ShiftTemplate> findByLocationAndShiftTypeAndRegion(
+		    String location, 
+		    ShiftType shiftType, 
+		    String region
+		);
 }

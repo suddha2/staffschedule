@@ -2,7 +2,9 @@ package com.midco.rota.controller;
 
 import java.time.DayOfWeek;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -18,6 +20,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.midco.rota.RateTableProvider;
+import com.midco.rota.dto.ShiftTemplateDTO;
 import com.midco.rota.dto.ShiftTemplateRequest;
 import com.midco.rota.model.ShiftTemplate;
 import com.midco.rota.repository.ShiftTemplateRepository;
@@ -243,5 +246,68 @@ public class ShiftTemplateController {
 			templates = shiftTemplateRepository.findByActiveTrueOrderByPriorityAsc();
 		}
 		return ResponseEntity.ok(templates);
+	}
+
+	@PutMapping("/bulk-update")
+	public ResponseEntity<?> bulkUpdate(@RequestBody ShiftTemplate request) {
+		// Find all templates matching location, shiftType, region
+		List<ShiftTemplate> templates = shiftTemplateRepository.findByLocationAndShiftTypeAndRegion(
+				request.getLocation(), request.getShiftType(), request.getRegion());
+
+		// Update each template
+		templates.forEach(template -> {
+			template.setStartTime(request.getStartTime());
+			template.setEndTime(request.getEndTime());
+			template.setActive(request.isActive());
+			template.setBreakEnd(request.getBreakEnd());
+			template.setBreakStart(request.getBreakStart());
+			template.setEmpCount(request.getEmpCount());
+			template.setGender(request.getGender());
+			template.setPriority(request.getPriority());
+			template.setRequiredGender(request.getRequiredGender());
+			template.setGender(request.getGender());
+			template.setRequiredSkills(request.getRequiredSkills());
+			template.setTotalHours(request.getTotalHours());
+			// ... other fields
+		});
+
+		shiftTemplateRepository.saveAll(templates);
+
+		return ResponseEntity.ok(templates.size() + " templates updated");
+	}
+
+	@GetMapping("/match")
+	public ResponseEntity<List<ShiftTemplateDTO>> getMatchingTemplates(@RequestParam String location,
+			@RequestParam String shiftType, @RequestParam String region) {
+
+		List<ShiftTemplate> templates = shiftTemplateRepository.findByLocationAndShiftTypeAndRegion(location,
+				ShiftType.valueOf(shiftType), region);
+
+		// Convert to DTOs
+		List<ShiftTemplateDTO> dtos = templates.stream().map(this::convertToDTO)
+				.sorted(Comparator.comparing(ShiftTemplateDTO::getDayOfWeek)) // Sort by day
+				.collect(Collectors.toList());
+
+		return ResponseEntity.ok(dtos);
+	}
+
+	private ShiftTemplateDTO convertToDTO(ShiftTemplate template) {
+		ShiftTemplateDTO dto = new ShiftTemplateDTO();
+		dto.setId(template.getId());
+		dto.setLocation(template.getLocation());
+		dto.setRegion(template.getRegion());
+		dto.setShiftType(template.getShiftType());
+		dto.setDayOfWeek(template.getDayOfWeek());
+		dto.setStartTime(template.getStartTime());
+		dto.setEndTime(template.getEndTime());
+		dto.setBreakStart(template.getBreakStart());
+		dto.setBreakEnd(template.getBreakEnd());
+		dto.setTotalHours(template.getTotalHours());
+		dto.setRequiredGender(template.getRequiredGender());
+		dto.setRequiredSkills(template.getRequiredSkills());
+		dto.setEmpCount(template.getEmpCount());
+		dto.setPriority(template.getPriority());
+		dto.setActive(template.isActive());
+		return dto;
 	}
 }
