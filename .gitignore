@@ -26,3 +26,7 @@ replay_pid*
 /.project
 /target/
 /.settings
+
+# Firebase service account credentials — never commit
+firebase-service-account.json
+src/main/resources/firebase-service-account.json

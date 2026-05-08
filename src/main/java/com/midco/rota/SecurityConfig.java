@@ -40,7 +40,14 @@ public class SecurityConfig {
 						// Allow OPTIONS requests for CORS
 						.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 						// Public endpoints
-						.requestMatchers("/login").permitAll().requestMatchers("/ws/**").permitAll()
+						.requestMatchers("/login").permitAll()
+						.requestMatchers("/ws/**").permitAll()
+						.requestMatchers("/api/mobile/auth/**").permitAll()
+						// Mobile employee endpoints
+						.requestMatchers("/api/mobile/**").hasRole("EMPLOYEE")
+						// Admin-only endpoints
+						.requestMatchers("/api/admin/**").hasRole("ADMIN")
+						.requestMatchers("/api/stats/publish/**").hasRole("ADMIN")
 //						.requestMatchers("/api/stats/**").permitAll()
 						.anyRequest().authenticated())
 				// Add Paseto filter before UsernamePasswordAuthenticationFilter

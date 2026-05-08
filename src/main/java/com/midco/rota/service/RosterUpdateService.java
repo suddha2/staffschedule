@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 
 import com.midco.rota.RotaUpdatePayload;
 import com.midco.rota.dto.SaveScheduleRequest;
+import com.midco.rota.dto.ShiftRequestNotificationPayload;
 import com.midco.rota.model.DeferredSolveRequest;
 import com.midco.rota.model.Rota;
 import com.midco.rota.repository.DeferredSolveRequestRepository;
@@ -75,6 +76,10 @@ public class RosterUpdateService {
 
 	public void pushUpdate(String link, String msg, String user) {
 		messagingTemplate.convertAndSendToUser(user, link, msg);
+	}
+
+	public void pushShiftRequestNotificationToAdmins(ShiftRequestNotificationPayload payload) {
+		messagingTemplate.convertAndSend("/topic/shift-requests", payload);
 	}
 
 	@Transactional

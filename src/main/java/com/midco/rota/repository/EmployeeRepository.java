@@ -1,6 +1,7 @@
 package com.midco.rota.repository;
 
 import java.util.List;
+import java.util.Optional;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -29,6 +30,8 @@ public interface EmployeeRepository extends JpaRepository<Employee, Integer>, Jp
 
 	@Query("SELECT e FROM Employee e WHERE e.firstName = :firstName AND e.lastName = :lastName")
 	Employee findByFirstNameAndLastName(@Param("firstName") String firstName, @Param("lastName") String lastName);
+
+	Optional<Employee> findByEmail(String email);
 
 	Page<Employee> findAll(Specification<Employee> specification, Pageable pageable);
 

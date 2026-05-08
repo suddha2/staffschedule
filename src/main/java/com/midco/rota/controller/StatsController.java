@@ -38,11 +38,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.midco.rota.RateTableProvider;
+import com.midco.rota.dto.PublishResultDTO;
+import com.midco.rota.service.ShiftPublishService;
 import com.midco.rota.model.DeferredSolveRequest;
 import com.midco.rota.model.Employee;
 import com.midco.rota.model.EmployeeShiftStatDTO;
@@ -75,6 +79,9 @@ public class StatsController {
 	private final PaycycleStatsService statsService;
 	private final RotaRepository rotaRepository;
 
+	@Autowired
+	private ShiftPublishService shiftPublishService;
+
 	private DateTimeFormatter dateFormat = DateTimeFormatter.ofLocalizedDate(FormatStyle.SHORT).withLocale(Locale.UK);
 
 	public StatsController(PaycycleStatsService statsService, RateTableProvider rateTableProvider,
@@ -82,6 +89,17 @@ public class StatsController {
 		this.statsService = statsService;
 		this.rateTableProvider = rateTableProvider;
 		this.rotaRepository = rotaRepository;
+	}
+
+	@PostMapping("/publish/{rotaId}")
+	public ResponseEntity<PublishResultDTO> publishUnallocatedShifts(@PathVariable Long rotaId) {
+		return ResponseEntity.ok(shiftPublishService.publishUnallocatedShifts(rotaId));
+	}
+
+	@PostMapping("/publish/{rotaId}/service/{service}")
+	public ResponseEntity<PublishResultDTO> publishServiceUnallocatedShifts(
+			@PathVariable Long rotaId, @PathVariable String service) {
+		return ResponseEntity.ok(shiftPublishService.publishUnallocatedShifts(rotaId, service));
 	}
 
 	@GetMapping("/serviceStats")

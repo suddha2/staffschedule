@@ -24,6 +24,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToOne;
 import jakarta.persistence.Transient;
+import jakarta.persistence.Version;
 
 @Entity(name = "rota_shift_assignment")
 @PlanningEntity(difficultyComparatorClass = ShiftAssignmentDifficultyComparator.class)
@@ -58,6 +59,10 @@ public class ShiftAssignment {
 
 	@Column(name = "is_pinned")
 	private boolean pinned = false;
+
+	@Version
+	@Column(name = "version", nullable = false)
+	private long version;
 
 	@PlanningPin
 	public boolean isPinned() {

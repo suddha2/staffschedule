@@ -145,6 +145,9 @@ public class Shift {
 	}
 
 	public BigDecimal getDurationInHours() {
+		if (!hasDurationInputs()) {
+			return BigDecimal.ZERO;
+		}
 		Duration duration = Duration.between(shiftStart.atTime(shiftTemplate.getStartTime()),
 				shiftEnd.atTime(shiftTemplate.getEndTime()));
 
@@ -159,6 +162,9 @@ public class Shift {
 	}
 
 	public long getDurationInMins() {
+		if (!hasDurationInputs()) {
+			return 0L;
+		}
 		Duration duration = Duration.between(shiftStart.atTime(shiftTemplate.getStartTime()),
 				shiftEnd.atTime(shiftTemplate.getEndTime()));
 
@@ -180,6 +186,22 @@ public class Shift {
 		}
 
 		return minutes;
+	}
+
+	// Returns false (and logs once) when a referenced shift_template row has missing
+	// start/end times, so a single bad row doesn't 500 the whole endpoint.
+	private boolean hasDurationInputs() {
+		if (shiftStart == null || shiftEnd == null || shiftTemplate == null
+				|| shiftTemplate.getStartTime() == null || shiftTemplate.getEndTime() == null) {
+			org.slf4j.LoggerFactory.getLogger(Shift.class).warn(
+					"Shift {} has missing duration inputs (shiftStart={}, shiftEnd={}, template={}, start={}, end={}); returning zero duration",
+					id, shiftStart, shiftEnd,
+					shiftTemplate == null ? null : shiftTemplate.getId(),
+					shiftTemplate == null ? null : shiftTemplate.getStartTime(),
+					shiftTemplate == null ? null : shiftTemplate.getEndTime());
+			return false;
+		}
+		return true;
 	}
 
 	public Integer getAbsoluteWeek() {
