@@ -19,7 +19,12 @@ public class AuthHandshakeInterceptor implements HandshakeInterceptor {
 	    ) {
 	        if (request instanceof ServletServerHttpRequest servletRequest) {
 	            String token = servletRequest.getServletRequest().getParameter("token");
-	            attributes.put("token", token);
+	            // Spring's attributes map is a ConcurrentHashMap, which rejects nulls.
+	            // SockJS follow-up handshake requests don't always carry the ?token= query param;
+	            // skip the put when missing so TokenHandshakeHandler can fall back to anonymous.
+	            if (token != null && !token.isBlank()) {
+	                attributes.put("token", token);
+	            }
 	        }
 	        return true;
 	    }
