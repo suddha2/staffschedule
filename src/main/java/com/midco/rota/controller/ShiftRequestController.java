@@ -31,7 +31,7 @@ public class ShiftRequestController {
 
 	@GetMapping
 	public ResponseEntity<List<ShiftRequestDTO>> listForRota(
-			@RequestParam Long rotaId,
+			@RequestParam(required = false) Long rotaId,
 			@RequestParam(required = false) ShiftRequestStatus status) {
 		return ResponseEntity.ok(shiftRequestService.listRequestsForRota(rotaId, status));
 	}

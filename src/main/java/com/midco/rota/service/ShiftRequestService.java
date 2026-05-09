@@ -102,6 +102,15 @@ public class ShiftRequestService {
 		log.info("Registered FCM device for employee {} (platform={})", employee.getId(), device.getPlatform());
 	}
 
+	public List<ShiftRequestDTO> listOwnRequests(String email, ShiftRequestStatus status) {
+		Employee employee = requireActiveEmployee(email);
+		List<ShiftRequest> requests = (status == null)
+				? shiftRequestRepository.findByEmployeeIdOrderByRequestedAtDesc(employee.getId())
+				: shiftRequestRepository.findByEmployeeIdAndStatusOrderByRequestedAtDesc(employee.getId(), status);
+		// fit is intentionally left null on the mobile-side response — it's an admin-context concept.
+		return requests.stream().map(ShiftRequestDTO::fromEntity).toList();
+	}
+
 	public List<UnallocatedShiftDTO> listAvailable(Long rotaId, String service) {
 		Rota rota = rotaRepository.findById(rotaId)
 				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Rota not found: " + rotaId));
@@ -165,16 +174,35 @@ public class ShiftRequestService {
 	}
 
 	public List<ShiftRequestDTO> listRequestsForRota(Long rotaId, ShiftRequestStatus status) {
-		List<ShiftRequest> requests = (status == null)
-				? shiftRequestRepository.findByRotaId(rotaId)
-				: shiftRequestRepository.findByRotaIdAndStatus(rotaId, status);
+		List<ShiftRequest> requests;
+		if (rotaId != null) {
+			requests = (status == null)
+					? shiftRequestRepository.findByRotaId(rotaId)
+					: shiftRequestRepository.findByRotaIdAndStatus(rotaId, status);
+		} else {
+			// Cross-rota listing — default to PENDING when no status is given,
+			// so we don't accidentally pull historical rows across every rota.
+			ShiftRequestStatus effectiveStatus = (status == null) ? ShiftRequestStatus.PENDING : status;
+			requests = shiftRequestRepository.findByStatus(effectiveStatus);
+		}
 		if (requests.isEmpty()) {
 			return List.of();
 		}
-		Rota rota = rotaRepository.findById(rotaId).orElse(null);
+		// Batch-load every distinct rota referenced so fit computation stays N+1-free.
+		Set<Long> rotaIds = new HashSet<>();
+		for (ShiftRequest r : requests) {
+			if (r.getRotaId() != null) {
+				rotaIds.add(r.getRotaId());
+			}
+		}
+		Map<Long, Rota> rotaCache = new HashMap<>();
+		for (Long id : rotaIds) {
+			rotaRepository.findById(id).ifPresent(r -> rotaCache.put(id, r));
+		}
 		return requests.stream().map(req -> {
 			ShiftRequestDTO dto = ShiftRequestDTO.fromEntity(req);
-			dto.setFit(computeFit(req.getEmployee(), req.getShiftAssignment(), rota));
+			Rota rotaForFit = req.getRotaId() == null ? null : rotaCache.get(req.getRotaId());
+			dto.setFit(computeFit(req.getEmployee(), req.getShiftAssignment(), rotaForFit));
 			return dto;
 		}).toList();
 	}

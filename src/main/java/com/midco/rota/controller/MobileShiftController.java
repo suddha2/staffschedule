@@ -17,6 +17,7 @@ import com.midco.rota.dto.ShiftRequestDTO;
 import com.midco.rota.dto.ShiftRequestSubmissionDTO;
 import com.midco.rota.dto.UnallocatedShiftDTO;
 import com.midco.rota.service.ShiftRequestService;
+import com.midco.rota.util.ShiftRequestStatus;
 
 import jakarta.validation.Valid;
 
@@ -47,5 +48,12 @@ public class MobileShiftController {
 	public ResponseEntity<List<ShiftRequestDTO>> submitRequest(
 			@RequestBody @Valid ShiftRequestSubmissionDTO dto, Authentication auth) {
 		return ResponseEntity.ok(shiftRequestService.submitRequest(auth.getName(), dto));
+	}
+
+	@GetMapping("/shifts/requests")
+	public ResponseEntity<List<ShiftRequestDTO>> myRequests(
+			@RequestParam(required = false) ShiftRequestStatus status,
+			Authentication auth) {
+		return ResponseEntity.ok(shiftRequestService.listOwnRequests(auth.getName(), status));
 	}
 }
