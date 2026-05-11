@@ -1,6 +1,7 @@
 package com.midco.rota.service;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -593,32 +594,67 @@ public class ScheduleVersionService {
 	}
 
 	private void applyChangesToDatabase(Long rotaId, List<ShiftAssignmentChangeDTO> changes) {
+		// Frontend sends one ShiftAssignmentChangeDTO per (employee added/removed/swapped)
+		// keyed by shiftId. For empCount > 1, multiple changes can share the same shiftId,
+		// each targeting a *different* ShiftAssignment row. The previous implementation
+		// always picked existing.get(0), so a second change for the same shift overwrote
+		// the first and silently dropped one employee.
+		//
+		// Fix: use oldEmployeeId as a slot discriminator AND track which SA rows have
+		// been claimed in this batch so multiple changes for the same shift land on
+		// different rows.
+
+		Map<Long, List<ShiftAssignment>> shiftSAsCache = new HashMap<>();
+		Set<Long> usedSAIds = new HashSet<>();
+
 		for (ShiftAssignmentChangeDTO change : changes) {
 			Long shiftId = change.getShiftId();
 			Integer newEmployeeId = change.getNewEmployeeId();
+			Integer oldEmployeeId = change.getOldEmployeeId();
 
-			List<ShiftAssignment> existing = rotaShiftAssignmentRepository.findByRotaIdAndShiftId(rotaId, shiftId);
+			List<ShiftAssignment> existing = shiftSAsCache.computeIfAbsent(shiftId,
+					id -> new ArrayList<>(rotaShiftAssignmentRepository.findByRotaIdAndShiftId(rotaId, id)));
+
+			// Find an unused SA whose current employee matches the change's oldEmployeeId.
+			ShiftAssignment target = null;
+			for (ShiftAssignment sa : existing) {
+				if (sa.getId() != null && usedSAIds.contains(sa.getId())) {
+					continue;
+				}
+				Integer currentEmpId = sa.getEmployee() == null ? null : sa.getEmployee().getId();
+				if (Objects.equals(currentEmpId, oldEmployeeId)) {
+					target = sa;
+					break;
+				}
+			}
+
+			if (target == null) {
+				// No SA row at all for this shift → fall back to creating one (legacy behavior).
+				// If shiftId has rows but none matched (oldEmployeeId, unused), that's a
+				// data inconsistency — log and skip rather than silently clobber a row.
+				if (existing.isEmpty() && newEmployeeId != null) {
+					target = new ShiftAssignment();
+					target.setShift(shiftRepository.findById(shiftId).orElseThrow());
+					target.setRota(rotaRepository.findById(rotaId).orElseThrow());
+					existing.add(target);
+				} else {
+					log.warn(
+							"applyChangesToDatabase: no matching SA row for rota {} shift {} oldEmp {} newEmp {}; skipping",
+							rotaId, shiftId, oldEmployeeId, newEmployeeId);
+					continue;
+				}
+			}
 
 			if (newEmployeeId == null) {
-				// ✅ FIXED: Set employee to NULL instead of deleting row
-				if (!existing.isEmpty()) {
-					ShiftAssignment assignment = existing.get(0);
-					assignment.setEmployee(null);
-					rotaShiftAssignmentRepository.save(assignment);
-				}
+				target.setEmployee(null);
 			} else {
-				// ASSIGN/REASSIGN
-				ShiftAssignment assignment = existing.isEmpty() ? new ShiftAssignment() : existing.get(0);
+				Employee newEmployee = employeeRepository.findById(newEmployeeId).orElseThrow();
+				target.setEmployee(newEmployee);
+			}
 
-				Shift shift = shiftRepository.findById(shiftId).orElseThrow();
-				Employee employee = employeeRepository.findById(newEmployeeId).orElseThrow();
-				Rota rota = rotaRepository.findById(rotaId).orElseThrow();
-
-				assignment.setShift(shift);
-				assignment.setEmployee(employee);
-				assignment.setRota(rota);
-
-				rotaShiftAssignmentRepository.save(assignment);
+			ShiftAssignment saved = rotaShiftAssignmentRepository.save(target);
+			if (saved.getId() != null) {
+				usedSAIds.add(saved.getId());
 			}
 		}
 	}
