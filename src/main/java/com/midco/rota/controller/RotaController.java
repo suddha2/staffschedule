@@ -346,15 +346,17 @@ public class RotaController {
 
 		boolean isFirstSave = rotaCorrectionRepository.countBySourceAndShiftAssignmentRotaId("Auto", rotaId) == 0;
 
-		Map<String, ShiftAssignment> existingAssignmentsByKey = new HashMap<>();
+		// One slotKey can map to MULTIPLE ShiftAssignment rows when the shift template
+		// has empCount > 1 (two carers on the same shift, etc.). The previous
+		// Map<String, ShiftAssignment> collapsed them — second put overwrote the first
+		// — causing one assignment to be lost on save in a non-deterministic order.
+		Map<String, List<ShiftAssignment>> existingAssignmentsByKey = new HashMap<>();
 		for (ShiftAssignment sa : rota.getShiftAssignmentList()) {
 			if (sa.getShift() != null && sa.getShift().getShiftTemplate() != null) {
-				// ✅ FIXED: Include shift.id in key
 				String key = buildShiftKey(sa.getShift().getShiftTemplate().getLocation(),
 						sa.getShift().getShiftTemplate().getShiftType().name(), sa.getShift().getShiftStart(),
-						sa.getShift().getShiftTemplate().getStartTime(), sa.getShift().getId() // ✅ ADD THIS LINE
-				);
-				existingAssignmentsByKey.put(key, sa);
+						sa.getShift().getShiftTemplate().getStartTime(), sa.getShift().getId());
+				existingAssignmentsByKey.computeIfAbsent(key, k -> new ArrayList<>()).add(sa);
 			}
 		}
 
@@ -366,41 +368,78 @@ public class RotaController {
 			String slotKey = entry.getKey();
 			List<Map<String, Object>> employeeList = entry.getValue();
 
-			ShiftAssignment existingAssignment = existingAssignmentsByKey.get(slotKey);
-			if (existingAssignment == null) {
+			List<ShiftAssignment> existingSlotAssignments = existingAssignmentsByKey.get(slotKey);
+			if (existingSlotAssignments == null || existingSlotAssignments.isEmpty()) {
 				System.out.println("⚠️ WARNING: No assignment found for key: " + slotKey);
 				continue;
 			}
 
-			Employee originalEmployee = existingAssignment.getEmployee();
+			// Pair employees[i] with existingSlotAssignments[i] by index.
+			// If incoming list is shorter than existing SAs, the remaining SAs are unassigned.
+			// If incoming list is longer than existing SAs (shouldn't happen — empCount caps it),
+			// the extras are logged and ignored.
+			int slots = existingSlotAssignments.size();
+			int incoming = employeeList.size();
 
-			if (employeeList.isEmpty()) {
-				if (originalEmployee != null && !isFirstSave) {
-					correctionData.put(existingAssignment, new CorrectionInfo(originalEmployee, null, "Manual"));
-				}
-				existingAssignment.setEmployee(null);
-				modifiedAssignments.add(existingAssignment);
-				updatedCount++;
-				continue;
+			if (incoming > slots) {
+				System.out.println("⚠️ WARNING: slot " + slotKey + " has " + slots
+						+ " SA row(s) but received " + incoming + " employee(s); extras ignored");
 			}
 
-			Integer empId = Integer.valueOf(employeeList.get(0).get("id").toString());
-			Employee newEmployee = employeeRepository.findById(empId).orElse(null);
-			if (newEmployee == null)
-				continue;
+			for (int i = 0; i < slots; i++) {
+				ShiftAssignment existingAssignment = existingSlotAssignments.get(i);
+				Employee originalEmployee = existingAssignment.getEmployee();
 
-			boolean hasChanged = originalEmployee == null || !originalEmployee.getId().equals(newEmployee.getId());
+				if (i >= incoming) {
+					// No incoming employee for this slot index → unassign.
+					if (originalEmployee != null) {
+						if (!isFirstSave) {
+							correctionData.put(existingAssignment,
+									new CorrectionInfo(originalEmployee, null, "Manual"));
+						}
+						existingAssignment.setEmployee(null);
+						modifiedAssignments.add(existingAssignment);
+						updatedCount++;
+					}
+					continue;
+				}
 
-			if (isFirstSave) {
-				correctionData.put(existingAssignment, new CorrectionInfo(null, newEmployee, "Auto"));
-				existingAssignment.setEmployee(newEmployee);
-				modifiedAssignments.add(existingAssignment);
-				updatedCount++;
-			} else if (hasChanged) {
-				correctionData.put(existingAssignment, new CorrectionInfo(originalEmployee, newEmployee, "Manual"));
-				existingAssignment.setEmployee(newEmployee);
-				modifiedAssignments.add(existingAssignment);
-				updatedCount++;
+				Map<String, Object> empPayload = employeeList.get(i);
+				if (empPayload == null || empPayload.get("id") == null) {
+					// Explicit null entry → unassign this position.
+					if (originalEmployee != null) {
+						if (!isFirstSave) {
+							correctionData.put(existingAssignment,
+									new CorrectionInfo(originalEmployee, null, "Manual"));
+						}
+						existingAssignment.setEmployee(null);
+						modifiedAssignments.add(existingAssignment);
+						updatedCount++;
+					}
+					continue;
+				}
+
+				Integer empId = Integer.valueOf(empPayload.get("id").toString());
+				Employee newEmployee = employeeRepository.findById(empId).orElse(null);
+				if (newEmployee == null) {
+					continue;
+				}
+
+				boolean hasChanged = originalEmployee == null
+						|| !originalEmployee.getId().equals(newEmployee.getId());
+
+				if (isFirstSave) {
+					correctionData.put(existingAssignment, new CorrectionInfo(null, newEmployee, "Auto"));
+					existingAssignment.setEmployee(newEmployee);
+					modifiedAssignments.add(existingAssignment);
+					updatedCount++;
+				} else if (hasChanged) {
+					correctionData.put(existingAssignment,
+							new CorrectionInfo(originalEmployee, newEmployee, "Manual"));
+					existingAssignment.setEmployee(newEmployee);
+					modifiedAssignments.add(existingAssignment);
+					updatedCount++;
+				}
 			}
 		}
 
