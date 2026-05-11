@@ -113,6 +113,12 @@ public class ScheduleVersionService {
 
 			if (!conflicts.isEmpty()) {
 				log.error("Pin validation failed: {} conflicts found", conflicts.size());
+				conflicts.forEach(c -> log.error("  - Employee {} ({}) on {}: {}",
+			            c.getEmployeeName(), c.getEmployeeId(), c.getDate(),
+			            c.getConflictingShifts().stream()
+			                    .map(s -> s.getShiftType() + "@" + s.getLocation()
+			                            + " " + s.getStartTime() + "-" + s.getEndTime())
+			                    .toList()));
 				throw new PinConflictException("Cannot pin assignments with conflicts", conflicts);
 			}
 

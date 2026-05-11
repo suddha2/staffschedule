@@ -20,6 +20,8 @@ import java.util.stream.Collectors;
 import org.optaplanner.core.api.score.constraint.ConstraintMatchTotal;
 import org.optaplanner.core.api.solver.SolverJob;
 import org.optaplanner.core.api.solver.SolverManager;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -39,7 +41,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
+import com.midco.rota.PinConflictException;
 import com.midco.rota.RateTableProvider;
+import com.midco.rota.dto.ConflictError;
 import com.midco.rota.dto.ScheduleResponseDTO;
 import com.midco.rota.model.DeferredSolveRequest;
 import com.midco.rota.model.Employee;
@@ -58,6 +62,7 @@ import com.midco.rota.repository.ShiftTemplateRepository;
 import com.midco.rota.service.ConstraintExplanationService;
 import com.midco.rota.service.PayCycleDataService;
 import com.midco.rota.service.PeriodService;
+import com.midco.rota.service.PinValidationService;
 import com.midco.rota.service.RosterAnalysisService;
 import com.midco.rota.service.RosterUpdateService;
 import com.midco.rota.util.PayCycleRow;
@@ -65,6 +70,11 @@ import com.midco.rota.util.PayCycleRow;
 @RestController
 @RequestMapping("/api")
 public class RotaController {
+
+	private static final Logger log = LoggerFactory.getLogger(RotaController.class);
+
+	@Autowired
+	private PinValidationService pinValidationService;
 
 	private final PeriodService periodService;
 
@@ -397,6 +407,24 @@ public class RotaController {
 		System.out.println("=== SAVE PROCESS ===");
 		System.out.println("Modified assignments: " + modifiedAssignments.size());
 		System.out.println("Corrections to create: " + correctionData.size());
+
+		// Pre-save validation: the in-memory rota.getShiftAssignmentList() already
+		// reflects every employee change we made above. Re-use the same rules as the
+		// pin-save path so /api/save can't silently introduce same-day double-bookings
+		// or invalid shift-type combinations.
+		List<ConflictError> conflicts = pinValidationService.validateAssignments(rota.getShiftAssignmentList());
+		if (!conflicts.isEmpty()) {
+			log.error("Save rejected for rota {}: {} same-day conflicts found", rotaId, conflicts.size());
+			conflicts.forEach(c -> log.error("  - Employee {} ({}) on {}: {}",
+					c.getEmployeeName(), c.getEmployeeId(), c.getDate(),
+					c.getConflictingShifts().stream()
+							.map(s -> s.getShiftType() + "@" + s.getLocation()
+									+ " " + s.getStartTime() + "-" + s.getEndTime())
+							.toList()));
+			throw new PinConflictException(
+					"Save rejected: schedule has same-day conflicts that must be resolved first",
+					conflicts);
+		}
 
 		if (!modifiedAssignments.isEmpty()) {
 			System.out.println("Saving " + modifiedAssignments.size() + " modified assignments...");
