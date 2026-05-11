@@ -145,8 +145,13 @@ public class ShiftRequestService {
 				throw new ResponseStatusException(HttpStatus.CONFLICT,
 						"Shift assignment " + saId + " is already allocated");
 			}
-			if (shiftRequestRepository.existsByShiftAssignmentIdAndEmployeeId(saId, employee.getId())) {
-				continue;
+			// A previously rejected request does NOT block re-submission — only an in-flight
+			// PENDING row does. Fail the entire batch loudly if a duplicate PENDING is seen,
+			// so the employee gets a clear 409 instead of a silent no-op.
+			if (shiftRequestRepository.existsByShiftAssignmentIdAndEmployeeIdAndStatus(
+					saId, employee.getId(), ShiftRequestStatus.PENDING)) {
+				throw new ResponseStatusException(HttpStatus.CONFLICT,
+						"You already have a pending request for shift assignment " + saId);
 			}
 			ShiftRequest req = new ShiftRequest();
 			req.setShiftAssignment(sa);

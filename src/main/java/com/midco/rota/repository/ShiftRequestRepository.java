@@ -23,5 +23,6 @@ public interface ShiftRequestRepository extends JpaRepository<ShiftRequest, Long
 
 	List<ShiftRequest> findByEmployeeIdAndStatusOrderByRequestedAtDesc(Integer employeeId, ShiftRequestStatus status);
 
-	boolean existsByShiftAssignmentIdAndEmployeeId(Long shiftAssignmentId, Integer employeeId);
+	boolean existsByShiftAssignmentIdAndEmployeeIdAndStatus(Long shiftAssignmentId, Integer employeeId,
+			ShiftRequestStatus status);
 }
