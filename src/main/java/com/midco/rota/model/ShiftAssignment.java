@@ -66,8 +66,12 @@ public class ShiftAssignment {
 
 	@PlanningPin
 	public boolean isPinned() {
-		return pinned || (shift != null && shift.getShiftTemplate() != null
-				&& shift.getShiftTemplate().getShiftType() == ShiftType.SLEEP_IN);
+		if (pinned) return true;
+		if (shift == null || shift.getShiftTemplate() == null) return false;
+		ShiftType type = shift.getShiftTemplate().getShiftType();
+		// SLEEP_IN is paired post-solve to its LONG_DAY (existing behavior).
+		// FLOATING is reserved for the mobile publish-and-grab flow — solver leaves it null.
+		return type == ShiftType.SLEEP_IN || type == ShiftType.FLOATING;
 	}
 
 	public ShiftAssignment() {

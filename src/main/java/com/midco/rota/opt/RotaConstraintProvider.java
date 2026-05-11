@@ -4,6 +4,7 @@ import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.temporal.WeekFields;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -114,6 +115,32 @@ public class RotaConstraintProvider implements ConstraintProvider {
 	private Constraint unassignedShiftConstraint(ConstraintFactory factory) {
 		return factory.forEachIncludingNullVars(ShiftAssignment.class).filter(sa -> sa.getEmployee() == null)
 				.penalize(HardSoftLongScore.ofSoft(1000000)).asConstraint("Unassigned shift");
+	}
+
+	private Constraint requiredSkillsConstraint(ConstraintFactory factory) {
+		// Hard constraint: an assigned employee must possess every skill the shift template requires.
+		// Skill matching is case-insensitive and trim-tolerant. Templates with no required skills are
+		// ignored (the common case), so this does not degrade allocation for the bulk of the data.
+		return factory.forEachIncludingNullVars(ShiftAssignment.class).filter(sa -> {
+			Employee emp = sa.getEmployee();
+			if (emp == null) return false;
+			List<String> required = sa.getShift().getShiftTemplate().getRequiredSkills();
+			if (required == null || required.isEmpty()) return false;
+			List<String> empSkills = emp.getSkills();
+			Set<String> have = new HashSet<>();
+			if (empSkills != null) {
+				for (String s : empSkills) {
+					if (s != null) have.add(s.trim().toLowerCase());
+				}
+			}
+			for (String r : required) {
+				if (r == null) continue;
+				if (!have.contains(r.trim().toLowerCase())) {
+					return true; // missing at least one required skill
+				}
+			}
+			return false;
+		}).penalize(HardSoftLongScore.ONE_HARD).asConstraint("Missing required skill");
 	}
 
 	private Constraint preventDuplicateAssignments(ConstraintFactory factory) {
