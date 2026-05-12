@@ -5,6 +5,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,9 +45,14 @@ public class FcmPushNotificationService {
 		return true;
 	}
 
-	public void broadcastToEmployeesTopic(String title, String body, Map<String, String> data) {
+	/**
+	 * Send a broadcast to the employees topic. Returns the FCM-assigned message id
+	 * on success, or an empty Optional when Firebase isn't initialized or FCM rejected
+	 * the message. Never throws — failures are logged.
+	 */
+	public Optional<String> broadcastToEmployeesTopic(String title, String body, Map<String, String> data) {
 		if (!firebaseReady()) {
-			return;
+			return Optional.empty();
 		}
 		Map<String, String> payload = data == null ? new HashMap<>() : new HashMap<>(data);
 		try {
@@ -57,8 +63,10 @@ public class FcmPushNotificationService {
 					.build();
 			String response = FirebaseMessaging.getInstance().send(message);
 			log.info("FCM topic broadcast sent to '{}': {}", employeesTopic, response);
+			return Optional.ofNullable(response);
 		} catch (FirebaseMessagingException e) {
 			log.error("FCM topic broadcast failed (topic={}): {}", employeesTopic, e.getMessage());
+			return Optional.empty();
 		}
 	}
 

@@ -37,6 +37,7 @@ import org.apache.poi.xssf.streaming.SXSSFWorkbook;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -45,6 +46,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.midco.rota.RateTableProvider;
+import com.midco.rota.dto.PublishHistoryDTO;
 import com.midco.rota.dto.PublishResultDTO;
 import com.midco.rota.service.ShiftPublishService;
 import com.midco.rota.model.DeferredSolveRequest;
@@ -92,14 +94,26 @@ public class StatsController {
 	}
 
 	@PostMapping("/publish/{rotaId}")
-	public ResponseEntity<PublishResultDTO> publishUnallocatedShifts(@PathVariable Long rotaId) {
-		return ResponseEntity.ok(shiftPublishService.publishUnallocatedShifts(rotaId));
+	public ResponseEntity<PublishResultDTO> publishUnallocatedShifts(@PathVariable Long rotaId, Authentication auth) {
+		return ResponseEntity.ok(shiftPublishService.publishUnallocatedShifts(rotaId, auth == null ? null : auth.getName()));
 	}
 
 	@PostMapping("/publish/{rotaId}/service/{service}")
 	public ResponseEntity<PublishResultDTO> publishServiceUnallocatedShifts(
+			@PathVariable Long rotaId, @PathVariable String service, Authentication auth) {
+		return ResponseEntity.ok(shiftPublishService.publishUnallocatedShifts(rotaId, service,
+				auth == null ? null : auth.getName()));
+	}
+
+	@GetMapping("/publish/{rotaId}")
+	public ResponseEntity<PublishHistoryDTO> publishHistory(@PathVariable Long rotaId) {
+		return ResponseEntity.ok(shiftPublishService.getPublishHistory(rotaId, null));
+	}
+
+	@GetMapping("/publish/{rotaId}/service/{service}")
+	public ResponseEntity<PublishHistoryDTO> publishHistoryForService(
 			@PathVariable Long rotaId, @PathVariable String service) {
-		return ResponseEntity.ok(shiftPublishService.publishUnallocatedShifts(rotaId, service));
+		return ResponseEntity.ok(shiftPublishService.getPublishHistory(rotaId, service));
 	}
 
 	@GetMapping("/serviceStats")

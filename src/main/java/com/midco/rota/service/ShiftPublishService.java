@@ -2,6 +2,7 @@ package com.midco.rota.service;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -9,8 +10,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.midco.rota.dto.PublishHistoryDTO;
 import com.midco.rota.dto.PublishResultDTO;
+import com.midco.rota.model.PublishLog;
 import com.midco.rota.model.Rota;
+import com.midco.rota.repository.PublishLogRepository;
 import com.midco.rota.repository.RotaRepository;
 
 @Service
@@ -20,17 +24,20 @@ public class ShiftPublishService {
 
 	private final RotaRepository rotaRepository;
 	private final FcmPushNotificationService fcm;
+	private final PublishLogRepository publishLogRepository;
 
-	public ShiftPublishService(RotaRepository rotaRepository, FcmPushNotificationService fcm) {
+	public ShiftPublishService(RotaRepository rotaRepository, FcmPushNotificationService fcm,
+			PublishLogRepository publishLogRepository) {
 		this.rotaRepository = rotaRepository;
 		this.fcm = fcm;
+		this.publishLogRepository = publishLogRepository;
 	}
 
-	public PublishResultDTO publishUnallocatedShifts(Long rotaId) {
-		return publishUnallocatedShifts(rotaId, null);
+	public PublishResultDTO publishUnallocatedShifts(Long rotaId, String publishedBy) {
+		return publishUnallocatedShifts(rotaId, null, publishedBy);
 	}
 
-	public PublishResultDTO publishUnallocatedShifts(Long rotaId, String service) {
+	public PublishResultDTO publishUnallocatedShifts(Long rotaId, String service, String publishedBy) {
 		Rota rota = rotaRepository.findById(rotaId)
 				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Rota not found: " + rotaId));
 
@@ -41,33 +48,77 @@ public class ShiftPublishService {
 						.count();
 
 		String scope = service == null ? "all services" : service;
+
+		// Build the message regardless of count — we still log the attempt either way.
+		String title = service == null ? "New shifts available" : "New shifts available at " + service;
+		String body = unallocated + " unallocated shift" + (unallocated == 1 ? "" : "s")
+				+ (service == null ? " open for request" : " at " + service);
+
+		Optional<String> fcmMessageId = Optional.empty();
+		String resultMessage;
+		boolean broadcastSent = false;
+
 		if (unallocated == 0) {
 			log.info("publishUnallocatedShifts: rota {} ({}) has no unallocated shifts; skipping broadcast",
 					rotaId, scope);
-			return new PublishResultDTO(rotaId, service, 0, false,
-					service == null ? "No unallocated shifts to publish"
-							: "No unallocated shifts at " + service + " to publish");
+			resultMessage = service == null ? "No unallocated shifts to publish"
+					: "No unallocated shifts at " + service + " to publish";
+		} else {
+			Map<String, String> data = new HashMap<>();
+			data.put("rotaId", String.valueOf(rotaId));
+			data.put("unallocatedCount", String.valueOf(unallocated));
+			data.put("type", "UNALLOCATED_SHIFTS_PUBLISHED");
+			if (service != null) {
+				data.put("service", service);
+			}
+
+			fcmMessageId = fcm.broadcastToEmployeesTopic(title, body, data);
+			broadcastSent = fcmMessageId.isPresent();
+
+			log.info("publishUnallocatedShifts: rota {} ({}) attempt broadcast {} unallocated shifts; sent={} id={}",
+					rotaId, scope, unallocated, broadcastSent, fcmMessageId.orElse("<none>"));
+
+			if (broadcastSent) {
+				resultMessage = "Broadcast sent to employees topic for " + unallocated
+						+ " unallocated shift(s)" + (service == null ? "" : " at " + service);
+			} else {
+				resultMessage = "Publish recorded but FCM broadcast did not go out (Firebase unavailable or rejected the message)";
+			}
 		}
 
-		Map<String, String> data = new HashMap<>();
-		data.put("rotaId", String.valueOf(rotaId));
-		data.put("unallocatedCount", String.valueOf(unallocated));
-		data.put("type", "UNALLOCATED_SHIFTS_PUBLISHED");
-		if (service != null) {
-			data.put("service", service);
-		}
+		// Audit-log every publish attempt — including zero-unallocated no-ops and FCM failures.
+		PublishLog entry = new PublishLog();
+		entry.setRotaId(rotaId);
+		entry.setService(service);
+		entry.setPublishedBy(publishedBy);
+		entry.setUnallocatedCount((int) unallocated);
+		entry.setBroadcastSent(broadcastSent);
+		entry.setFcmMessageId(fcmMessageId.orElse(null));
+		entry.setNotificationTitle(unallocated > 0 ? title : null);
+		entry.setNotificationBody(unallocated > 0 ? body : null);
+		publishLogRepository.save(entry);
 
-		String title = service == null ? "New shifts available"
-				: "New shifts available at " + service;
-		String body = unallocated + " unallocated shift" + (unallocated == 1 ? "" : "s")
-				+ (service == null ? " open for request" : " at " + service);
-		fcm.broadcastToEmployeesTopic(title, body, data);
+		long totalCount = publishLogRepository.countForRotaAndService(rotaId, service);
 
-		log.info("publishUnallocatedShifts: rota {} ({}) broadcast {} unallocated shifts",
-				rotaId, scope, unallocated);
-		return new PublishResultDTO(rotaId, service, (int) unallocated, true,
-				"Broadcast sent to employees topic for " + unallocated
-						+ " unallocated shift(s)" + (service == null ? "" : " at " + service));
+		return new PublishResultDTO(rotaId, service, (int) unallocated, broadcastSent, resultMessage,
+				fcmMessageId.orElse(null), totalCount);
+	}
+
+	public PublishHistoryDTO getPublishHistory(Long rotaId, String service) {
+		long count = publishLogRepository.countForRotaAndService(rotaId, service);
+		PublishHistoryDTO dto = new PublishHistoryDTO();
+		dto.setRotaId(rotaId);
+		dto.setService(service);
+		dto.setCount(count);
+
+		publishLogRepository.findMostRecent(rotaId, service).ifPresent(latest -> {
+			dto.setLastPublishedAt(latest.getPublishedAt());
+			dto.setLastPublishedBy(latest.getPublishedBy());
+			dto.setLastBroadcastSent(latest.isBroadcastSent());
+			dto.setLastUnallocatedCount(latest.getUnallocatedCount());
+			dto.setLastFcmMessageId(latest.getFcmMessageId());
+		});
+		return dto;
 	}
 
 	private static boolean matchesService(com.midco.rota.model.ShiftAssignment sa, String service) {
