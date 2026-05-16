@@ -47,6 +47,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.midco.rota.RateTableProvider;
 import com.midco.rota.dto.PublishHistoryDTO;
+import com.midco.rota.dto.PublishLogEntryDTO;
 import com.midco.rota.dto.PublishResultDTO;
 import com.midco.rota.service.ShiftPublishService;
 import com.midco.rota.model.DeferredSolveRequest;
@@ -114,6 +115,12 @@ public class StatsController {
 	public ResponseEntity<PublishHistoryDTO> publishHistoryForService(
 			@PathVariable Long rotaId, @PathVariable String service) {
 		return ResponseEntity.ok(shiftPublishService.getPublishHistory(rotaId, service));
+	}
+
+	@GetMapping("/publish/{rotaId}/service/{service}/log")
+	public ResponseEntity<List<PublishLogEntryDTO>> publishLogForService(
+			@PathVariable Long rotaId, @PathVariable String service) {
+		return ResponseEntity.ok(shiftPublishService.getPublishLog(rotaId, service));
 	}
 
 	@GetMapping("/serviceStats")

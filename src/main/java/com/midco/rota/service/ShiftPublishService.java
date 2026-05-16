@@ -1,16 +1,19 @@
 package com.midco.rota.service;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.midco.rota.dto.PublishHistoryDTO;
+import com.midco.rota.dto.PublishLogEntryDTO;
 import com.midco.rota.dto.PublishResultDTO;
 import com.midco.rota.model.PublishLog;
 import com.midco.rota.model.Rota;
@@ -119,6 +122,15 @@ public class ShiftPublishService {
 			dto.setLastFcmMessageId(latest.getFcmMessageId());
 		});
 		return dto;
+	}
+
+	/** Most recent publish events (capped at 50) for the audit-trail drawer. */
+	public List<PublishLogEntryDTO> getPublishLog(Long rotaId, String service) {
+		return publishLogRepository
+				.findLatestForRotaAndService(rotaId, service, PageRequest.of(0, 50))
+				.stream()
+				.map(PublishLogEntryDTO::fromEntity)
+				.toList();
 	}
 
 	private static boolean matchesService(com.midco.rota.model.ShiftAssignment sa, String service) {
