@@ -51,12 +51,16 @@ public class PasetoTokenService {
 	// Generate Token (asymmetric)
 	// ============================
 	public String generateToken(String username, Set<String> roles) {
+		return generateToken(username, roles, Duration.ofHours(2));
+	}
+
+	public String generateToken(String username, Set<String> roles, Duration ttl) {
 		Instant now = Instant.now();
 
 		try {
 			PrivateKey privateKey = loadPrivateKey();
 			return Pasetos.V2.PUBLIC.builder().setPrivateKey(privateKey).setIssuedAt(now)
-					.setExpiration(now.plus(Duration.ofHours(2))).setSubject(username).setIssuer(issuer)
+					.setExpiration(now.plus(ttl)).setSubject(username).setIssuer(issuer)
 					.setAudience(audience).claim("roles", roles).compact();
 
 		} catch (Exception e) {

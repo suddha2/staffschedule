@@ -18,8 +18,11 @@ import com.google.firebase.auth.FirebaseAuthException;
 import com.google.firebase.auth.FirebaseToken;
 import com.midco.rota.dto.GoogleAuthRequestDTO;
 import com.midco.rota.dto.MobileAuthResponseDTO;
+import com.midco.rota.dto.RequestCodeDTO;
+import com.midco.rota.dto.VerifyCodeDTO;
 import com.midco.rota.model.Employee;
 import com.midco.rota.repository.EmployeeRepository;
+import com.midco.rota.service.MobileLoginService;
 import com.midco.rota.service.PasetoTokenService;
 
 import jakarta.validation.Valid;
@@ -32,10 +35,13 @@ public class MobileAuthController {
 
 	private final EmployeeRepository employeeRepository;
 	private final PasetoTokenService pasetoTokenService;
+	private final MobileLoginService mobileLoginService;
 
-	public MobileAuthController(EmployeeRepository employeeRepository, PasetoTokenService pasetoTokenService) {
+	public MobileAuthController(EmployeeRepository employeeRepository, PasetoTokenService pasetoTokenService,
+			MobileLoginService mobileLoginService) {
 		this.employeeRepository = employeeRepository;
 		this.pasetoTokenService = pasetoTokenService;
+		this.mobileLoginService = mobileLoginService;
 	}
 
 	@PostMapping("/google")
@@ -73,5 +79,25 @@ public class MobileAuthController {
 
 		return ResponseEntity.ok(new MobileAuthResponseDTO(
 				token, employee.getId(), employee.getFirstName(), employee.getLastName()));
+	}
+
+	/**
+	 * Step 1 of email sign-in: emails a 6-digit code to the address if it belongs
+	 * to an active employee. Always returns 200 — the response must not reveal
+	 * whether the email is registered.
+	 */
+	@PostMapping("/request-code")
+	public ResponseEntity<Void> requestCode(@RequestBody @Valid RequestCodeDTO dto) {
+		mobileLoginService.requestCode(dto.getEmail());
+		return ResponseEntity.ok().build();
+	}
+
+	/**
+	 * Step 2 of email sign-in: verifies the code and, on success, returns a
+	 * PASETO session token plus the linked employee.
+	 */
+	@PostMapping("/verify-code")
+	public ResponseEntity<MobileAuthResponseDTO> verifyCode(@RequestBody @Valid VerifyCodeDTO dto) {
+		return ResponseEntity.ok(mobileLoginService.verifyCode(dto.getEmail(), dto.getCode()));
 	}
 }
