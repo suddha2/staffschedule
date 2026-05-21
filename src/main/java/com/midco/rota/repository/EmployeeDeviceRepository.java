@@ -16,4 +16,7 @@ public interface EmployeeDeviceRepository extends JpaRepository<EmployeeDevice, 
 	List<EmployeeDevice> findByEmployeeIdAndActiveTrue(Integer employeeId);
 
 	List<EmployeeDevice> findByActiveTrue();
+
+	/** Remove every device registration for an employee (on deactivation / delete). */
+	long deleteByEmployeeId(Integer employeeId);
 }

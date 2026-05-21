@@ -36,16 +36,16 @@ public class GraphMailService {
 	private static final String SENDMAIL_URL =
 			"https://graph.microsoft.com/v1.0/users/%s/sendMail";
 
-	@Value("${graph.mail.tenant-id:}")
+	@Value("${graph.mail.tenant-id}")
 	private String tenantId;
 
-	@Value("${graph.mail.client-id:}")
+	@Value("${graph.mail.client-id}")
 	private String clientId;
 
-	@Value("${graph.mail.client-secret:}")
+	@Value("${graph.mail.client-secret}")
 	private String clientSecret;
 
-	@Value("${graph.mail.sender:}")
+	@Value("${graph.mail.sender}")
 	private String sender;
 
 	private final RestTemplate rest = new RestTemplate();

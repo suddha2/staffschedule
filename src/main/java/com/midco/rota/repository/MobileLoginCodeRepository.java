@@ -16,4 +16,7 @@ public interface MobileLoginCodeRepository extends JpaRepository<MobileLoginCode
 
 	/** How many codes have been requested for an email since the given time (rate-limiting). */
 	long countByEmailAndCreatedAtAfter(String email, LocalDateTime since);
+
+	/** Remove every outstanding login code for an email (on deactivation / delete). */
+	long deleteByEmailIgnoreCase(String email);
 }

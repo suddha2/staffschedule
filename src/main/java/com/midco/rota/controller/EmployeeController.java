@@ -10,15 +10,19 @@ import org.springframework.web.bind.annotation.*;
 import com.midco.rota.model.Employee;
 import com.midco.rota.model.ShiftTemplate;
 import com.midco.rota.repository.EmployeeRepository;
+import com.midco.rota.service.EmployeeAccessService;
 
 @RestController
 @RequestMapping("/api/employees")
 public class EmployeeController {
     
     private final EmployeeRepository employeeRepository;
-    
-    public EmployeeController(EmployeeRepository employeeRepository) {
+    private final EmployeeAccessService employeeAccessService;
+
+    public EmployeeController(EmployeeRepository employeeRepository,
+            EmployeeAccessService employeeAccessService) {
         this.employeeRepository = employeeRepository;
+        this.employeeAccessService = employeeAccessService;
     }
     
     // GET all employees
@@ -43,6 +47,12 @@ public class EmployeeController {
                 .map(template -> {
                     template.setActive(!template.isActive());
                     Employee updated = employeeRepository.save(template);
+                    // Switched OFF -> revoke mobile access: drop device
+                    // registrations and any outstanding login codes. Their
+                    // PASETO is rejected on next request by the auth filter.
+                    if (!updated.isActive()) {
+                        employeeAccessService.revokeMobileAccess(updated.getId(), updated.getEmail());
+                    }
                     return ResponseEntity.ok(updated);
                 })
                 .orElse(ResponseEntity.notFound().build());
@@ -121,6 +131,9 @@ public class EmployeeController {
     public ResponseEntity<Void> deleteEmployee(@PathVariable Integer id) {
         return employeeRepository.findById(id)
                 .map(employee -> {
+                    // Clear devices + login codes first so foreign keys don't
+                    // block the delete and nothing is left orphaned.
+                    employeeAccessService.revokeMobileAccess(employee.getId(), employee.getEmail());
                     employeeRepository.delete(employee);
                     return ResponseEntity.noContent().<Void>build();
                 })
