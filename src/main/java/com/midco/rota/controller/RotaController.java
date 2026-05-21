@@ -65,6 +65,7 @@ import com.midco.rota.service.PeriodService;
 import com.midco.rota.service.PinValidationService;
 import com.midco.rota.service.RosterAnalysisService;
 import com.midco.rota.service.RosterUpdateService;
+import com.midco.rota.service.ShiftRequestService;
 import com.midco.rota.util.PayCycleRow;
 
 @RestController
@@ -75,6 +76,9 @@ public class RotaController {
 
 	@Autowired
 	private PinValidationService pinValidationService;
+
+	@Autowired
+	private ShiftRequestService shiftRequestService;
 
 	private final PeriodService periodService;
 
@@ -485,6 +489,11 @@ public class RotaController {
 			rotaCorrectionRepository.flush();
 			System.out.println("✅ Corrections saved and flushed");
 		}
+
+		// Slots filled by this save (direct allocation, not the approve flow)
+		// still need their pending mobile requests reconciled + the employees
+		// notified, so My Requests updates and the shift clears from Available.
+		shiftRequestService.reconcileFilledAssignments(modifiedAssignments, auth.getName());
 
 		System.out.println("=== SAVE COMPLETE ===");
 

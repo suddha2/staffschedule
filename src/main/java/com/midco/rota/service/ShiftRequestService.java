@@ -490,4 +490,47 @@ public class ShiftRequestService {
 
 		return ShiftRequestDTO.fromEntity(req);
 	}
+
+	/**
+	 * Reconciles pending mobile requests for slots that were filled directly via
+	 * the rota editor ({@code /api/save}) rather than through the approve flow.
+	 * For each just-filled assignment: the requester who got the slot (if any)
+	 * is marked APPROVED, everyone else who requested it is marked FILLED — with
+	 * the matching FCM pushes, so the mobile app updates My Requests and drops
+	 * the shift from Available. Assignments with no employee (cleared, not
+	 * filled) are skipped.
+	 */
+	@Transactional
+	public void reconcileFilledAssignments(List<ShiftAssignment> assignments, String adminUsername) {
+		if (assignments == null || assignments.isEmpty()) {
+			return;
+		}
+		LocalDateTime now = LocalDateTime.now();
+		for (ShiftAssignment assignment : assignments) {
+			Employee assignedTo = assignment.getEmployee();
+			if (assignedTo == null) {
+				continue;
+			}
+			List<ShiftRequest> pending = shiftRequestRepository
+					.findByShiftAssignmentIdAndStatus(assignment.getId(), ShiftRequestStatus.PENDING);
+			for (ShiftRequest req : pending) {
+				boolean winner = req.getEmployee() != null
+						&& req.getEmployee().getId().equals(assignedTo.getId());
+				req.setStatus(winner ? ShiftRequestStatus.APPROVED : ShiftRequestStatus.FILLED);
+				req.setResolvedAt(now);
+				req.setResolvedBy(adminUsername);
+				shiftRequestRepository.save(req);
+
+				Map<String, String> data = new HashMap<>();
+				data.put("rotaId", String.valueOf(req.getRotaId()));
+				data.put("shiftAssignmentId", String.valueOf(assignment.getId()));
+				data.put("type", winner ? "SHIFT_APPROVED" : "SHIFT_FILLED");
+				fcm.sendToEmployee(req.getEmployee().getId(),
+						winner ? "Shift allocated" : "Shift filled",
+						winner ? "Your requested shift has been approved"
+								: "A shift you requested has been allocated to another employee",
+						data);
+			}
+		}
+	}
 }
