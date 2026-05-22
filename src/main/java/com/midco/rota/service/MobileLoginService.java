@@ -7,6 +7,7 @@ import java.util.Set;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -42,6 +43,16 @@ public class MobileLoginService {
 	private final PasswordEncoder passwordEncoder;
 	private final GraphMailService graphMailService;
 
+	// Google Play review bypass. When BOTH are set, signing in with this exact
+	// email accepts the fixed code below — no email is sent and no code is stored —
+	// so store reviewers can get past OTP login. Both unset (the default) disables
+	// it entirely. Set only in the external prod config, never committed.
+	@Value("${mobile.review.email:}")
+	private String reviewEmail;
+
+	@Value("${mobile.review.code:}")
+	private String reviewCode;
+
 	public MobileLoginService(EmployeeRepository employeeRepository,
 			MobileLoginCodeRepository codeRepository, PasetoTokenService pasetoTokenService,
 			PasswordEncoder passwordEncoder, GraphMailService graphMailService) {
@@ -60,6 +71,13 @@ public class MobileLoginService {
 	@Transactional
 	public void requestCode(String rawEmail) {
 		String email = normalise(rawEmail);
+
+		// Play review account: no code is generated or emailed — verifyCode accepts
+		// the fixed review code directly.
+		if (isReviewLogin(email)) {
+			log.info("Login code requested for Play review account {} — no-op", email);
+			return;
+		}
 
 		// Rate-limit: cap how many codes one address can request per hour.
 		long recent = codeRepository.countByEmailAndCreatedAtAfter(
@@ -104,6 +122,24 @@ public class MobileLoginService {
 	 */
 	public MobileAuthResponseDTO verifyCode(String rawEmail, String code) {
 		String email = normalise(rawEmail);
+
+		// Play review account: accept the fixed code without a stored entry, then
+		// issue a session token for the (active) review employee like any other login.
+		if (isReviewLogin(email)) {
+			if (!reviewCode.equals(code)) {
+				throw unauthorized("Incorrect code.");
+			}
+			Employee reviewer = employeeRepository.findByEmail(email)
+					.filter(Employee::isActive)
+					.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+							"No active employee for this email."));
+			String token = pasetoTokenService.generateToken(
+					email, Set.of("ROLE_EMPLOYEE"), SESSION_TTL);
+			log.info("Issued mobile PASETO for Play review account {} (employee {})",
+					email, reviewer.getId());
+			return new MobileAuthResponseDTO(token, reviewer.getId(),
+					reviewer.getFirstName(), reviewer.getLastName());
+		}
 
 		MobileLoginCode entry = codeRepository
 				.findFirstByEmailAndConsumedFalseOrderByCreatedAtDesc(email)
@@ -153,6 +189,13 @@ public class MobileLoginService {
 
 	private String generateCode() {
 		return String.format("%06d", random.nextInt(1_000_000));
+	}
+
+	/** True only when the review bypass is fully configured and this is that account. */
+	private boolean isReviewLogin(String normalisedEmail) {
+		return reviewEmail != null && !reviewEmail.isBlank()
+				&& reviewCode != null && !reviewCode.isBlank()
+				&& normalisedEmail.equals(normalise(reviewEmail));
 	}
 
 	private static String normalise(String email) {
