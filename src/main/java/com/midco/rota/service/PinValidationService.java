@@ -66,6 +66,37 @@ public class PinValidationService {
 	}
 
 	/**
+	 * Would assigning {@code requester} to {@code requestedShift} break the
+	 * same-day rules, given the employee's existing assignments in
+	 * {@code rotaAssignments}? Used to flag conflicting requests in the admin
+	 * list and to block a conflicting approval.
+	 */
+	public boolean wouldConflict(Employee requester, ShiftAssignment requestedShift,
+			List<ShiftAssignment> rotaAssignments) {
+		if (requester == null || requestedShift == null || requestedShift.getShift() == null) {
+			return false;
+		}
+		LocalDate date = requestedShift.getShift().getShiftStart();
+		if (date == null) {
+			return false;
+		}
+		List<ShiftAssignment> sameDay = new ArrayList<>();
+		if (rotaAssignments != null) {
+			for (ShiftAssignment sa : rotaAssignments) {
+				if (sa.getEmployee() != null
+						&& sa.getEmployee().getId().equals(requester.getId())
+						&& sa.getShift() != null
+						&& date.equals(sa.getShift().getShiftStart())) {
+					sameDay.add(sa);
+				}
+			}
+		}
+		// Add the requested shift as if it were assigned to this employee.
+		sameDay.add(requestedShift);
+		return !isAllowedDayAssignments(sameDay);
+	}
+
+	/**
 	 * Same-day assignment validation logic Returns true if allowed, false if
 	 * violates rules
 	 */

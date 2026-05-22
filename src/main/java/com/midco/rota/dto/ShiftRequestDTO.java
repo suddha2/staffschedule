@@ -28,6 +28,10 @@ public class ShiftRequestDTO {
 	private LocalDate periodEnd;
 	private Integer weekNumber;
 
+	// True when approving this request would clash with another shift the
+	// employee already has that day (see PinValidationService).
+	private boolean conflict;
+
 	public ShiftRequestDTO() {
 	}
 
@@ -177,5 +181,13 @@ public class ShiftRequestDTO {
 
 	public void setWeekNumber(Integer weekNumber) {
 		this.weekNumber = weekNumber;
+	}
+
+	public boolean isConflict() {
+		return conflict;
+	}
+
+	public void setConflict(boolean conflict) {
+		this.conflict = conflict;
 	}
 }

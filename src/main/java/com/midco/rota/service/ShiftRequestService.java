@@ -59,6 +59,7 @@ public class ShiftRequestService {
 	private final RosterUpdateService rosterUpdateService;
 	private final SlotAvailabilityService slotAvailabilityService;
 	private final PeriodService periodService;
+	private final PinValidationService pinValidationService;
 
 	public ShiftRequestService(EmployeeRepository employeeRepository,
 			EmployeeDeviceRepository deviceRepository,
@@ -69,7 +70,8 @@ public class ShiftRequestService {
 			FcmPushNotificationService fcm,
 			RosterUpdateService rosterUpdateService,
 			SlotAvailabilityService slotAvailabilityService,
-			PeriodService periodService) {
+			PeriodService periodService,
+			PinValidationService pinValidationService) {
 		this.employeeRepository = employeeRepository;
 		this.deviceRepository = deviceRepository;
 		this.shiftRequestRepository = shiftRequestRepository;
@@ -80,6 +82,7 @@ public class ShiftRequestService {
 		this.rosterUpdateService = rosterUpdateService;
 		this.slotAvailabilityService = slotAvailabilityService;
 		this.periodService = periodService;
+		this.pinValidationService = pinValidationService;
 	}
 
 	private Employee requireActiveEmployee(String email) {
@@ -246,6 +249,8 @@ public class ShiftRequestService {
 			ShiftRequestDTO dto = ShiftRequestDTO.fromEntity(req);
 			Rota rotaForFit = req.getRotaId() == null ? null : rotaCache.get(req.getRotaId());
 			dto.setFit(computeFit(req.getEmployee(), req.getShiftAssignment(), rotaForFit));
+			dto.setConflict(rotaForFit != null && pinValidationService.wouldConflict(
+					req.getEmployee(), req.getShiftAssignment(), rotaForFit.getShiftAssignmentList()));
 			return dto;
 		}).toList();
 	}
@@ -458,6 +463,11 @@ public class ShiftRequestService {
 			if (assignment.getEmployee() != null) {
 				throw new ResponseStatusException(HttpStatus.CONFLICT,
 						"Shift is already allocated");
+			}
+			if (assignment.getRota() != null && pinValidationService.wouldConflict(
+					req.getEmployee(), assignment, assignment.getRota().getShiftAssignmentList())) {
+				throw new ResponseStatusException(HttpStatus.CONFLICT,
+						"Approving this would clash with another shift the employee has that day");
 			}
 			assignment.setEmployee(req.getEmployee());
 			try {
