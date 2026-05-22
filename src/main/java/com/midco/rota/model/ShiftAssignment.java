@@ -69,6 +69,12 @@ public class ShiftAssignment {
 	@Column(name = "withheld", nullable = false)
 	private boolean withheld = false;
 
+	/** True when this assignment's employee was set by approving a mobile shift
+	 *  request (vs solver / manual). Cleared on any manual edit. Drives the
+	 *  ViewSchedule highlight. */
+	@Column(name = "filled_via_request", nullable = false)
+	private boolean filledViaRequest = false;
+
 	@PlanningPin
 	public boolean isPinned() {
 		if (pinned) return true;
@@ -192,5 +198,13 @@ public class ShiftAssignment {
 
 	public void setWithheld(boolean withheld) {
 		this.withheld = withheld;
+	}
+
+	public boolean isFilledViaRequest() {
+		return filledViaRequest;
+	}
+
+	public void setFilledViaRequest(boolean filledViaRequest) {
+		this.filledViaRequest = filledViaRequest;
 	}
 }

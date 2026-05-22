@@ -11,7 +11,8 @@ public class ShiftAssignmentDTO {
     private List<String> diagnosticReasons;
     private List<String> unassignmentReasons;
     private boolean pinned;
-    
+    private boolean filledViaRequest;
+
     // Getters and setters
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -33,7 +34,10 @@ public class ShiftAssignmentDTO {
     
     public boolean isPinned() { return pinned; }
     public void setPinned(boolean pinned) { this.pinned = pinned; }
-    
+
+    public boolean isFilledViaRequest() { return filledViaRequest; }
+    public void setFilledViaRequest(boolean filledViaRequest) { this.filledViaRequest = filledViaRequest; }
+
     // ✅ Converter from Entity
     public static ShiftAssignmentDTO fromEntity(ShiftAssignment sa) {
         ShiftAssignmentDTO dto = new ShiftAssignmentDTO();
@@ -53,7 +57,8 @@ public class ShiftAssignmentDTO {
         dto.setDiagnosticReasons(sa.getDiagnosticReasons());
         dto.setUnassignmentReasons(sa.getUnassignmentReasons());
         dto.setPinned(sa.isPinned());
-        
+        dto.setFilledViaRequest(sa.isFilledViaRequest());
+
         return dto;
     }
 }

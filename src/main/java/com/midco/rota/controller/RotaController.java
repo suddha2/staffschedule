@@ -470,6 +470,9 @@ public class RotaController {
 		}
 
 		if (!modifiedAssignments.isEmpty()) {
+			// A manual edit supersedes the "filled via mobile request" highlight —
+			// clear the flag so the ViewSchedule grid no longer tints these cells.
+			modifiedAssignments.forEach(sa -> sa.setFilledViaRequest(false));
 			System.out.println("Saving " + modifiedAssignments.size() + " modified assignments...");
 			shiftAssignmentRepository.saveAll(modifiedAssignments);
 			shiftAssignmentRepository.flush();

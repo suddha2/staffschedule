@@ -470,6 +470,9 @@ public class ShiftRequestService {
 						"Approving this would clash with another shift the employee has that day");
 			}
 			assignment.setEmployee(req.getEmployee());
+			// Flag drives the ViewSchedule grid highlight; cleared on any manual
+			// edit via /api/save.
+			assignment.setFilledViaRequest(true);
 			try {
 				// saveAndFlush forces the version-bump to run NOW so a concurrent
 				// approval surfaces as 409 *before* we send any FCM pushes.
