@@ -1,19 +1,15 @@
 package com.midco.rota.service;
 
 import java.math.BigDecimal;
-import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -152,62 +148,58 @@ public class PaycycleStatsService {
 		List<Employee> employees = rota.getEmployeeList();
 		List<ShiftAssignment> assignments = rota.getShiftAssignmentList();
 
-		// Group assignments by employee → weekStart → shiftType
-		Map<String, Map<LocalDate, Map<ShiftType, ShiftSummaryDTO>>> empWeekMap = new HashMap<>();
+		// Pay-cycle start anchors the week numbering. A pay cycle is a fixed 28-day
+		// (4-week) period, so weeks are 1..4 measured from this date — NOT calendar
+		// Mondays. Snapping to Monday would spill a mid-week-starting cycle into a
+		// phantom 5th week and split the counts.
+		LocalDate startDate = deferredSolveRequest.getStartDate();
+
+		// Group assignments by employee id → weekNumber → shiftType. Keying by id
+		// (not name) keeps two employees who share a name from merging.
+		Map<Integer, Map<Integer, Map<ShiftType, ShiftSummaryDTO>>> empWeekMap = new HashMap<>();
 
 		for (ShiftAssignment a : assignments) {
 			Employee emp = a.getEmployee();
 			if (emp == null)
 				continue;
 
-			String name = emp.getName();
 			Shift shift = a.getShift();
 			ShiftType type = shift.getShiftTemplate().getShiftType();
 
-			// ✅ CHANGE 2: Exclude SLEEP_IN from employee statistics
+			// Exclude SLEEP_IN from employee statistics
 			if (type == ShiftType.SLEEP_IN) {
 				continue;
 			}
 
-			BigDecimal hours = shift.getDurationInHours(); // must be BigDecimal
+			BigDecimal hours = shift.getDurationInHours();
 
-			LocalDate shiftDate = shift.getShiftStart();
-			LocalDate weekStart = shiftDate.with(DayOfWeek.MONDAY);
-			LocalDate weekEnd = weekStart.plusDays(6);
+			int weekIndex = (int) ChronoUnit.WEEKS.between(startDate, shift.getShiftStart());
+			int weekNumber = weekIndex + 1;
 
-			empWeekMap.computeIfAbsent(name, k -> new HashMap<>()).computeIfAbsent(weekStart, k -> new HashMap<>())
+			empWeekMap.computeIfAbsent(emp.getId(), k -> new HashMap<>())
+					.computeIfAbsent(weekNumber, k -> new HashMap<>())
 					.computeIfAbsent(type, k -> new ShiftSummaryDTO()).add(hours);
 		}
-
-		// Collect all unique weekStart dates and assign sequential week numbers
-		AtomicInteger counter = new AtomicInteger(1);
-
-		Map<LocalDate, Integer> weekNumberMap = empWeekMap.values().stream()
-				.flatMap(weekMap -> weekMap.keySet().stream()).distinct().sorted()
-				.collect(Collectors.toMap(Function.identity(), // key: weekStart
-						key -> counter.getAndIncrement(), // value: sequential week number
-						(a, b) -> a, // merge function (not needed here)
-						LinkedHashMap::new // preserve insertion order
-				));
 
 		// Build final DTO list
 		List<EmployeeShiftStatDTO> result = new ArrayList<>();
 
 		for (Employee emp : employees) {
-			String name = emp.getName();
-			Map<LocalDate, Map<ShiftType, ShiftSummaryDTO>> weekMap = empWeekMap.getOrDefault(name, new HashMap<>());
+			Map<Integer, Map<ShiftType, ShiftSummaryDTO>> weekMap = empWeekMap.getOrDefault(emp.getId(),
+					Collections.emptyMap());
 
 			List<WeeklyShiftStatDTO> weeklyStats = new ArrayList<>();
-			for (Map.Entry<LocalDate, Map<ShiftType, ShiftSummaryDTO>> entry : weekMap.entrySet()) {
-				LocalDate start = entry.getKey();
+			for (Map.Entry<Integer, Map<ShiftType, ShiftSummaryDTO>> entry : weekMap.entrySet()) {
+				int weekNumber = entry.getKey();
+				LocalDate start = startDate.plusWeeks(weekNumber - 1L);
 				LocalDate end = start.plusDays(6);
-				int weekNumber = weekNumberMap.get(start);
-
 				weeklyStats.add(new WeeklyShiftStatDTO(weekNumber, start, end, entry.getValue()));
 			}
+			// Stable week order for the table/export.
+			weeklyStats.sort(Comparator.comparingInt(w -> w.weekNumber));
 
-			result.add(new EmployeeShiftStatDTO(name, emp.getContractType(), deferredSolveRequest.getRegion(),
-					emp.getRateCode(), weeklyStats));
+			result.add(new EmployeeShiftStatDTO(emp.getId(), emp.getName(), emp.getContractType(),
+					deferredSolveRequest.getRegion(), emp.getRateCode(), weeklyStats));
 		}
 
 		return result;

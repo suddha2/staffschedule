@@ -6,15 +6,17 @@ import com.midco.rota.util.ContractType;
 import com.midco.rota.util.RateCode;
 
 public class EmployeeShiftStatDTO {
+	public Integer id;
 	public String name;
 	public String region; // added to support rate computation
 	public RateCode rateCode;
 	public ContractType contractType;
 	public List<WeeklyShiftStatDTO> weeklyStats;
 
-	public EmployeeShiftStatDTO(String name, ContractType contractType, String region, RateCode rateCode,
+	public EmployeeShiftStatDTO(Integer id, String name, ContractType contractType, String region, RateCode rateCode,
 			List<WeeklyShiftStatDTO> weeklyStats) {
 		super();
+		this.id = id;
 		this.name = name;
 		this.contractType = contractType;
 		this.region = region;
