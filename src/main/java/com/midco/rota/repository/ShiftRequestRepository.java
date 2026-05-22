@@ -25,4 +25,12 @@ public interface ShiftRequestRepository extends JpaRepository<ShiftRequest, Long
 
 	boolean existsByShiftAssignmentIdAndEmployeeIdAndStatus(Long shiftAssignmentId, Integer employeeId,
 			ShiftRequestStatus status);
+
+	/** Requests for a slot received since the given time (its most recent publish). */
+	long countByShiftAssignmentIdAndRequestedAtAfter(Long shiftAssignmentId, java.time.LocalDateTime since);
+
+	/** Distinct slots that have ever been requested — the working set for the
+	 *  availability sweep. */
+	@org.springframework.data.jpa.repository.Query("SELECT DISTINCT r.shiftAssignment.id FROM ShiftRequest r")
+	List<Long> findDistinctShiftAssignmentIds();
 }

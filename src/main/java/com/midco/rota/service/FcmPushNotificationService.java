@@ -70,6 +70,30 @@ public class FcmPushNotificationService {
 		}
 	}
 
+	/**
+	 * Data-only broadcast to the employees topic — no notification block, so it
+	 * does not appear in the device tray. Used for silent state updates like
+	 * "this slot is no longer available". Foreground apps process it; sleeping
+	 * apps pick the change up on their next refresh.
+	 */
+	public Optional<String> broadcastDataToEmployeesTopic(Map<String, String> data) {
+		if (!firebaseReady()) {
+			return Optional.empty();
+		}
+		try {
+			Message message = Message.builder()
+					.setTopic(employeesTopic)
+					.putAllData(stringifyAll(data == null ? new HashMap<>() : data))
+					.build();
+			String response = FirebaseMessaging.getInstance().send(message);
+			log.info("FCM data broadcast sent to '{}': {}", employeesTopic, response);
+			return Optional.ofNullable(response);
+		} catch (FirebaseMessagingException e) {
+			log.error("FCM data broadcast failed (topic={}): {}", employeesTopic, e.getMessage());
+			return Optional.empty();
+		}
+	}
+
 	public void sendToEmployee(Integer employeeId, String title, String body, Map<String, String> data) {
 		if (!firebaseReady()) {
 			return;

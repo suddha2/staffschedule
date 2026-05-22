@@ -4,6 +4,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,8 +18,10 @@ import com.midco.rota.dto.PublishLogEntryDTO;
 import com.midco.rota.dto.PublishResultDTO;
 import com.midco.rota.model.PublishLog;
 import com.midco.rota.model.Rota;
+import com.midco.rota.model.ShiftAssignment;
 import com.midco.rota.repository.PublishLogRepository;
 import com.midco.rota.repository.RotaRepository;
+import com.midco.rota.repository.ShiftAssignmentRepository;
 
 @Service
 public class ShiftPublishService {
@@ -28,12 +31,15 @@ public class ShiftPublishService {
 	private final RotaRepository rotaRepository;
 	private final FcmPushNotificationService fcm;
 	private final PublishLogRepository publishLogRepository;
+	private final ShiftAssignmentRepository shiftAssignmentRepository;
 
 	public ShiftPublishService(RotaRepository rotaRepository, FcmPushNotificationService fcm,
-			PublishLogRepository publishLogRepository) {
+			PublishLogRepository publishLogRepository,
+			ShiftAssignmentRepository shiftAssignmentRepository) {
 		this.rotaRepository = rotaRepository;
 		this.fcm = fcm;
 		this.publishLogRepository = publishLogRepository;
+		this.shiftAssignmentRepository = shiftAssignmentRepository;
 	}
 
 	public PublishResultDTO publishUnallocatedShifts(Long rotaId, String publishedBy) {
@@ -44,11 +50,23 @@ public class ShiftPublishService {
 		Rota rota = rotaRepository.findById(rotaId)
 				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Rota not found: " + rotaId));
 
-		long unallocated = rota.getShiftAssignmentList() == null ? 0
+		List<ShiftAssignment> matching = rota.getShiftAssignmentList() == null ? List.of()
 				: rota.getShiftAssignmentList().stream()
 						.filter(sa -> sa.getEmployee() == null)
 						.filter(sa -> matchesService(sa, service))
-						.count();
+						.collect(Collectors.toList());
+		long unallocated = matching.size();
+
+		// Re-publishing re-advertises these slots: clear any withhold so they
+		// reappear in Available and their response window starts fresh from this
+		// publish.
+		List<ShiftAssignment> toReset = matching.stream()
+				.filter(ShiftAssignment::isWithheld)
+				.collect(Collectors.toList());
+		if (!toReset.isEmpty()) {
+			toReset.forEach(sa -> sa.setWithheld(false));
+			shiftAssignmentRepository.saveAll(toReset);
+		}
 
 		String scope = service == null ? "all services" : service;
 

@@ -64,6 +64,11 @@ public class ShiftAssignment {
 	@Column(name = "version", nullable = false)
 	private long version;
 
+	/** True once the response-bound rules have hidden this slot from the mobile
+	 *  Available list. Cleared on re-publish. */
+	@Column(name = "withheld", nullable = false)
+	private boolean withheld = false;
+
 	@PlanningPin
 	public boolean isPinned() {
 		if (pinned) return true;
@@ -179,5 +184,13 @@ public class ShiftAssignment {
 
 	public void setPinned(boolean pinned) {
 		this.pinned = pinned;
+	}
+
+	public boolean isWithheld() {
+		return withheld;
+	}
+
+	public void setWithheld(boolean withheld) {
+		this.withheld = withheld;
 	}
 }

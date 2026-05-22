@@ -56,6 +56,7 @@ public class ShiftRequestService {
 	private final DeferredSolveRequestRepository deferredSolveRequestRepository;
 	private final FcmPushNotificationService fcm;
 	private final RosterUpdateService rosterUpdateService;
+	private final SlotAvailabilityService slotAvailabilityService;
 
 	public ShiftRequestService(EmployeeRepository employeeRepository,
 			EmployeeDeviceRepository deviceRepository,
@@ -64,7 +65,8 @@ public class ShiftRequestService {
 			RotaRepository rotaRepository,
 			DeferredSolveRequestRepository deferredSolveRequestRepository,
 			FcmPushNotificationService fcm,
-			RosterUpdateService rosterUpdateService) {
+			RosterUpdateService rosterUpdateService,
+			SlotAvailabilityService slotAvailabilityService) {
 		this.employeeRepository = employeeRepository;
 		this.deviceRepository = deviceRepository;
 		this.shiftRequestRepository = shiftRequestRepository;
@@ -73,6 +75,7 @@ public class ShiftRequestService {
 		this.deferredSolveRequestRepository = deferredSolveRequestRepository;
 		this.fcm = fcm;
 		this.rosterUpdateService = rosterUpdateService;
+		this.slotAvailabilityService = slotAvailabilityService;
 	}
 
 	private Employee requireActiveEmployee(String email) {
@@ -119,6 +122,7 @@ public class ShiftRequestService {
 		}
 		return rota.getShiftAssignmentList().stream()
 				.filter(sa -> sa.getEmployee() == null)
+				.filter(sa -> !sa.isWithheld())
 				.filter(sa -> service == null
 						|| (sa.getShift() != null
 								&& sa.getShift().getShiftTemplate() != null
@@ -172,6 +176,13 @@ public class ShiftRequestService {
 					created.size(),
 					LocalDateTime.now());
 			rosterUpdateService.pushShiftRequestNotificationToAdmins(payload);
+		}
+
+		// Re-evaluate each just-requested slot against the response-bound rules
+		// (>=5 requests since publish, or 24h+>=1) and withhold it from Available
+		// in real time if it now qualifies.
+		for (ShiftRequest r : created) {
+			slotAvailabilityService.onRequestReceived(r.getShiftAssignment());
 		}
 
 		log.info("Employee {} submitted {} shift request(s) for rota {}", employee.getId(), created.size(), rotaId);

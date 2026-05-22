@@ -1,5 +1,6 @@
 package com.midco.rota.repository;
 
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -33,4 +34,13 @@ public interface PublishLogRepository extends JpaRepository<PublishLog, Long> {
 	}
 
 	long countByRotaId(Long rotaId);
+
+	/**
+	 * Most recent publish time that covers a given service in a rota — i.e. the
+	 * latest of that service's own publishes and any rota-wide ("all services")
+	 * publish. Drives the response-window clock for a shift. Null if never published.
+	 */
+	@Query("SELECT MAX(p.publishedAt) FROM PublishLog p WHERE p.rotaId = :rotaId "
+			+ "AND ((:service IS NULL AND p.service IS NULL) OR p.service IS NULL OR p.service = :service)")
+	LocalDateTime findLatestPublishedAt(@Param("rotaId") Long rotaId, @Param("service") String service);
 }
