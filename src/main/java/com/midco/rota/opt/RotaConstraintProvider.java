@@ -43,7 +43,8 @@ public class RotaConstraintProvider implements ConstraintProvider {
 				genderConstraint(factory), restrictedDayOfWeekConstraint(factory),
 				restrictedShiftTypeConstraint(factory), restrictedServiceConstraint(factory),
 				maxWeeklyHoursConstraint(factory), tooManyEmployeesPerShift(factory),
-				maxHoursPerShiftTypePerDay(factory), limitWeeklyShiftTypeCounts(factory), noBackToBack(factory),
+				maxHoursPerShiftTypePerDay(factory), limitWeeklyShiftTypeCounts(factory),
+				limitWeeklyNonLongDayShifts(factory), noBackToBack(factory),
 				employeeMaxHours(factory), minDaysPerLocationPerWeek(factory),
 
 				// SOFT constraints - Optimization goals
@@ -231,6 +232,25 @@ public class RotaConstraintProvider implements ConstraintProvider {
 				.penalize(HardSoftLongScore.ONE_HARD,
 						(emp, type, week, count) -> count - weeklyShiftTypeLimit.getOrDefault(type, 0))
 				.asConstraint("Weekly limit per shift type");
+	}
+
+	// Combined weekly cap for every shift type EXCEPT LONG_DAY (capped separately at
+	// 7), FLOATING (publish-and-grab, excluded) and SLEEP_IN (pairs 1:1 with
+	// LONG_DAY, excluded). DAY + WAKING_NIGHT share one per-week budget of 6;
+	// because the cap is on the combined count, each individual type is also
+	// implicitly held to 6.
+	private Constraint limitWeeklyNonLongDayShifts(ConstraintFactory factory) {
+		final int MAX_OTHER_WEEKLY = 6;
+
+		return factory.forEachIncludingNullVars(ShiftAssignment.class).filter(sa -> sa.getEmployee() != null)
+				.filter(sa -> {
+					ShiftType type = sa.getShift().getShiftTemplate().getShiftType();
+					return type != ShiftType.LONG_DAY && type != ShiftType.FLOATING && type != ShiftType.SLEEP_IN;
+				}).groupBy(ShiftAssignment::getEmployee, sa -> YearWeek.from(sa.getShift().getShiftStart()),
+						ConstraintCollectors.count())
+				.filter((emp, week, count) -> count > MAX_OTHER_WEEKLY)
+				.penalize(HardSoftLongScore.ONE_HARD, (emp, week, count) -> count - MAX_OTHER_WEEKLY)
+				.asConstraint("Max 6 non-LONG_DAY (excl. FLOATING, SLEEP_IN) shifts per week");
 	}
 
 	private Constraint maxShiftsPerLocationPerWeek(ConstraintFactory factory) {
