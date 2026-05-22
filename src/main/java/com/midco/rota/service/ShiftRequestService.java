@@ -2,6 +2,7 @@ package com.midco.rota.service;
 
 import java.math.BigDecimal;
 import java.time.DayOfWeek;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -57,6 +58,7 @@ public class ShiftRequestService {
 	private final FcmPushNotificationService fcm;
 	private final RosterUpdateService rosterUpdateService;
 	private final SlotAvailabilityService slotAvailabilityService;
+	private final PeriodService periodService;
 
 	public ShiftRequestService(EmployeeRepository employeeRepository,
 			EmployeeDeviceRepository deviceRepository,
@@ -66,7 +68,8 @@ public class ShiftRequestService {
 			DeferredSolveRequestRepository deferredSolveRequestRepository,
 			FcmPushNotificationService fcm,
 			RosterUpdateService rosterUpdateService,
-			SlotAvailabilityService slotAvailabilityService) {
+			SlotAvailabilityService slotAvailabilityService,
+			PeriodService periodService) {
 		this.employeeRepository = employeeRepository;
 		this.deviceRepository = deviceRepository;
 		this.shiftRequestRepository = shiftRequestRepository;
@@ -76,6 +79,7 @@ public class ShiftRequestService {
 		this.fcm = fcm;
 		this.rosterUpdateService = rosterUpdateService;
 		this.slotAvailabilityService = slotAvailabilityService;
+		this.periodService = periodService;
 	}
 
 	private Employee requireActiveEmployee(String email) {
@@ -111,7 +115,30 @@ public class ShiftRequestService {
 				? shiftRequestRepository.findByEmployeeIdOrderByRequestedAtDesc(employee.getId())
 				: shiftRequestRepository.findByEmployeeIdAndStatusOrderByRequestedAtDesc(employee.getId(), status);
 		// fit is intentionally left null on the mobile-side response — it's an admin-context concept.
-		return requests.stream().map(ShiftRequestDTO::fromEntity).toList();
+		return requests.stream().map(req -> {
+			ShiftRequestDTO dto = ShiftRequestDTO.fromEntity(req);
+			applyPeriod(dto, req);
+			return dto;
+		}).toList();
+	}
+
+	/** Stamp the DTO with the paycycle period + week (1-4) of the shift's date,
+	 *  so the mobile app can group My Requests by period and week. */
+	private void applyPeriod(ShiftRequestDTO dto, ShiftRequest req) {
+		if (req.getShiftAssignment() == null || req.getShiftAssignment().getShift() == null) {
+			return;
+		}
+		LocalDate date = req.getShiftAssignment().getShift().getShiftStart();
+		if (date == null) {
+			return;
+		}
+		periodService.findPeriodForDate(date).ifPresent(p -> {
+			dto.setPeriodId(p.getId());
+			dto.setPeriodName(p.getName());
+			dto.setPeriodStart(p.getStartDate());
+			dto.setPeriodEnd(p.getEndDate());
+			dto.setWeekNumber(p.getWeekNumber(date));
+		});
 	}
 
 	public List<UnallocatedShiftDTO> listAvailable(Long rotaId, String service) {

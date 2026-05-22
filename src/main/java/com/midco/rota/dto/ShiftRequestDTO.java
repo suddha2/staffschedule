@@ -1,5 +1,6 @@
 package com.midco.rota.dto;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 import com.midco.rota.model.ShiftRequest;
@@ -18,6 +19,14 @@ public class ShiftRequestDTO {
 	private String resolvedBy;
 	private UnallocatedShiftDTO shift;
 	private FitDTO fit;
+
+	// Paycycle grouping for the mobile My Requests screen — the 4-week period the
+	// shift falls in, plus the week (1-4) within it.
+	private Long periodId;
+	private String periodName;
+	private LocalDate periodStart;
+	private LocalDate periodEnd;
+	private Integer weekNumber;
 
 	public ShiftRequestDTO() {
 	}
@@ -128,5 +137,45 @@ public class ShiftRequestDTO {
 
 	public void setFit(FitDTO fit) {
 		this.fit = fit;
+	}
+
+	public Long getPeriodId() {
+		return periodId;
+	}
+
+	public void setPeriodId(Long periodId) {
+		this.periodId = periodId;
+	}
+
+	public String getPeriodName() {
+		return periodName;
+	}
+
+	public void setPeriodName(String periodName) {
+		this.periodName = periodName;
+	}
+
+	public LocalDate getPeriodStart() {
+		return periodStart;
+	}
+
+	public void setPeriodStart(LocalDate periodStart) {
+		this.periodStart = periodStart;
+	}
+
+	public LocalDate getPeriodEnd() {
+		return periodEnd;
+	}
+
+	public void setPeriodEnd(LocalDate periodEnd) {
+		this.periodEnd = periodEnd;
+	}
+
+	public Integer getWeekNumber() {
+		return weekNumber;
+	}
+
+	public void setWeekNumber(Integer weekNumber) {
+		this.weekNumber = weekNumber;
 	}
 }
