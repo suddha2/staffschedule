@@ -688,22 +688,60 @@ public class ScheduleVersionService {
 	}
 
 	/**
-	 * Create pinned template assignments from ALL current assignments
+	 * Replace pinned template assignments from ALL current assignments in this rota.
+	 *
+	 * <p>Behavioural contract (replace-on-save, not append):
+	 * <ol>
+	 *   <li>Collect every {@code shift_template_id} referenced by an assignment in
+	 *       this rota.</li>
+	 *   <li>Bulk-delete every existing pin for those templates. Because templates
+	 *       carry a region, this is naturally region-scoped — a Hertfordshire save
+	 *       cannot wipe Kent pins.</li>
+	 *   <li>Re-insert one pin per distinct {@code (template, employee)} pair found
+	 *       in the rota's currently-assigned shifts.</li>
+	 * </ol>
+	 *
+	 * <p>Why: the previous append-only design caused pinned_template_assignment to
+	 * accumulate obsolete rows over months — most visibly when admins manually
+	 * swapped an employee's shift type during periodic saves, leaving the original
+	 * type's pins live alongside the new ones. Under replace-on-save the pin table
+	 * always mirrors the latest saved rota's truth, and the next solve loads a
+	 * clean picture.
 	 */
 	private void createPinsFromAllAssignments(Long rotaId, String username) {
-		// Get ALL current assignments from the rota
 		List<ShiftAssignment> allAssignments = rotaShiftAssignmentRepository.findByRotaId(rotaId);
 
-		int created = 0;
-		int skipped = 0;
+		// 1. Collect templates this rota touches (scope of the replace).
+		Set<Long> templateIds = allAssignments.stream()
+				.map(ShiftAssignment::getShift)
+				.filter(Objects::nonNull)
+				.map(Shift::getShiftTemplate)
+				.filter(Objects::nonNull)
+				.map(t -> t.getId().longValue())
+				.collect(Collectors.toSet());
 
+		if (templateIds.isEmpty()) {
+			log.info("Rota {} touches no shift templates - nothing to pin", rotaId);
+			return;
+		}
+
+		// 2. Wipe existing pins for those templates so the table reflects only
+		//    this rota's current state. The repo method flushes+clears the
+		//    persistence context so the subsequent inserts cannot collide with
+		//    just-deleted rows still cached by Hibernate.
+		pinnedTemplateAssignmentRepository.deleteByShiftTemplateIdIn(templateIds);
+		log.info("Replace-on-save: cleared pins for {} templates referenced by rota {}",
+				templateIds.size(), rotaId);
+
+		// 3. Re-insert one pin per distinct (template, employee) pair currently
+		//    assigned in this rota.
+		Set<String> seen = new HashSet<>();
+		int created = 0;
 		for (ShiftAssignment assignment : allAssignments) {
-			// Skip unassigned shifts
 			if (assignment.getEmployee() == null) {
 				continue;
 			}
 
-			// Get shift template
 			Shift shift = assignment.getShift();
 			if (shift == null || shift.getShiftTemplate() == null) {
 				continue;
@@ -711,19 +749,18 @@ public class ScheduleVersionService {
 
 			Long templateId = shift.getShiftTemplate().getId().longValue();
 			Integer employeeId = assignment.getEmployee().getId();
+			String dedupeKey = templateId + ":" + employeeId;
 
-			// Check if pin already exists
-			boolean exists = pinnedTemplateAssignmentRepository.existsByShiftTemplateIdAndEmployeeId(templateId,
-					employeeId.longValue());
-
-			if (exists) {
-				skipped++;
+			// A template typically recurs once per week — same (template, employee)
+			// pair will appear N times across the period. Insert only once.
+			if (!seen.add(dedupeKey)) {
 				continue;
 			}
 
-			// Create pin
-			PinnedTemplateAssignment pin = PinnedTemplateAssignment.builder().shiftTemplateId(templateId)
-					.employeeId(Long.valueOf(employeeId)).pinnedByUserId(null) // Can add user lookup if needed
+			PinnedTemplateAssignment pin = PinnedTemplateAssignment.builder()
+					.shiftTemplateId(templateId)
+					.employeeId(Long.valueOf(employeeId))
+					.pinnedByUserId(null) // can be filled from username->user lookup later
 					.build();
 
 			pinnedTemplateAssignmentRepository.save(pin);
@@ -732,7 +769,8 @@ public class ScheduleVersionService {
 			log.debug("Created pin: template={}, employee={}", templateId, employeeId);
 		}
 
-		log.info("Pinned all assignments: {} created, {} already existed", created, skipped);
+		log.info("Replace-on-save complete for rota {}: {} pins set across {} templates",
+				rotaId, created, templateIds.size());
 	}
 
 	/**
