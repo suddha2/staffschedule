@@ -1,11 +1,13 @@
 package com.midco.rota;
 
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -121,7 +123,13 @@ public class SolverTrigger {
 	}
 
 	/**
-	 * Apply pins from pinned_template_assignment table
+	 * Apply pins from pinned_template_assignment table.
+	 *
+	 * <p>Pins are looked up by {@code (shift_template_id, week_of_period)} — see
+	 * PinnedTemplateAssignment for why this is week-specific rather than flat.
+	 * The period anchor (week 1's Monday) is the earliest shift date in the
+	 * batch being solved; week numbers are derived per shift by integer division
+	 * of (days since periodStart) by 7.
 	 */
 	private void applyTemplateBasedPinning(List<ShiftAssignment> shiftAssignments, List<Employee> employees) {
 		int pinnedCount = 0;
@@ -129,6 +137,23 @@ public class SolverTrigger {
 		int skippedConflict = 0;
 
 		logger.info("Starting template-based pinning for {} assignments", shiftAssignments.size());
+
+		// Determine the period anchor for this solve batch. Periods are
+		// Mon-aligned 28-day blocks in this dataset, so the earliest shift date
+		// is week 1's Monday.
+		LocalDate periodStart = shiftAssignments.stream()
+				.map(ShiftAssignment::getShift)
+				.filter(Objects::nonNull)
+				.map(Shift::getShiftStart)
+				.filter(Objects::nonNull)
+				.min(LocalDate::compareTo)
+				.orElse(null);
+
+		if (periodStart == null) {
+			logger.warn("No dated shifts in batch - skipping template-based pinning");
+			return;
+		}
+		logger.info("Period anchor for pinning: {} (week 1 Monday)", periodStart);
 
 		// Load all pins
 		List<PinnedTemplateAssignment> allPins = pinnedTemplateAssignmentRepository.findAll();
@@ -140,10 +165,16 @@ public class SolverTrigger {
 			employeeMap.put(emp.getId(), emp);
 		}
 
-		// Group pins by template ID for faster lookup
-		Map<Long, List<PinnedTemplateAssignment>> pinsByTemplate = new HashMap<>();
+		// Group pins by (templateId, weekOfPeriod) for direct lookup. Pins
+		// missing weekOfPeriod (legacy rows before the migration) default to
+		// week 1, which is a safe fallback that preserves the old "apply on
+		// every occurrence" intent only for the week 1 occurrence — admins
+		// will need to resave each period once to populate proper week pins.
+		Map<String, List<PinnedTemplateAssignment>> pinsByTemplateAndWeek = new HashMap<>();
 		for (PinnedTemplateAssignment pin : allPins) {
-			pinsByTemplate.computeIfAbsent(pin.getShiftTemplateId(), k -> new ArrayList<>()).add(pin);
+			Short week = pin.getWeekOfPeriod() != null ? pin.getWeekOfPeriod() : (short) 1;
+			String key = pin.getShiftTemplateId() + ":" + week;
+			pinsByTemplateAndWeek.computeIfAbsent(key, k -> new ArrayList<>()).add(pin);
 		}
 
 		// Track assignments per employee per day (for conflict detection)
@@ -152,15 +183,20 @@ public class SolverTrigger {
 		// Apply pins to matching shift assignments
 		for (ShiftAssignment assignment : shiftAssignments) {
 			Shift shift = assignment.getShift();
+			if (shift == null || shift.getShiftTemplate() == null || shift.getShiftStart() == null) {
+				continue;
+			}
 			Long templateId = shift.getShiftTemplate().getId().longValue();
+			Short shiftWeek = weekOfPeriod(periodStart, shift.getShiftStart());
+			String lookupKey = templateId + ":" + shiftWeek;
 
-			// Check if this template has any pins
-			List<PinnedTemplateAssignment> pinsForTemplate = pinsByTemplate.get(templateId);
+			// Check if this template/week combination has any pins
+			List<PinnedTemplateAssignment> pinsForTemplate = pinsByTemplateAndWeek.get(lookupKey);
 			if (pinsForTemplate == null || pinsForTemplate.isEmpty()) {
-				continue; // No pins for this template
+				continue; // No pins for this (template, week)
 			}
 
-			// Try each pinned employee for this template
+			// Try each pinned employee for this template/week
 			boolean assigned = false;
 			for (PinnedTemplateAssignment pin : pinsForTemplate) {
 				Integer empId = pin.getEmployeeId().intValue();
@@ -211,6 +247,20 @@ public class SolverTrigger {
 		logger.info("  ⚠️ Skipped (inactive employee): {}", skippedInactive);
 		logger.info("  ⚠️ Skipped (same-day conflict): {}", skippedConflict);
 		logger.info("  📋 Unassigned (for solver): {}", shiftAssignments.size() - pinnedCount);
+	}
+
+	/**
+	 * 1-based week index of {@code shiftDate} within a period anchored at
+	 * {@code periodStart} (which should be week 1's Monday). Integer-divides
+	 * (shiftDate - periodStart) by 7 so any date in week K returns K. Negative
+	 * deltas (shift before periodStart) clamp to week 1.
+	 */
+	private static Short weekOfPeriod(LocalDate periodStart, LocalDate shiftDate) {
+		long days = ChronoUnit.DAYS.between(periodStart, shiftDate);
+		if (days < 0) {
+			return (short) 1;
+		}
+		return (short) ((days / 7) + 1);
 	}
 
 	/**

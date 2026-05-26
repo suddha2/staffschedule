@@ -1,5 +1,7 @@
 package com.midco.rota.service;
 
+import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -690,23 +692,22 @@ public class ScheduleVersionService {
 	/**
 	 * Replace pinned template assignments from ALL current assignments in this rota.
 	 *
-	 * <p>Behavioural contract (replace-on-save, not append):
+	 * <p>Behavioural contract (week-aware replace-on-save):
 	 * <ol>
 	 *   <li>Collect every {@code shift_template_id} referenced by an assignment in
 	 *       this rota.</li>
-	 *   <li>Bulk-delete every existing pin for those templates. Because templates
-	 *       carry a region, this is naturally region-scoped — a Hertfordshire save
-	 *       cannot wipe Kent pins.</li>
-	 *   <li>Re-insert one pin per distinct {@code (template, employee)} pair found
-	 *       in the rota's currently-assigned shifts.</li>
+	 *   <li>Bulk-delete every existing pin (all weeks) for those templates.
+	 *       Because templates carry a region, this is naturally region-scoped — a
+	 *       Hertfordshire save cannot wipe Kent pins.</li>
+	 *   <li>For each currently-assigned shift, compute its {@code weekOfPeriod}
+	 *       (1..N) from the rota's earliest shift date, then re-insert one pin
+	 *       per distinct {@code (template, weekOfPeriod, employee)} tuple.</li>
 	 * </ol>
 	 *
-	 * <p>Why: the previous append-only design caused pinned_template_assignment to
-	 * accumulate obsolete rows over months — most visibly when admins manually
-	 * swapped an employee's shift type during periodic saves, leaving the original
-	 * type's pins live alongside the new ones. Under replace-on-save the pin table
-	 * always mirrors the latest saved rota's truth, and the next solve loads a
-	 * clean picture.
+	 * <p>Why week-aware: a pin must mean "this employee on week K of the period",
+	 * not "this employee on every week". So a roster pattern like "Blessed works
+	 * Monday DAY @ BAYLIE LANE in week 1 only" can be expressed and carried
+	 * forward to the next period's week 1 alone.
 	 */
 	private void createPinsFromAllAssignments(Long rotaId, String username) {
 		List<ShiftAssignment> allAssignments = rotaShiftAssignmentRepository.findByRotaId(rotaId);
@@ -725,16 +726,32 @@ public class ScheduleVersionService {
 			return;
 		}
 
-		// 2. Wipe existing pins for those templates so the table reflects only
+		// 2. Determine the period anchor (earliest shift date in the rota).
+		//    Periods are Mon-aligned 28-day blocks in this dataset, so the
+		//    earliest shift is the period's Monday and week 1.
+		LocalDate periodStart = allAssignments.stream()
+				.map(ShiftAssignment::getShift)
+				.filter(Objects::nonNull)
+				.map(Shift::getShiftStart)
+				.filter(Objects::nonNull)
+				.min(LocalDate::compareTo)
+				.orElse(null);
+
+		if (periodStart == null) {
+			log.warn("Rota {} has no dated shifts - cannot compute weekOfPeriod, aborting pin replace", rotaId);
+			return;
+		}
+
+		// 3. Wipe existing pins for those templates so the table reflects only
 		//    this rota's current state. The repo method flushes+clears the
-		//    persistence context so the subsequent inserts cannot collide with
+		//    persistence context so subsequent inserts cannot collide with
 		//    just-deleted rows still cached by Hibernate.
 		pinnedTemplateAssignmentRepository.deleteByShiftTemplateIdIn(templateIds);
-		log.info("Replace-on-save: cleared pins for {} templates referenced by rota {}",
-				templateIds.size(), rotaId);
+		log.info("Replace-on-save: cleared pins for {} templates referenced by rota {} (period start {})",
+				templateIds.size(), rotaId, periodStart);
 
-		// 3. Re-insert one pin per distinct (template, employee) pair currently
-		//    assigned in this rota.
+		// 4. Re-insert one pin per distinct (template, weekOfPeriod, employee)
+		//    tuple currently assigned in this rota.
 		Set<String> seen = new HashSet<>();
 		int created = 0;
 		for (ShiftAssignment assignment : allAssignments) {
@@ -743,16 +760,18 @@ public class ScheduleVersionService {
 			}
 
 			Shift shift = assignment.getShift();
-			if (shift == null || shift.getShiftTemplate() == null) {
+			if (shift == null || shift.getShiftTemplate() == null || shift.getShiftStart() == null) {
 				continue;
 			}
 
 			Long templateId = shift.getShiftTemplate().getId().longValue();
 			Integer employeeId = assignment.getEmployee().getId();
-			String dedupeKey = templateId + ":" + employeeId;
+			Short weekOfPeriod = weekOfPeriod(periodStart, shift.getShiftStart());
+			String dedupeKey = templateId + ":" + weekOfPeriod + ":" + employeeId;
 
-			// A template typically recurs once per week — same (template, employee)
-			// pair will appear N times across the period. Insert only once.
+			// The same (template, week, employee) tuple won't normally appear twice
+			// within one period (a template recurs once per week), but dedupe is
+			// cheap and protects against any duplicate ShiftAssignment rows.
 			if (!seen.add(dedupeKey)) {
 				continue;
 			}
@@ -760,17 +779,36 @@ public class ScheduleVersionService {
 			PinnedTemplateAssignment pin = PinnedTemplateAssignment.builder()
 					.shiftTemplateId(templateId)
 					.employeeId(Long.valueOf(employeeId))
+					.weekOfPeriod(weekOfPeriod)
 					.pinnedByUserId(null) // can be filled from username->user lookup later
 					.build();
 
 			pinnedTemplateAssignmentRepository.save(pin);
 			created++;
 
-			log.debug("Created pin: template={}, employee={}", templateId, employeeId);
+			log.debug("Created pin: template={}, week={}, employee={}", templateId, weekOfPeriod, employeeId);
 		}
 
 		log.info("Replace-on-save complete for rota {}: {} pins set across {} templates",
 				rotaId, created, templateIds.size());
+	}
+
+	/**
+	 * 1-based week index of {@code shiftDate} within the period anchored at
+	 * {@code periodStart}. Period start should be the Monday of week 1.
+	 *
+	 * <p>Uses integer division by 7 so any date in week K (Mon-Sun) returns K.
+	 * For multi-period solves (unlikely under current usage) values can exceed 4
+	 * - that is preserved rather than wrapped, so callers can detect and
+	 * handle.
+	 */
+	private static Short weekOfPeriod(LocalDate periodStart, LocalDate shiftDate) {
+		long days = ChronoUnit.DAYS.between(periodStart, shiftDate);
+		if (days < 0) {
+			// Shift predates the rota's earliest known date — treat as week 1.
+			return (short) 1;
+		}
+		return (short) ((days / 7) + 1);
 	}
 
 	/**
@@ -787,25 +825,31 @@ public class ScheduleVersionService {
 
 			// Get shift to find template
 			Shift shift = shiftRepository.findById(change.getShiftId()).orElse(null);
-			if (shift == null || shift.getShiftTemplate() == null) {
+			if (shift == null || shift.getShiftTemplate() == null || shift.getShiftStart() == null) {
 				continue;
 			}
 
 			Long templateId = shift.getShiftTemplate().getId().longValue();
 
-			// Check if pin already exists
-			boolean exists = pinnedTemplateAssignmentRepository.existsByShiftTemplateIdAndEmployeeId(templateId,
-					newEmployeeId.longValue());
+			// Without the rota's period start we can't compute weekOfPeriod
+			// here. createPinsFromChanges currently has no caller — kept in
+			// sync with createPinsFromAllAssignments so it stays buildable, but
+			// if this is ever wired up the caller must pass the period start
+			// (or a precomputed weekOfPeriod) per change. For now, anchor each
+			// change to the Monday of its own week and treat that as week 1 —
+			// safe for single-week changes but not for multi-week.
+			LocalDate shiftDate = shift.getShiftStart();
+			LocalDate weekStart = shiftDate.with(java.time.DayOfWeek.MONDAY);
+			Short weekOfPeriod = weekOfPeriod(weekStart, shiftDate);
 
-			if (!exists) {
-				PinnedTemplateAssignment pin = PinnedTemplateAssignment.builder().shiftTemplateId(templateId)
-						.employeeId(Long.valueOf(newEmployeeId)).pinnedByUserId(null) // You can add user ID lookup if
-																						// needed
-						.build();
+			PinnedTemplateAssignment pin = PinnedTemplateAssignment.builder().shiftTemplateId(templateId)
+					.employeeId(Long.valueOf(newEmployeeId))
+					.weekOfPeriod(weekOfPeriod)
+					.pinnedByUserId(null) // You can add user ID lookup if needed
+					.build();
 
-				pinnedTemplateAssignmentRepository.save(pin);
-				log.debug("Created pin: template={}, employee={}", templateId, newEmployeeId);
-			}
+			pinnedTemplateAssignmentRepository.save(pin);
+			log.debug("Created pin: template={}, week={}, employee={}", templateId, weekOfPeriod, newEmployeeId);
 		}
 	}
 }

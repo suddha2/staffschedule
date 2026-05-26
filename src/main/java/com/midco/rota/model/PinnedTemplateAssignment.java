@@ -3,6 +3,18 @@ package com.midco.rota.model;
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
+/**
+ * A pinned (template, week-of-period, employee) tuple.
+ *
+ * <p>{@code week_of_period} is the 1-based week index within the 4-week pay
+ * period (1 = first Mon-Sun, 4 = last). Pins are week-specific so that a roster
+ * pattern like "Blessed works Monday DAY @ BAYLIE LANE in week 1 only" can be
+ * represented without forcing him onto every Monday in the period.
+ *
+ * <p>The pin is carried forward to the next period by matching on the same
+ * {@code (shift_template_id, week_of_period, employee_id)} tuple: P2's week 1
+ * inherits P1's week 1 pins, P2's week 2 inherits P1's week 2 pins, etc.
+ */
 @Entity
 @Table(name = "pinned_template_assignment")
 public class PinnedTemplateAssignment {
@@ -17,6 +29,14 @@ public class PinnedTemplateAssignment {
     @Column(name = "employee_id", nullable = false)
     private Long employeeId;
 
+    /**
+     * 1-based week index within the pay period (1..4 for a standard 4-week
+     * period). Together with {@code shift_template_id} and {@code employee_id}
+     * forms the natural key for a pin.
+     */
+    @Column(name = "week_of_period", nullable = false)
+    private Short weekOfPeriod;
+
     @Column(name = "pinned_at", nullable = false)
     private LocalDateTime pinnedAt;
 
@@ -26,9 +46,11 @@ public class PinnedTemplateAssignment {
     public PinnedTemplateAssignment() {
     }
 
-    public PinnedTemplateAssignment(Long shiftTemplateId, Long employeeId, LocalDateTime pinnedAt, Long pinnedByUserId) {
+    public PinnedTemplateAssignment(Long shiftTemplateId, Long employeeId, Short weekOfPeriod,
+            LocalDateTime pinnedAt, Long pinnedByUserId) {
         this.shiftTemplateId = shiftTemplateId;
         this.employeeId = employeeId;
+        this.weekOfPeriod = weekOfPeriod;
         this.pinnedAt = pinnedAt;
         this.pinnedByUserId = pinnedByUserId;
     }
@@ -65,6 +87,14 @@ public class PinnedTemplateAssignment {
         this.employeeId = employeeId;
     }
 
+    public Short getWeekOfPeriod() {
+        return weekOfPeriod;
+    }
+
+    public void setWeekOfPeriod(Short weekOfPeriod) {
+        this.weekOfPeriod = weekOfPeriod;
+    }
+
     public LocalDateTime getPinnedAt() {
         return pinnedAt;
     }
@@ -89,6 +119,7 @@ public class PinnedTemplateAssignment {
     public static class Builder {
         private Long shiftTemplateId;
         private Long employeeId;
+        private Short weekOfPeriod;
         private LocalDateTime pinnedAt;
         private Long pinnedByUserId;
 
@@ -99,6 +130,11 @@ public class PinnedTemplateAssignment {
 
         public Builder employeeId(Long employeeId) {
             this.employeeId = employeeId;
+            return this;
+        }
+
+        public Builder weekOfPeriod(Short weekOfPeriod) {
+            this.weekOfPeriod = weekOfPeriod;
             return this;
         }
 
@@ -113,7 +149,7 @@ public class PinnedTemplateAssignment {
         }
 
         public PinnedTemplateAssignment build() {
-            return new PinnedTemplateAssignment(shiftTemplateId, employeeId, pinnedAt, pinnedByUserId);
+            return new PinnedTemplateAssignment(shiftTemplateId, employeeId, weekOfPeriod, pinnedAt, pinnedByUserId);
         }
     }
 }
