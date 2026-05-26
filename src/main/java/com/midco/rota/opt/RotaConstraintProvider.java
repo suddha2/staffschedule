@@ -2,6 +2,7 @@ package com.midco.rota.opt;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.time.temporal.WeekFields;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -34,6 +35,30 @@ public class RotaConstraintProvider implements ConstraintProvider {
 
 	private static final Logger logger = LoggerFactory.getLogger(RotaConstraintProvider.class);
 
+	/**
+	 * Anchor for week-of-period maths: the first Monday of the very first pay
+	 * period on record (Period 1 = 2025-03-31 → 2025-04-27). Every pay period
+	 * in the system is a Mon-aligned 28-day block from this anchor, so
+	 * {@code ((daysFromAnchor / 7) % 4) + 1} yields week 1..4 within whichever
+	 * period any date falls into. This is used by the permanent-employee
+	 * alternating cap so we don't need to inject the rota's period start as a
+	 * problem fact.
+	 */
+	private static final LocalDate PERIOD_ANCHOR = LocalDate.of(2025, 3, 31);
+
+	/**
+	 * 1..4 week-of-period for the ISO Monday of any date, anchored at
+	 * {@link #PERIOD_ANCHOR}. Pre-anchor dates clamp to week 1 (defensive; not
+	 * expected in normal use).
+	 */
+	private static int weekOfPeriod(LocalDate weekMonday) {
+		long days = ChronoUnit.DAYS.between(PERIOD_ANCHOR, weekMonday);
+		if (days < 0) {
+			return 1;
+		}
+		return (int) ((days / 7) % 4) + 1;
+	}
+
 	@Override
 	public Constraint[] defineConstraints(ConstraintFactory factory) {
 		return new Constraint[] {
@@ -44,7 +69,8 @@ public class RotaConstraintProvider implements ConstraintProvider {
 				restrictedShiftTypeConstraint(factory), restrictedServiceConstraint(factory),
 				maxWeeklyHoursConstraint(factory), tooManyEmployeesPerShift(factory),
 				maxHoursPerShiftTypePerDay(factory), limitWeeklyShiftTypeCounts(factory),
-				limitWeeklyNonLongDayShifts(factory), noBackToBack(factory),
+				permanentWeeklyAlternatingCap(factory), permanentWeeklyMinimum(factory),
+				noBackToBack(factory),
 				employeeMaxHours(factory), minDaysPerLocationPerWeek(factory),
 
 				// SOFT constraints - Optimization goals
@@ -234,23 +260,76 @@ public class RotaConstraintProvider implements ConstraintProvider {
 				.asConstraint("Weekly limit per shift type");
 	}
 
-	// Combined weekly cap for every shift type EXCEPT LONG_DAY (capped separately at
-	// 7), FLOATING (publish-and-grab, excluded) and SLEEP_IN (pairs 1:1 with
-	// LONG_DAY, excluded). DAY + WAKING_NIGHT share one per-week budget of 6;
-	// because the cap is on the combined count, each individual type is also
-	// implicitly held to 6.
-	private Constraint limitWeeklyNonLongDayShifts(ConstraintFactory factory) {
-		final int MAX_OTHER_WEEKLY = 6;
-
-		return factory.forEachIncludingNullVars(ShiftAssignment.class).filter(sa -> sa.getEmployee() != null)
+	/**
+	 * HARD upper-bound: for every <b>Permanent</b> employee, the combined count
+	 * of shifts that aren't LONG_DAY / SLEEP_IN / FLOATING is capped at <b>6 in
+	 * odd weeks (1, 3) and 5 in even weeks (2, 4)</b> of the pay period. This
+	 * encodes the 6-5-6-5 alternating roster pattern as a strict ceiling.
+	 *
+	 * <p>The grouping key is the Monday of the shift's ISO week; the
+	 * {@link #weekOfPeriod(LocalDate)} helper turns that into 1..4 relative to
+	 * the global {@link #PERIOD_ANCHOR}, so the rule works without injecting a
+	 * per-rota period start as a problem fact.
+	 *
+	 * <p>Non-Permanent (ZERO_HOURS etc.) employees are intentionally excluded:
+	 * they are governed only by their contract's max-hours / fit, not by this
+	 * weekly cap. This replaces the prior flat ≤6 cap entirely.
+	 */
+	private Constraint permanentWeeklyAlternatingCap(ConstraintFactory factory) {
+		return factory.forEachIncludingNullVars(ShiftAssignment.class)
+				.filter(sa -> sa.getEmployee() != null)
+				.filter(sa -> sa.getEmployee().getContractType() == ContractType.PERMANENT)
 				.filter(sa -> {
 					ShiftType type = sa.getShift().getShiftTemplate().getShiftType();
 					return type != ShiftType.LONG_DAY && type != ShiftType.FLOATING && type != ShiftType.SLEEP_IN;
-				}).groupBy(ShiftAssignment::getEmployee, sa -> YearWeek.from(sa.getShift().getShiftStart()),
+				})
+				.groupBy(ShiftAssignment::getEmployee,
+						sa -> sa.getShift().getShiftStart().with(DayOfWeek.MONDAY),
 						ConstraintCollectors.count())
-				.filter((emp, week, count) -> count > MAX_OTHER_WEEKLY)
-				.penalize(HardSoftLongScore.ONE_HARD, (emp, week, count) -> count - MAX_OTHER_WEEKLY)
-				.asConstraint("Max 6 non-LONG_DAY (excl. FLOATING, SLEEP_IN) shifts per week");
+				.filter((emp, weekMonday, count) -> count > maxForWeek(weekMonday))
+				.penalize(HardSoftLongScore.ONE_HARD,
+						(emp, weekMonday, count) -> count - maxForWeek(weekMonday))
+				.asConstraint("Permanent emp alternating weekly cap (6 odd / 5 even, excl. LONG_DAY/SLEEP_IN/FLOATING)");
+	}
+
+	/**
+	 * HARD lower-bound: for every <b>Permanent</b> employee with at least one
+	 * qualifying shift in a given week, that count must be ≥ 5. Combined with
+	 * the alternating cap above, this enforces a tight {5, 6} range in odd
+	 * weeks and {5} in even weeks.
+	 *
+	 * <p><b>Important — conditional minimum.</b> This constraint fires only
+	 * when the employee already has ≥1 qualifying shift in the week. A
+	 * Permanent employee with zero qualifying shifts in a week (e.g. on
+	 * holiday, restricted from working any day in that week, or simply not yet
+	 * allocated by the solver) does <i>not</i> incur a hard violation here. An
+	 * unconditional minimum would otherwise create unsatisfiable hard score on
+	 * any week where the staffing fit genuinely doesn't allow 5 — exactly the
+	 * trap the previous flat-6 cap fell into when it counted pinned shifts.
+	 * The existing {@code minWeeklyHoursConstraint} (soft) continues to pull
+	 * the solver toward filling such weeks.
+	 */
+	private Constraint permanentWeeklyMinimum(ConstraintFactory factory) {
+		final int MIN_PER_WEEK = 5;
+		return factory.forEachIncludingNullVars(ShiftAssignment.class)
+				.filter(sa -> sa.getEmployee() != null)
+				.filter(sa -> sa.getEmployee().getContractType() == ContractType.PERMANENT)
+				.filter(sa -> {
+					ShiftType type = sa.getShift().getShiftTemplate().getShiftType();
+					return type != ShiftType.LONG_DAY && type != ShiftType.FLOATING && type != ShiftType.SLEEP_IN;
+				})
+				.groupBy(ShiftAssignment::getEmployee,
+						sa -> sa.getShift().getShiftStart().with(DayOfWeek.MONDAY),
+						ConstraintCollectors.count())
+				.filter((emp, weekMonday, count) -> count < MIN_PER_WEEK)
+				.penalize(HardSoftLongScore.ONE_HARD,
+						(emp, weekMonday, count) -> MIN_PER_WEEK - count)
+				.asConstraint("Permanent emp min 5 per allocated week (excl. LONG_DAY/SLEEP_IN/FLOATING)");
+	}
+
+	/** Upper bound for a given week's Monday: 6 in odd weeks, 5 in even. */
+	private static int maxForWeek(LocalDate weekMonday) {
+		return (weekOfPeriod(weekMonday) % 2 == 1) ? 6 : 5;
 	}
 
 	private Constraint maxShiftsPerLocationPerWeek(ConstraintFactory factory) {
