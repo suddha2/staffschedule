@@ -43,6 +43,7 @@ public class SecurityConfig {
 						.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 						// Public endpoints
 						.requestMatchers("/login").permitAll()
+						.requestMatchers("/api/auth/microsoft").permitAll()
 						.requestMatchers("/ws/**").permitAll()
 						.requestMatchers("/api/mobile/auth/**").permitAll()
 						// Mobile employee endpoints

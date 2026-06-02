@@ -110,6 +110,14 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-security</artifactId>
 		</dependency>
+		<!-- JWT decoder + JWKS fetcher used to validate Microsoft Entra ID tokens
+		     for the "Sign in with Microsoft" flow. Spring's JwtDecoders auto-
+		     discovers JWKS from the OIDC issuer; we just verify aud/exp/sig and
+		     trust the email claim. -->
+		<dependency>
+			<groupId>org.springframework.security</groupId>
+			<artifactId>spring-security-oauth2-jose</artifactId>
+		</dependency>
 		<dependency>
 			<groupId>org.postgresql</groupId>
 			<artifactId>postgresql</artifactId>
