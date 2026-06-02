@@ -60,6 +60,11 @@ public class SecurityConfig {
 						// path-match wins.
 						.requestMatchers("/api/admin/shift-requests/**")
 								.hasAnyRole("ADMIN", "OPS_MANAGER", "ROTA_EDITOR")
+						// User management is also open to ops managers; the controller
+						// enforces that non-admins can't touch ADMIN users or grant the
+						// ADMIN role (privilege-escalation guard).
+						.requestMatchers("/api/admin/users/**")
+								.hasAnyRole("ADMIN", "OPS_MANAGER")
 						// Everything else under /api/admin/ remains admin-only.
 						.requestMatchers("/api/admin/**").hasRole("ADMIN")
 						// All other endpoints just require a valid token; finer-grained role

@@ -49,7 +49,11 @@ public class AuthController {
 		if (!passwordEncoder.matches(request.getPass(), user.getPassword())) {
 			throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
 		}
-		
+		// Soft-deleted / disabled users can't sign in even with the right password.
+		if (!user.isActive()) {
+			throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Account is inactive.");
+		}
+
 		Set<String> roleNames = user.getRoles().stream()
                 .map(Role::getName)
                 .collect(Collectors.toSet());
