@@ -6,6 +6,7 @@ import com.midco.rota.service.PeriodGenerationService;
 import com.midco.rota.service.PayCycleDataService;
 import com.midco.rota.util.PayCycleRow;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
@@ -28,6 +29,7 @@ public class PeriodController {
         this.payCycleDataService = payCycleDataService;
     }
 
+    @PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER')")
     @PostMapping("/generate")
     public ResponseEntity<String> generate() {
         try {
@@ -37,6 +39,7 @@ public class PeriodController {
         }
     }
 
+    @PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER')")
     @PostMapping("/archive")
     public ResponseEntity<String> archive() {
         try {

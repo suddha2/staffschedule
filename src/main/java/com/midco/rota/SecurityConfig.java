@@ -8,6 +8,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.scheduling.concurrent.ConcurrentTaskExecutor;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.security.config.Customizer;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -19,6 +20,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity
 public class SecurityConfig {
 	
 	@Autowired
@@ -45,10 +47,23 @@ public class SecurityConfig {
 						.requestMatchers("/api/mobile/auth/**").permitAll()
 						// Mobile employee endpoints
 						.requestMatchers("/api/mobile/**").hasRole("EMPLOYEE")
-						// Admin-only endpoints
+						// Publishing unallocated shifts (POST) is open to schedulers, ops
+						// managers and admins; the publish history/log GETs fall through
+						// to .anyRequest().authenticated() so any signed-in user (incl.
+						// READ_ONLY) can view them.
+						.requestMatchers(HttpMethod.POST, "/api/stats/publish/**")
+								.hasAnyRole("ADMIN", "OPS_MANAGER", "ROTA_EDITOR")
+						// User registration is admin-only (case fixed: was 'admin').
+						.requestMatchers("/register").hasRole("ADMIN")
+						// Resolving shift requests is open to schedulers, ops managers and admins.
+						// Listed BEFORE the broader /api/admin/** rule so the more specific
+						// path-match wins.
+						.requestMatchers("/api/admin/shift-requests/**")
+								.hasAnyRole("ADMIN", "OPS_MANAGER", "ROTA_EDITOR")
+						// Everything else under /api/admin/ remains admin-only.
 						.requestMatchers("/api/admin/**").hasRole("ADMIN")
-						.requestMatchers("/api/stats/publish/**").hasRole("ADMIN")
-//						.requestMatchers("/api/stats/**").permitAll()
+						// All other endpoints just require a valid token; finer-grained role
+						// checks for write operations live as @PreAuthorize on the methods.
 						.anyRequest().authenticated())
 				// Add Paseto filter before UsernamePasswordAuthenticationFilter
 				.addFilterBefore(pasetoAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);

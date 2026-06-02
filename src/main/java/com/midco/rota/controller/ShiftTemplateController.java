@@ -8,6 +8,7 @@ import java.util.stream.Collectors;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -64,6 +65,7 @@ public class ShiftTemplateController {
 	/**
 	 * POST - Create new shift template
 	 */
+	@PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER')")
 	@PostMapping
 	public ResponseEntity<List<ShiftTemplate>> createShiftTemplate(@RequestBody ShiftTemplateRequest request) {
 		try {
@@ -111,6 +113,7 @@ public class ShiftTemplateController {
 	/**
 	 * PUT - Update existing shift template
 	 */
+	@PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER')")
 	@PutMapping("/{id}")
 	public ResponseEntity<ShiftTemplate> updateShiftTemplate(@PathVariable Integer id,
 			@RequestBody ShiftTemplate shiftTemplateDetails) {
@@ -140,6 +143,7 @@ public class ShiftTemplateController {
 	/**
 	 * DELETE - Delete shift template
 	 */
+	@PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER')")
 	@DeleteMapping("/{id}")
 	public ResponseEntity<Void> deleteShiftTemplate(@PathVariable Integer id) {
 		return shiftTemplateRepository.findById(id).map(template -> {
@@ -151,6 +155,7 @@ public class ShiftTemplateController {
 	/**
 	 * PATCH - Toggle active status
 	 */
+	@PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER')")
 	@PatchMapping("/{id}/toggle-active")
 	public ResponseEntity<ShiftTemplate> toggleActive(@PathVariable Integer id) {
 		return shiftTemplateRepository.findById(id).map(template -> {
@@ -248,6 +253,7 @@ public class ShiftTemplateController {
 		return ResponseEntity.ok(templates);
 	}
 
+	@PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER')")
 	@PutMapping("/bulk-update")
 	public ResponseEntity<?> bulkUpdate(@RequestBody ShiftTemplate request) {
 		// Find all templates matching location, shiftType, region

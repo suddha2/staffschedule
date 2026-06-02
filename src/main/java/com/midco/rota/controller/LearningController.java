@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -42,6 +43,7 @@ public class LearningController {
      * Run the complete monthly learning cycle
      * POST /api/learning/cycle
      */
+    @PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER')")
     @PostMapping("/cycle")
     public ResponseEntity<String> runLearningCycle() {
         try {
@@ -58,6 +60,7 @@ public class LearningController {
      * Run learning cycle for custom date range
      * POST /api/learning/cycle?startDate=2024-10-01&endDate=2024-11-01
      */
+    @PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER')")
     @PostMapping("/cycle/custom")
     public ResponseEntity<String> runCustomLearningCycle(
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
@@ -76,6 +79,7 @@ public class LearningController {
      * Extract corrections from rota_feeder (without running full cycle)
      * POST /api/learning/extract?startDate=2024-10-01&endDate=2024-11-01
      */
+    @PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER')")
     @PostMapping("/extract")
     public ResponseEntity<List<RotaCorrection>> extractCorrections(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
@@ -150,6 +154,7 @@ public class LearningController {
      * Apply a specific learning
      * POST /api/learning/apply/123
      */
+    @PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER')")
     @PostMapping("/apply/{learningId}")
     public ResponseEntity<String> applyLearning(@PathVariable Long learningId) {
         try {
@@ -172,6 +177,7 @@ public class LearningController {
      * POST /api/learning/reject/123
      * Body: {"reason": "Employee confirmed different preference"}
      */
+    @PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER')")
     @PostMapping("/reject/{learningId}")
     public ResponseEntity<String> rejectLearning(
             @PathVariable Long learningId,
@@ -206,6 +212,7 @@ public class LearningController {
      * Auto-apply all high confidence learnings
      * POST /api/learning/auto-apply
      */
+    @PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER')")
     @PostMapping("/auto-apply")
     public ResponseEntity<String> autoApplyHighConfidence() {
         try {

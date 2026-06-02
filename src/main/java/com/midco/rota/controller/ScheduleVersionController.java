@@ -5,6 +5,7 @@ package com.midco.rota.controller;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -92,8 +93,8 @@ public class ScheduleVersionController {
 	/**
 	 * Create new version (save current state) POST /api/schedules/{rotaId}/versions
 	 */
+	@PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER','ROTA_EDITOR')")
 	@PostMapping("/{rotaId}/versions")
-
 	public ResponseEntity<VersionDetailDTO> createVersion(@PathVariable Long rotaId,
 			@RequestBody SaveScheduleRequest request, Authentication authentication) {
 
@@ -136,8 +137,8 @@ public class ScheduleVersionController {
 	 * Rollback to a previous version POST
 	 * /api/schedules/{rotaId}/versions/{versionId}/rollback
 	 */
+	@PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER','ROTA_EDITOR')")
 	@PostMapping("/{rotaId}/versions/{versionId}/rollback")
-
 	public ResponseEntity<VersionDetailDTO> rollbackToVersion(@PathVariable Long rotaId, @PathVariable Long versionId,
 			@RequestBody(required = false) RollbackRequest request, Authentication authentication) {
 

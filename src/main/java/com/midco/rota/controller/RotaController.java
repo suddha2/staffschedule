@@ -146,8 +146,8 @@ public class RotaController {
 		return ResponseEntity.ok(services);
 	}
 
+	@PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER')")
 	@PostMapping("/reenqueue")
-
 	public ResponseEntity<?> reEnqueueSolve(@RequestBody Map<String, Object> payload, Authentication authentication) {
 		LocalDate startDate = LocalDate.parse(payload.get("startDate").toString());
 		LocalDate endDate = LocalDate.parse(payload.get("endDate").toString());
@@ -188,6 +188,7 @@ public class RotaController {
 		return ResponseEntity.ok(request);
 	}
 
+	@PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER')")
 	@PostMapping("/enqueueRequest")
 	public ResponseEntity<?> enqueueSolve(@RequestBody Map<String, Object> payload, Authentication authentication) {
 
@@ -301,6 +302,7 @@ public class RotaController {
 		return ResponseEntity.ok().headers(headers).body(stream);
 	}
 
+	@PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER','ROTA_EDITOR')")
 	@PostMapping("/solveAsync")
 	public String solveAsync(@RequestBody Map<String, Object> payload, Authentication auth) {
 
@@ -326,12 +328,14 @@ public class RotaController {
 		return "Solving started asynchronously.";
 	}
 
+	@PreAuthorize("hasRole('ADMIN')")
 	@PostMapping("/updateMsgTest")
 	public ResponseEntity<String> updateMsgTest(@RequestBody String rawJson, Authentication authentication) {
 		updateService.pushUpdate("/queue/req-update", rawJson, authentication.getName());
 		return ResponseEntity.ok("success ");
 	}
 
+	@PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER','ROTA_EDITOR')")
 	@PostMapping("/save")
 	@Transactional
 	public ResponseEntity<?> saveSchedule(@RequestBody Map<String, Object> payload, Authentication auth) {

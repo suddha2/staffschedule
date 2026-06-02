@@ -58,7 +58,7 @@ public class AuthController {
 
 	}
 
-	@PreAuthorize("hasRole('admin')")
+	@PreAuthorize("hasRole('ADMIN')")
 	@PostMapping("/register")
 	public ResponseEntity<?> register(@RequestBody LoginRequest request) {
 		User user = new User();
@@ -73,15 +73,15 @@ public class AuthController {
 	@GetMapping("/me")
 	public ResponseEntity<?> loggedUserInfo(Authentication auth) {
 		Optional<User> user = userRepository.findByUsername(auth.getName());
-
-		Map<String, Object> result = new HashMap<>();
-		if (!user.isPresent()) {
-
-			result.put("userName", user.get().getUsername());
-
-			result.put("roles", user.get().getRoles());
+		if (user.isEmpty()) {
+			throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found");
 		}
+		Map<String, Object> result = new HashMap<>();
+		result.put("userName", user.get().getUsername());
+		// Return just the role names; the frontend doesn't need the Role entity shape.
+		result.put("roles", user.get().getRoles().stream()
+				.map(Role::getName)
+				.collect(Collectors.toSet()));
 		return ResponseEntity.ok(result);
-
 	}
 }

@@ -6,6 +6,7 @@ import java.util.Optional;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import com.midco.rota.model.Employee;
 import com.midco.rota.model.ShiftTemplate;
@@ -41,6 +42,7 @@ public class EmployeeController {
     }
     
     
+    @PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER')")
     @PatchMapping("/{id}/toggle-active")
     public ResponseEntity<Employee> toggleActive(@PathVariable Integer id) {
         return employeeRepository.findById(id)
@@ -59,6 +61,7 @@ public class EmployeeController {
     }
     
     // POST - Create new employee
+    @PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER')")
     @PostMapping
     public ResponseEntity<?> createEmployee(@RequestBody Employee employee) {
         try {
@@ -75,6 +78,7 @@ public class EmployeeController {
     }
     
     // PUT - Update existing employee
+    @PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER')")
     @PutMapping("/{id}")
     public ResponseEntity<?> updateEmployee(
             @PathVariable Integer id,
@@ -127,6 +131,7 @@ public class EmployeeController {
     }
     
     // DELETE - Delete employee
+    @PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER')")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteEmployee(@PathVariable Integer id) {
         return employeeRepository.findById(id)
