@@ -74,7 +74,7 @@ public class AuthController {
 		return ResponseEntity.ok("User registered");
 	}
 
-	@GetMapping("/me")
+	@GetMapping("/api/auth/me")
 	public ResponseEntity<?> loggedUserInfo(Authentication auth) {
 		Optional<User> user = userRepository.findByUsername(auth.getName());
 		if (user.isEmpty()) {

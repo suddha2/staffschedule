@@ -14,17 +14,59 @@
     "type": "java.lang.String",
     "description": "A description for 'paseto.private-key'"
   },
-{
+  {
     "name": "paseto.public-key",
     "type": "java.lang.String",
     "description": "A description for 'paseto.public-key'"
-  },{
+  },
+  {
     "name": "paseto.audience",
     "type": "java.lang.String",
     "description": "A description for 'paseto.audience'"
-  },{
+  },
+  {
     "name": "paseto.issuer",
     "type": "java.lang.String",
     "description": "A description for 'paseto.issuer'"
+  },
+  {
+    "name": "graph.mail.tenant-id",
+    "type": "java.lang.String",
+    "description": "A description for 'graph.mail.tenant-id'"
+  },
+  {
+    "name": "graph.mail.sender",
+    "type": "java.lang.String",
+    "description": "A description for 'graph.mail.sender'"
+  },
+  {
+    "name": "graph.mail.client-id",
+    "type": "java.lang.String",
+    "description": "A description for 'graph.mail.client-id'"
+  },
+  {
+    "name": "graph.mail.client-secret",
+    "type": "java.lang.String",
+    "description": "A description for 'graph.mail.client-secret'"
+  },
+  {
+    "name": "firebase.fcm.employees-topic",
+    "type": "java.lang.String",
+    "description": "A description for 'firebase.fcm.employees-topic'"
+  },
+  {
+    "name": "firebase.service-account-path",
+    "type": "java.lang.String",
+    "description": "A description for 'firebase.service-account-path'"
+  },
+  {
+    "name": "microsoft.tenant-id",
+    "type": "java.lang.String",
+    "description": "A description for 'microsoft.tenant-id'"
+  },
+  {
+    "name": "microsoft.client-id",
+    "type": "java.lang.String",
+    "description": "A description for 'microsoft.client-id'"
   }
 ]}
