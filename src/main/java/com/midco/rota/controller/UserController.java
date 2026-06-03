@@ -3,7 +3,6 @@ package com.midco.rota.controller;
 import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -221,7 +220,6 @@ public class UserController {
 					"At least one role is required.");
 		}
 		Set<String> wanted = names.stream()
-				.filter(Optional::ofNullable)
 				.filter(n -> n != null && !n.isBlank())
 				.map(String::trim)
 				.map(String::toUpperCase)
