@@ -42,7 +42,7 @@ public class SecurityConfig {
 						// Allow OPTIONS requests for CORS
 						.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 						// Public endpoints
-						.requestMatchers("/login").permitAll()
+						.requestMatchers("/api/auth/login").permitAll()
 						.requestMatchers("/api/auth/microsoft").permitAll()
 						.requestMatchers("/ws/**").permitAll()
 						.requestMatchers("/api/mobile/auth/**").permitAll()
@@ -55,7 +55,7 @@ public class SecurityConfig {
 						.requestMatchers(HttpMethod.POST, "/api/stats/publish/**")
 								.hasAnyRole("ADMIN", "OPS_MANAGER", "ROTA_EDITOR")
 						// User registration is admin-only (case fixed: was 'admin').
-						.requestMatchers("/register").hasRole("ADMIN")
+						.requestMatchers("/api/auth/register").hasRole("ADMIN")
 						// Resolving shift requests is open to schedulers, ops managers and admins.
 						// Listed BEFORE the broader /api/admin/** rule so the more specific
 						// path-match wins.

@@ -40,7 +40,7 @@ public class AuthController {
 		this.passwordEncoder = passwordEncoder;
 	}
 
-	@PostMapping("/login")
+	@PostMapping("/api/auth/login")
 	public ResponseEntity<?> login(@RequestBody LoginRequest request) {
 
 		User user = userRepository.findByUsername(request.getUserName())
@@ -63,7 +63,7 @@ public class AuthController {
 	}
 
 	@PreAuthorize("hasRole('ADMIN')")
-	@PostMapping("/register")
+	@PostMapping("/api/auth/register")
 	public ResponseEntity<?> register(@RequestBody LoginRequest request) {
 		User user = new User();
 		user.setUsername(request.getUserName());
