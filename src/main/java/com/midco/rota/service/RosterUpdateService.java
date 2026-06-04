@@ -6,8 +6,6 @@ import java.util.List;
 
 import org.optaplanner.core.api.score.constraint.ConstraintMatchTotal;
 import org.optaplanner.core.api.solver.SolverStatus;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.core.Authentication;
@@ -26,8 +24,6 @@ import jakarta.transaction.Transactional;
 
 @Service
 public class RosterUpdateService {
-
-	private static final Logger logger = LoggerFactory.getLogger(RosterUpdateService.class);
 
 	@Autowired
 	private SimpMessagingTemplate messagingTemplate;
@@ -60,9 +56,9 @@ public class RosterUpdateService {
 		payload.setViolations(violations);
 		payload.setStatus("SOLVED"); // TODO:
 
-		logger.info(" Rota ", payload.toString());
-		messagingTemplate.convertAndSendToUser(user, "/queue/rotaUpdate", rota);
-
+		// Send the full {rota, violations, status} envelope rather than the bare
+		// Rota object — matches what the FE expects after a solve.
+		messagingTemplate.convertAndSendToUser(user, "/queue/rotaUpdate", payload);
 	}
 
 	public void pushUpdate(DeferredSolveRequest deferredSolveRequest) {
