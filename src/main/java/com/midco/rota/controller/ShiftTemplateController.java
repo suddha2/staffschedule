@@ -3,7 +3,9 @@ package com.midco.rota.controller;
 import java.time.DayOfWeek;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import org.springframework.http.HttpStatus;
@@ -21,6 +23,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.midco.rota.RateTableProvider;
+import com.midco.rota.dto.BulkUpdateRequest;
 import com.midco.rota.dto.ShiftTemplateDTO;
 import com.midco.rota.dto.ShiftTemplateRequest;
 import com.midco.rota.model.ShiftTemplate;
@@ -67,7 +70,7 @@ public class ShiftTemplateController {
 	 */
 	@PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER')")
 	@PostMapping
-	public ResponseEntity<List<ShiftTemplate>> createShiftTemplate(@RequestBody ShiftTemplateRequest request) {
+	public ResponseEntity<?> createShiftTemplate(@RequestBody ShiftTemplateRequest request) {
 		try {
 			// Ensure id is null for new entity
 			request.setId(null);
@@ -75,6 +78,34 @@ public class ShiftTemplateController {
 			// Set active to true if not specified
 			if (!request.isActive()) {
 				request.setActive(true);
+			}
+
+			// Dedup check up-front, BEFORE any insert, so a clash on day N doesn't
+			// leave templates for days 1..N-1 already persisted. Strict equality
+			// on the natural key including break window — same time with a
+			// different break is the legitimate 2-carer pattern and is allowed.
+			List<Map<String, Object>> conflicts = new ArrayList<>();
+			for (DayOfWeek day : request.getDaysOfWeek()) {
+				// Native query: enum params come in as their stringified name.
+				List<ShiftTemplate> clashes = shiftTemplateRepository.findActiveDuplicates(
+						request.getRegion(), request.getLocation(),
+						day.name(),
+						request.getShiftType() != null ? request.getShiftType().name() : null,
+						request.getStartTime(), request.getEndTime(),
+						request.getBreakStart(), request.getBreakEnd(),
+						null);
+				if (!clashes.isEmpty()) {
+					Map<String, Object> entry = new HashMap<>();
+					entry.put("dayOfWeek", day.name());
+					entry.put("conflictingTemplateId", clashes.get(0).getId());
+					conflicts.add(entry);
+				}
+			}
+			if (!conflicts.isEmpty()) {
+				return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+						"error", "Active shift template(s) with the same slot and times already exist. " +
+								"Edit those instead, or change a time / break to differentiate.",
+						"conflicts", conflicts));
 			}
 
 			List<ShiftTemplate> created = new ArrayList<>();
@@ -102,7 +133,6 @@ public class ShiftTemplateController {
 			}
 			created = shiftTemplateRepository.saveAll(created);
 
-			// ShiftTemplate savedTemplate = shiftTemplateRepository.save(shiftTemplate);
 			return ResponseEntity.status(HttpStatus.CREATED).body(created);
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -115,10 +145,29 @@ public class ShiftTemplateController {
 	 */
 	@PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER')")
 	@PutMapping("/{id}")
-	public ResponseEntity<ShiftTemplate> updateShiftTemplate(@PathVariable Integer id,
+	public ResponseEntity<?> updateShiftTemplate(@PathVariable Integer id,
 			@RequestBody ShiftTemplate shiftTemplateDetails) {
 
 		return shiftTemplateRepository.findById(id).map(template -> {
+			// Dedup check BEFORE mutating: would the saved tuple clash with
+			// another active template? Excludes this same row from the check.
+			// Strict natural-key equality (region, location, day, type, times,
+			// breaks) — same time with a different break is the legitimate
+			// 2-carer pattern and is allowed through.
+			List<ShiftTemplate> clashes = shiftTemplateRepository.findActiveDuplicates(
+					shiftTemplateDetails.getRegion(), shiftTemplateDetails.getLocation(),
+					shiftTemplateDetails.getDayOfWeek() != null ? shiftTemplateDetails.getDayOfWeek().name() : null,
+					shiftTemplateDetails.getShiftType() != null ? shiftTemplateDetails.getShiftType().name() : null,
+					shiftTemplateDetails.getStartTime(), shiftTemplateDetails.getEndTime(),
+					shiftTemplateDetails.getBreakStart(), shiftTemplateDetails.getBreakEnd(),
+					id);
+			if (!clashes.isEmpty()) {
+				return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+						"error", "An active shift template with the same slot and times already exists. " +
+								"Edit that template instead, or change a time / break to differentiate.",
+						"conflictingTemplateId", clashes.get(0).getId()));
+			}
+
 			// Update all fields
 			template.setLocation(shiftTemplateDetails.getLocation());
 			template.setRegion(shiftTemplateDetails.getRegion());
@@ -253,33 +302,62 @@ public class ShiftTemplateController {
 		return ResponseEntity.ok(templates);
 	}
 
+	/**
+	 * Bulk-propagate non-key field changes across every active template that
+	 * shares (region, location, shiftType). Used by the admin form's "Bulk Edit
+	 * Mode" — e.g. shift the daily break window from 13:00 to 14:00 for all 7
+	 * days of a location's DAY templates in one call.
+	 *
+	 * <p>Cohort selection is the <i>existing</i> shift type — bulk update never
+	 * changes type (the FE locks that dropdown in bulk mode). Each field in the
+	 * {@code updates} block is null-safe: a null means "leave this field alone",
+	 * a non-null value is applied to every matched template.
+	 */
 	@PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER')")
 	@PutMapping("/bulk-update")
-	public ResponseEntity<?> bulkUpdate(@RequestBody ShiftTemplate request) {
-		// Find all templates matching location, shiftType, region
+	public ResponseEntity<?> bulkUpdate(@RequestBody BulkUpdateRequest request) {
+		if (request == null || request.getLocation() == null || request.getShiftType() == null
+				|| request.getRegion() == null) {
+			return ResponseEntity.badRequest().body(Map.of(
+					"error", "location, shiftType and region are required"));
+		}
+		BulkUpdateRequest.TemplateFieldUpdates u = request.getUpdates();
+		if (u == null) {
+			return ResponseEntity.badRequest().body(Map.of(
+					"error", "updates block is required"));
+		}
+
 		List<ShiftTemplate> templates = shiftTemplateRepository.findByLocationAndShiftTypeAndRegion(
 				request.getLocation(), request.getShiftType(), request.getRegion());
 
-		// Update each template
+		// Only ACTIVE rows participate — inactive templates are operationally
+		// dead and we don't want a bulk-update to silently revive them.
+		templates = templates.stream().filter(ShiftTemplate::isActive).collect(Collectors.toList());
+
+		// Apply each field only when the request supplied a non-null value. The
+		// old implementation called the setter unconditionally with whatever
+		// Jackson had bound — which, because the FE nested everything under
+		// `updates`, meant every field was null/default and the entire cohort
+		// was silently deactivated and time-cleared. Null-guarding makes the
+		// semantics explicit and protects partial-payload callers.
 		templates.forEach(template -> {
-			template.setStartTime(request.getStartTime());
-			template.setEndTime(request.getEndTime());
-			template.setActive(request.isActive());
-			template.setBreakEnd(request.getBreakEnd());
-			template.setBreakStart(request.getBreakStart());
-			template.setEmpCount(request.getEmpCount());
-			template.setGender(request.getGender());
-			template.setPriority(request.getPriority());
-			template.setRequiredGender(request.getRequiredGender());
-			template.setGender(request.getGender());
-			template.setRequiredSkills(request.getRequiredSkills());
-			template.setTotalHours(request.getTotalHours());
-			// ... other fields
+			if (u.getStartTime() != null)      template.setStartTime(u.getStartTime());
+			if (u.getEndTime() != null)        template.setEndTime(u.getEndTime());
+			if (u.getBreakStart() != null)     template.setBreakStart(u.getBreakStart());
+			if (u.getBreakEnd() != null)       template.setBreakEnd(u.getBreakEnd());
+			if (u.getTotalHours() != null)     template.setTotalHours(u.getTotalHours());
+			if (u.getRequiredGender() != null) template.setRequiredGender(u.getRequiredGender());
+			if (u.getRequiredSkills() != null) template.setRequiredSkills(u.getRequiredSkills());
+			if (u.getEmpCount() != null)       template.setEmpCount(u.getEmpCount());
+			if (u.getPriority() != null)       template.setPriority(u.getPriority());
+			if (u.getActive() != null)         template.setActive(u.getActive());
 		});
 
 		shiftTemplateRepository.saveAll(templates);
 
-		return ResponseEntity.ok(templates.size() + " templates updated");
+		return ResponseEntity.ok(Map.of(
+				"updated", templates.size(),
+				"message", templates.size() + " templates updated"));
 	}
 
 	@GetMapping("/match")
