@@ -183,6 +183,12 @@ public class RotaController {
 			return ResponseEntity.badRequest().body("Duration is over a month.");
 		}
 
+		if (employeeRepository.findByPreferredRegion(request.getRegion()).isEmpty()) {
+			return ResponseEntity.badRequest().body(Map.of("error",
+					"No employees with preferred_region='" + request.getRegion()
+							+ "'. Assign at least one employee to this region before enqueueing a solve."));
+		}
+
 		request = deferredSolveRequestRepository.save(request);
 		System.out.println("============================= " + request.toString() + " : Saved  ");
 		return ResponseEntity.ok(request);
@@ -215,6 +221,13 @@ public class RotaController {
 		if (daysBetween > 30) {
 			return ResponseEntity.badRequest().body("Duration is over a month.");
 		}
+
+		if (employeeRepository.findByPreferredRegion(request.getRegion()).isEmpty()) {
+			return ResponseEntity.badRequest().body(Map.of("error",
+					"No employees with preferred_region='" + request.getRegion()
+							+ "'. Assign at least one employee to this region before enqueueing a solve."));
+		}
+
 		request = deferredSolveRequestRepository.save(request);
 
 		return ResponseEntity.ok(request);

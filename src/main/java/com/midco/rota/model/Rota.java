@@ -73,7 +73,13 @@ public class Rota {
 	public Rota(List<Employee> employeeList, List<ShiftAssignment> shiftAssignmentList) {
 		this.employeeList = employeeList;
 		this.shiftAssignmentList = shiftAssignmentList;
-		int ideal = shiftAssignmentList.size() / employeeList.size();
+		// Guard against a region with zero employees — otherwise the integer
+		// division below throws ArithmeticException and the @Scheduled
+		// SolverTrigger picks the same request up again 2 minutes later,
+		// looping forever. SolverTrigger now fails-fast before reaching here,
+		// but this guard is a defensive backstop in case the request was
+		// loaded through another path.
+		int ideal = employeeList.isEmpty() ? 0 : shiftAssignmentList.size() / employeeList.size();
 		this.idealShiftCountList = List.of(new IdealShiftCount(ideal));
 		// this.planningId = COUNTER.incrementAndGet();
 

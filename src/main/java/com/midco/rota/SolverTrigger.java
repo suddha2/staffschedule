@@ -1,6 +1,7 @@
 package com.midco.rota;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -60,15 +61,35 @@ public class SolverTrigger {
 
 	public void triggerSolver() {
 		deferredSolveRequestRepository.findFirstByCompletedFalse().ifPresentOrElse(deferredSolveRequest -> {
-			if (solverService.getSolverStatus(deferredSolveRequest.getId()) == SolverStatus.NOT_SOLVING) {
-
-				Rota problem = loadData(deferredSolveRequest);
-				problem.setPlanningId(deferredSolveRequest.getId());
-				logger.info("triggerSolver=== ");
-				solverService.solveAsync(problem, deferredSolveRequest.getId(), deferredSolveRequest);
-			} else {
-				logger.info("Solving in progress for reqeust " + deferredSolveRequest.getId());
+			if (solverService.getSolverStatus(deferredSolveRequest.getId()) != SolverStatus.NOT_SOLVING) {
+				logger.info("Solving in progress for request {}", deferredSolveRequest.getId());
+				return;
 			}
+
+			// Fail-fast: a region with zero employees crashes the Rota
+			// constructor with ArithmeticException (/ by zero) and would
+			// otherwise keep the request stuck on completed=false, so the
+			// scheduler picks it up on every 2-minute tick and loops
+			// forever. Close it with an explanatory summary instead.
+			List<Employee> employees = employeeRepository.findByPreferredRegion(deferredSolveRequest.getRegion());
+			if (employees.isEmpty()) {
+				logger.warn("Refusing to solve request {} ({}): no employees with preferred_region='{}'. " +
+						"Marking the request as completed with an explanatory note.",
+						deferredSolveRequest.getId(),
+						deferredSolveRequest.getRegion(),
+						deferredSolveRequest.getRegion());
+				deferredSolveRequest.setCompleted(true);
+				deferredSolveRequest.setCompletedAt(LocalDateTime.now());
+				deferredSolveRequest.setScheduleSummary(
+						"Cannot solve: no employees with preferred_region='" + deferredSolveRequest.getRegion() + "'");
+				deferredSolveRequestRepository.save(deferredSolveRequest);
+				return;
+			}
+
+			Rota problem = loadData(deferredSolveRequest);
+			problem.setPlanningId(deferredSolveRequest.getId());
+			logger.info("triggerSolver=== ");
+			solverService.solveAsync(problem, deferredSolveRequest.getId(), deferredSolveRequest);
 		}, () -> {
 			logger.info("No solver request available to process");
 		});
