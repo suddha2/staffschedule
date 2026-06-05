@@ -78,8 +78,16 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
 					accessor.getSessionId());
 			return message;
 		} catch (TokenValidationException ex) {
-			logger.warn("STOMP CONNECT rejected: token validation failed (sessionId={}): {}",
-					accessor.getSessionId(), ex.getMessage());
+			// Surface the wrapped cause so we can distinguish "signature
+			// mismatch" (stale token signed by an old key pair) from
+			// "expired", "subject missing", etc. Without this we just see the
+			// generic "Token parsing failed" wrapper.
+			Throwable cause = ex.getCause();
+			String causeSummary = cause != null
+					? cause.getClass().getSimpleName() + ": " + cause.getMessage()
+					: "(no cause)";
+			logger.warn("STOMP CONNECT rejected: token validation failed (sessionId={}): {} | caused by {}",
+					accessor.getSessionId(), ex.getMessage(), causeSummary);
 			throw new MessagingException("Authentication failed: " + ex.getMessage());
 		}
 	}
