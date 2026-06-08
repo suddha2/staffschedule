@@ -8,6 +8,15 @@ public class ShiftAssignmentChangeDTO {
     private Integer oldEmployeeId;
     private Integer newEmployeeId;
     private String changeReason;
+    /**
+     * Optional change kind sent by the FE. Most values
+     * (ASSIGNED / UNASSIGNED / REASSIGNED) are inferred server-side from
+     * oldEmployeeId / newEmployeeId so this can stay null. The exception is
+     * {@code "UNPIN"}: oldEmployeeId == newEmployeeId so there's nothing to
+     * infer from, and the handler needs to know it's a pin-flag flip rather
+     * than a no-op.
+     */
+    private String changeType;
 
     // Constructors
     public ShiftAssignmentChangeDTO() {}
@@ -31,5 +40,8 @@ public class ShiftAssignmentChangeDTO {
 
     public String getChangeReason() { return changeReason; }
     public void setChangeReason(String changeReason) { this.changeReason = changeReason; }
+
+    public String getChangeType() { return changeType; }
+    public void setChangeType(String changeType) { this.changeType = changeType; }
 
 }

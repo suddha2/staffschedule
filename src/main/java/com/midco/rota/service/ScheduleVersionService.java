@@ -167,6 +167,15 @@ public class ScheduleVersionService {
 			createPinsFromAllAssignments(request.getRotaId(), request.getUsername());
 		}
 
+		// Process UNPIN tail: delete the (template, week, employee) rows
+		// that the admin explicitly unpinned via the Floating-employee Unpin
+		// button. Runs AFTER createPinsFromAllAssignments because that step
+		// may have just re-inserted the same row from a still-pinned-looking
+		// rota; the delete here is the authoritative final state.
+		if (request.getChanges() != null && !request.getChanges().isEmpty()) {
+			processUnpinChanges(request.getRotaId(), request.getChanges());
+		}
+
 		// Create assignment version snapshots
 		List<ShiftAssignmentVersion> assignmentVersions = new ArrayList<>();
 		for (ShiftAssignment assignment : currentAssignments) {
@@ -617,6 +626,29 @@ public class ScheduleVersionService {
 			List<ShiftAssignment> existing = shiftSAsCache.computeIfAbsent(shiftId,
 					id -> new ArrayList<>(rotaShiftAssignmentRepository.findByRotaIdAndShiftId(rotaId, id)));
 
+			// UNPIN: leave the assignment alone, just flip is_pinned to false
+			// on the matching row. The corresponding pinned_template_assignment
+			// entry is deleted by processUnpinChanges() after pin-rebuild runs,
+			// otherwise it'd be re-created if pinAllChanges is true.
+			if ("UNPIN".equals(change.getChangeType())) {
+				ShiftAssignment toUnpin = null;
+				for (ShiftAssignment sa : existing) {
+					Integer currentEmpId = sa.getEmployee() == null ? null : sa.getEmployee().getId();
+					if (Objects.equals(currentEmpId, oldEmployeeId)) {
+						toUnpin = sa;
+						break;
+					}
+				}
+				if (toUnpin == null) {
+					log.warn("applyChangesToDatabase UNPIN: no SA row for rota {} shift {} emp {}; skipping",
+							rotaId, shiftId, oldEmployeeId);
+					continue;
+				}
+				toUnpin.setPinned(false);
+				rotaShiftAssignmentRepository.save(toUnpin);
+				continue;
+			}
+
 			// Find an unused SA whose current employee matches the change's oldEmployeeId.
 			ShiftAssignment target = null;
 			for (ShiftAssignment sa : existing) {
@@ -791,6 +823,56 @@ public class ScheduleVersionService {
 
 		log.info("Replace-on-save complete for rota {}: {} pins set across {} templates",
 				rotaId, created, templateIds.size());
+	}
+
+	/**
+	 * Delete pinned_template_assignment entries for each UNPIN change. Runs
+	 * after createPinsFromAllAssignments so that, in the pinAllChanges=true
+	 * case, the rebuild's freshly-inserted matching row gets removed and
+	 * the unpin actually sticks. In the pinAllChanges=false case the row
+	 * predates this transaction and the delete still removes it.
+	 *
+	 * <p>weekOfPeriod is computed against the rota's earliest shift date
+	 * (the same anchor createPinsFromAllAssignments uses), so the deleted
+	 * key tuple matches what the rebuild would have written.
+	 */
+	private void processUnpinChanges(Long rotaId, List<ShiftAssignmentChangeDTO> changes) {
+		List<ShiftAssignmentChangeDTO> unpins = changes.stream()
+				.filter(c -> "UNPIN".equals(c.getChangeType()))
+				.collect(Collectors.toList());
+		if (unpins.isEmpty()) {
+			return;
+		}
+
+		List<ShiftAssignment> rotaSAs = rotaShiftAssignmentRepository.findByRotaId(rotaId);
+		LocalDate periodStart = rotaSAs.stream()
+				.map(ShiftAssignment::getShift)
+				.filter(Objects::nonNull)
+				.map(Shift::getShiftStart)
+				.filter(Objects::nonNull)
+				.min(LocalDate::compareTo)
+				.orElse(null);
+		if (periodStart == null) {
+			log.warn("processUnpinChanges: rota {} has no dated shifts, skipping {} UNPIN(s)", rotaId, unpins.size());
+			return;
+		}
+
+		int deleted = 0;
+		for (ShiftAssignmentChangeDTO u : unpins) {
+			Shift shift = shiftRepository.findById(u.getShiftId()).orElse(null);
+			if (shift == null || shift.getShiftTemplate() == null || shift.getShiftStart() == null) {
+				log.warn("processUnpinChanges: shift {} missing or unstamped, skipping", u.getShiftId());
+				continue;
+			}
+			Long templateId = shift.getShiftTemplate().getId().longValue();
+			Short week = weekOfPeriod(periodStart, shift.getShiftStart());
+			Long empId = u.getOldEmployeeId() == null ? null : Long.valueOf(u.getOldEmployeeId());
+			if (empId == null) continue;
+
+			pinnedTemplateAssignmentRepository.deleteByTemplateWeekEmployee(templateId, week, empId);
+			deleted++;
+		}
+		log.info("processUnpinChanges: deleted {} pinned_template_assignment row(s) for rota {}", deleted, rotaId);
 	}
 
 	/**

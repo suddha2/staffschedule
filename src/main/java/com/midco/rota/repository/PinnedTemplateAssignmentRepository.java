@@ -36,4 +36,23 @@ public interface PinnedTemplateAssignmentRepository extends JpaRepository<Pinned
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("DELETE FROM PinnedTemplateAssignment p WHERE p.shiftTemplateId IN :templateIds")
     void deleteByShiftTemplateIdIn(@Param("templateIds") Collection<Long> templateIds);
+
+    /**
+     * Delete a single (template, week-of-period, employee) pin. Used by the
+     * UNPIN change-type handler in ScheduleVersionService: when an admin
+     * clicks "Unpin" on a Floating-employee row, each pinned assignment for
+     * that employee in the current rota gets the matching template-pin
+     * removed so the next solve is free to move them. The flush+clear
+     * annotation matters because UNPIN runs after createPinsFromAllAssignments
+     * has just re-inserted the same row in the same transaction — without
+     * the flush the delete would no-op against an unflushed buffered insert.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("DELETE FROM PinnedTemplateAssignment p " +
+            "WHERE p.shiftTemplateId = :templateId " +
+            "  AND p.weekOfPeriod  = :weekOfPeriod " +
+            "  AND p.employeeId    = :employeeId")
+    void deleteByTemplateWeekEmployee(@Param("templateId") Long templateId,
+                                      @Param("weekOfPeriod") Short weekOfPeriod,
+                                      @Param("employeeId") Long employeeId);
 }
