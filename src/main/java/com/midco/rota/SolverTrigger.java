@@ -73,15 +73,17 @@ public class SolverTrigger {
 			// forever. Close it with an explanatory summary instead.
 			List<Employee> employees = employeeRepository.findByPreferredRegion(deferredSolveRequest.getRegion());
 			if (employees.isEmpty()) {
+				// scheduleSummary is structured (Map<String,Map<String,Integer>>) and
+				// can't carry a free-text reason; we log the explanation instead and
+				// rely on completed=true + a null summary to mark this as
+				// "closed without producing a rota".
 				logger.warn("Refusing to solve request {} ({}): no employees with preferred_region='{}'. " +
-						"Marking the request as completed with an explanatory note.",
+						"Marking the request as completed without producing a rota.",
 						deferredSolveRequest.getId(),
 						deferredSolveRequest.getRegion(),
 						deferredSolveRequest.getRegion());
 				deferredSolveRequest.setCompleted(true);
 				deferredSolveRequest.setCompletedAt(LocalDateTime.now());
-				deferredSolveRequest.setScheduleSummary(
-						"Cannot solve: no employees with preferred_region='" + deferredSolveRequest.getRegion() + "'");
 				deferredSolveRequestRepository.save(deferredSolveRequest);
 				return;
 			}
