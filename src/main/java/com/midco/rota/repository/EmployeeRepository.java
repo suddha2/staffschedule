@@ -22,6 +22,15 @@ public interface EmployeeRepository extends JpaRepository<Employee, Integer>, Jp
 	@Query(value = "SELECT * FROM employee WHERE preferred_region = :region and active =true ", nativeQuery = true)
 	List<Employee> findByPreferredRegion(@Param("region") String region);
 
+	/**
+	 * Active employees whose preferred region is anything other than the given one
+	 * (NULL preferred_region counts as "not this region"). Used by the floating
+	 * panel's Other-Regions tab so admins can drag staff in from a neighbouring
+	 * region's rota.
+	 */
+	@Query("SELECT e FROM Employee e WHERE (e.preferredRegion IS NULL OR e.preferredRegion <> :region) AND e.active = true")
+	List<Employee> findActiveOutOfRegion(@Param("region") String region);
+
 	@Query("SELECT es FROM EmployeeSchedulePattern es " + "WHERE es.location = :location "
 			+ "AND es.weekNumber = :week " + "AND es.dayOfWeek = :dayOfWeek " + "AND (es.shiftType = :sType) "
 			+ "AND es.isAvailable = true " + "ORDER BY es.employee.id ASC")
@@ -31,7 +40,14 @@ public interface EmployeeRepository extends JpaRepository<Employee, Integer>, Jp
 	@Query("SELECT e FROM Employee e WHERE e.firstName = :firstName AND e.lastName = :lastName")
 	Employee findByFirstNameAndLastName(@Param("firstName") String firstName, @Param("lastName") String lastName);
 
-	Optional<Employee> findByEmail(String email);
+	/**
+	 * Case-insensitive email lookup. Spring Data translates this to
+	 * {@code WHERE LOWER(email) = LOWER(?)}, so it matches regardless of how the
+	 * row was stored — guards against legacy mixed-case rows and reviewer/test
+	 * accounts inserted by hand. All callers also normalise input but historically
+	 * the DB has held mixed casings.
+	 */
+	Optional<Employee> findByEmailIgnoreCase(String email);
 
 	Page<Employee> findAll(Specification<Employee> specification, Pageable pageable);
 

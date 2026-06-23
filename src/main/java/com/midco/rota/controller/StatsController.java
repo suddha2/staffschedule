@@ -53,6 +53,7 @@ import com.midco.rota.service.ShiftPublishService;
 import com.midco.rota.model.DeferredSolveRequest;
 import com.midco.rota.model.Employee;
 import com.midco.rota.model.EmployeeShiftStatDTO;
+import com.midco.rota.model.EmployeeWithSummaryDTO;
 import com.midco.rota.model.PaycycleStatsDTO;
 import com.midco.rota.model.Rota;
 import com.midco.rota.model.ServiceStatsDTO;
@@ -137,6 +138,15 @@ public class StatsController {
 		List<EmployeeShiftStatDTO> summary = statsService.generateEmpSummary(id);
 
 		return ResponseEntity.ok(summary);
+	}
+
+	/**
+	 * Other-region employees with their paycycle shift totals — backs the
+	 * floating panel's "Other Regions" tab. Loaded lazily on first tab open.
+	 */
+	@GetMapping("/outOfRegionEmps")
+	public ResponseEntity<List<EmployeeWithSummaryDTO>> outOfRegionEmps(@RequestParam Long id) {
+		return ResponseEntity.ok(statsService.getOutOfRegionEmployees(id));
 	}
 
 	@GetMapping("/exportStats")

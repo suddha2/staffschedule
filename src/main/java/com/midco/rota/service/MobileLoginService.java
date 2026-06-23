@@ -87,7 +87,7 @@ public class MobileLoginService {
 			return;
 		}
 
-		Employee employee = employeeRepository.findByEmail(email)
+		Employee employee = employeeRepository.findByEmailIgnoreCase(email)
 				.filter(Employee::isActive)
 				.orElse(null);
 		if (employee == null) {
@@ -129,7 +129,7 @@ public class MobileLoginService {
 			if (!reviewCode.equals(code)) {
 				throw unauthorized("Incorrect code.");
 			}
-			Employee reviewer = employeeRepository.findByEmail(email)
+			Employee reviewer = employeeRepository.findByEmailIgnoreCase(email)
 					.filter(Employee::isActive)
 					.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
 							"No active employee for this email."));
@@ -160,7 +160,7 @@ public class MobileLoginService {
 		entry.setConsumed(true);
 		codeRepository.save(entry);
 
-		Employee employee = employeeRepository.findByEmail(email)
+		Employee employee = employeeRepository.findByEmailIgnoreCase(email)
 				.filter(Employee::isActive)
 				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
 						"No active employee for this email."));

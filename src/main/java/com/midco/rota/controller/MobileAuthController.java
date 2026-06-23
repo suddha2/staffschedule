@@ -69,7 +69,7 @@ public class MobileAuthController {
 			throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Token has no email claim");
 		}
 
-		Employee employee = employeeRepository.findByEmail(email)
+		Employee employee = employeeRepository.findByEmailIgnoreCase(email)
 				.filter(Employee::isActive)
 				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
 						"No active employee for this Google account"));

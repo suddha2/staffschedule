@@ -86,7 +86,7 @@ public class ShiftRequestService {
 	}
 
 	private Employee requireActiveEmployee(String email) {
-		return employeeRepository.findByEmail(email)
+		return employeeRepository.findByEmailIgnoreCase(email)
 				.filter(Employee::isActive)
 				.orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN,
 						"No active employee for the authenticated account"));

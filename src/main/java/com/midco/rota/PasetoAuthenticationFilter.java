@@ -46,7 +46,7 @@ public class PasetoAuthenticationFilter extends OncePerRequestFilter {
 				boolean isEmployee = auth.getAuthorities().stream()
 						.anyMatch(a -> "ROLE_EMPLOYEE".equals(a.getAuthority()));
 				if (isEmployee) {
-					boolean active = employeeRepository.findByEmail(auth.getName())
+					boolean active = employeeRepository.findByEmailIgnoreCase(auth.getName())
 							.map(Employee::isActive)
 							.orElse(false);
 					if (!active) {

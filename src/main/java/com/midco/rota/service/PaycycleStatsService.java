@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 import com.midco.rota.model.DeferredSolveRequest;
 import com.midco.rota.model.Employee;
 import com.midco.rota.model.EmployeeShiftStatDTO;
+import com.midco.rota.model.EmployeeWithSummaryDTO;
 import com.midco.rota.model.PaycycleStatsDTO;
 import com.midco.rota.model.Rota;
 import com.midco.rota.model.ServiceStatsDTO;
@@ -28,6 +29,7 @@ import com.midco.rota.model.ShiftTypeStatsDTO;
 import com.midco.rota.model.WeekStatsDTO;
 import com.midco.rota.model.WeeklyShiftStatDTO;
 import com.midco.rota.repository.DeferredSolveRequestRepository;
+import com.midco.rota.repository.EmployeeRepository;
 import com.midco.rota.repository.RotaRepository;
 import com.midco.rota.util.ShiftType;
 
@@ -39,6 +41,9 @@ public class PaycycleStatsService {
 
 	@Autowired
 	private DeferredSolveRequestRepository deferredSolveRequestRepository;
+
+	@Autowired
+	private EmployeeRepository employeeRepository;
 
 //    @Autowired
 //    private ShiftAssignmentRepository assignmentRepository;
@@ -208,5 +213,78 @@ public class PaycycleStatsService {
 	public DeferredSolveRequest getRegionPeriodDetailForRotaID(Long rotaId) {
 		DeferredSolveRequest deferredSolveRequest = deferredSolveRequestRepository.findByRotaId(rotaId);
 		return deferredSolveRequest;
+	}
+
+	/**
+	 * Active employees whose preferred region differs from the given rota's,
+	 * each with their shift-type totals (count + hours) aggregated from
+	 * sibling rotas in the SAME paycycle period (same start/end date, completed).
+	 *
+	 * <p>An employee whose region has no completed sibling rota still appears,
+	 * with an empty summary — the floating panel's Other-Regions tab uses this
+	 * to let admins drag in staff from any other region.
+	 *
+	 * <p>SLEEP_IN shifts are excluded from totals to match
+	 * {@link #generateEmpSummary} (sleep-ins don't count toward weekly limits).
+	 */
+	public List<EmployeeWithSummaryDTO> getOutOfRegionEmployees(Long rotaId) {
+		DeferredSolveRequest current = deferredSolveRequestRepository.findByRotaId(rotaId);
+		if (current == null) {
+			return Collections.emptyList();
+		}
+
+		String currentRegion = current.getRegion();
+
+		// Aggregate (employeeId -> shiftType -> {count, hours}) across all
+		// other-region rotas that share this paycycle period. One employee can
+		// only appear in one region's rota for a given period, so no merge
+		// conflicts — but using a map keyed by id keeps it robust if that ever
+		// changes.
+		Map<Integer, Map<ShiftType, ShiftSummaryDTO>> summaryByEmp = new HashMap<>();
+
+		List<DeferredSolveRequest> siblings = deferredSolveRequestRepository
+				.findByStartDateAndEndDateAndCompletedAndRegionNot(
+						current.getStartDate(), current.getEndDate(), true, currentRegion);
+
+		for (DeferredSolveRequest sibling : siblings) {
+			Optional<Rota> rotaOpt = rotaRepository.findById(sibling.getRotaId());
+			if (rotaOpt.isEmpty()) continue;
+
+			for (ShiftAssignment a : rotaOpt.get().getShiftAssignmentList()) {
+				Employee emp = a.getEmployee();
+				if (emp == null) continue;
+				ShiftType type = a.getShift().getShiftTemplate().getShiftType();
+				if (type == ShiftType.SLEEP_IN) continue;
+
+				summaryByEmp
+						.computeIfAbsent(emp.getId(), k -> new HashMap<>())
+						.computeIfAbsent(type, k -> new ShiftSummaryDTO())
+						.add(a.getShift().getDurationInHours());
+			}
+		}
+
+		// Start from the full out-of-region employee roster so admins can also
+		// see (and drag in) staff whose region has no sibling rota this period.
+		// Those employees just get an empty summary.
+		List<Employee> roster = employeeRepository.findActiveOutOfRegion(currentRegion);
+		List<EmployeeWithSummaryDTO> result = new ArrayList<>(roster.size());
+		for (Employee emp : roster) {
+			result.add(new EmployeeWithSummaryDTO(
+					emp.getId(),
+					emp.getFirstName(),
+					emp.getLastName(),
+					emp.getContractType(),
+					emp.getPreferredRegion(),
+					summaryByEmp.getOrDefault(emp.getId(), Collections.emptyMap())));
+		}
+
+		// Stable order: by region, then by name — keeps the tab from shuffling
+		// between renders.
+		result.sort(Comparator
+				.comparing((EmployeeWithSummaryDTO e) -> e.getPreferredRegion() == null ? "" : e.getPreferredRegion())
+				.thenComparing(e -> (e.getFirstName() == null ? "" : e.getFirstName()) + " "
+						+ (e.getLastName() == null ? "" : e.getLastName())));
+
+		return result;
 	}
 }
