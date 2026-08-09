@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Live / continuous real-time planning solver config (P2).
+
+  Differs from the batch solverConfig.xml in three ways:
+    * <daemon>true</daemon> — the solver does NOT return after reaching its best
+      score; it stays alive and re-optimises when problem changes are fed in
+      (added in later phases). It runs until terminateEarly() is called.
+    * No <termination> — a daemon solver is stopped explicitly, not on a clock.
+    * <moveThreadCount>NONE</moveThreadCount> — single-threaded per session so N
+      concurrent live sessions don't each grab a pool of cores. Idle sessions are
+      evicted by LiveSolverSessionService to reclaim the thread.
+
+  Constraints, phases and entity/solution classes are identical to the batch
+  config so a live rota is scored the same way as a batch one.
+-->
+<solver>
+    <solutionClass>com.midco.rota.model.Rota</solutionClass>
+    <entityClass>com.midco.rota.model.ShiftAssignment</entityClass>
+
+    <daemon>true</daemon>
+
+    <scoreDirectorFactory>
+        <constraintProviderClass>com.midco.rota.opt.RotaConstraintProvider</constraintProviderClass>
+        <constraintMatchEnabled>false</constraintMatchEnabled>
+        <indictmentEnabled>false</indictmentEnabled>
+    </scoreDirectorFactory>
+
+    <bestScoreFeasible>0</bestScoreFeasible>
+    <moveThreadCount>NONE</moveThreadCount>
+
+    <!-- PHASE 1: Permanent employees -->
+    <phase>
+        <constructionHeuristic>
+            <constructionHeuristicType>FIRST_FIT_DECREASING</constructionHeuristicType>
+            <entitySorterManner>DECREASING_DIFFICULTY</entitySorterManner>
+            <valueSorterManner>DECREASING_STRENGTH</valueSorterManner>
+            <valueSelector>
+                <variableName>employee</variableName>
+                <filterClass>com.midco.rota.opt.PermanentEmployeeFilter</filterClass>
+            </valueSelector>
+        </constructionHeuristic>
+    </phase>
+
+    <!-- PHASE 2: Zero-hours employees -->
+    <phase>
+        <constructionHeuristic>
+            <constructionHeuristicType>FIRST_FIT_DECREASING</constructionHeuristicType>
+            <entitySorterManner>DECREASING_DIFFICULTY</entitySorterManner>
+            <valueSorterManner>DECREASING_STRENGTH</valueSorterManner>
+            <valueSelector>
+                <variableName>employee</variableName>
+                <filterClass>com.midco.rota.opt.ZeroHoursEmployeeFilter</filterClass>
+            </valueSelector>
+        </constructionHeuristic>
+    </phase>
+
+    <!-- PHASE 3: Local search - CHANGE MOVES ONLY. Runs continuously in daemon mode. -->
+    <phase>
+        <localSearch>
+            <acceptor>
+                <entityTabuSize>7</entityTabuSize>
+                <lateAcceptanceSize>400</lateAcceptanceSize>
+            </acceptor>
+            <moveSelector>
+                <changeMoveSelector>
+                    <entitySelector>
+                        <filterClass>com.midco.rota.opt.ZeroHoursAssignmentFilter</filterClass>
+                    </entitySelector>
+                    <valueSelector>
+                        <variableName>employee</variableName>
+                        <cacheType>PHASE</cacheType>
+                        <selectionOrder>SHUFFLED</selectionOrder>
+                    </valueSelector>
+                </changeMoveSelector>
+            </moveSelector>
+        </localSearch>
+    </phase>
+</solver>
