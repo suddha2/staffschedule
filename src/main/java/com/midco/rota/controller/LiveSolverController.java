@@ -10,6 +10,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -83,5 +84,47 @@ public class LiveSolverController {
 	@GetMapping("/{id}/live/status")
 	public ResponseEntity<?> status(@PathVariable Long id) {
 		return ResponseEntity.ok(liveSolverSessionService.status(id));
+	}
+
+	/**
+	 * Live edit: assign (or clear) the employee on a slot and set its pin state.
+	 * Body: {@code {"assignmentId": <long>, "employeeId": <int|null>, "pin": <bool, default true>}}.
+	 */
+	@PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER','ROTA_EDITOR')")
+	@PostMapping("/{id}/live/assign")
+	public ResponseEntity<?> assign(@PathVariable Long id, @RequestBody Map<String, Object> body) {
+		if (body.get("assignmentId") == null) {
+			return ResponseEntity.badRequest().body(Map.of("error", "assignmentId is required"));
+		}
+		long assignmentId = Long.parseLong(body.get("assignmentId").toString());
+		Integer employeeId = body.get("employeeId") == null ? null : Integer.valueOf(body.get("employeeId").toString());
+		boolean pin = body.get("pin") == null || Boolean.parseBoolean(body.get("pin").toString());
+		try {
+			liveSolverSessionService.applyAssignment(id, assignmentId, employeeId, pin);
+			return ResponseEntity.ok(Map.of("rotaId", id, "assignmentId", assignmentId,
+					"employeeId", employeeId == null ? "" : employeeId, "pin", pin, "queued", true));
+		} catch (IllegalStateException e) {
+			return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", e.getMessage()));
+		}
+	}
+
+	/**
+	 * Live edit: pin or unpin a slot without changing its employee.
+	 * Body: {@code {"assignmentId": <long>, "pinned": <bool>}}.
+	 */
+	@PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER','ROTA_EDITOR')")
+	@PostMapping("/{id}/live/pin")
+	public ResponseEntity<?> pin(@PathVariable Long id, @RequestBody Map<String, Object> body) {
+		if (body.get("assignmentId") == null || body.get("pinned") == null) {
+			return ResponseEntity.badRequest().body(Map.of("error", "assignmentId and pinned are required"));
+		}
+		long assignmentId = Long.parseLong(body.get("assignmentId").toString());
+		boolean pinned = Boolean.parseBoolean(body.get("pinned").toString());
+		try {
+			liveSolverSessionService.applyPin(id, assignmentId, pinned);
+			return ResponseEntity.ok(Map.of("rotaId", id, "assignmentId", assignmentId, "pinned", pinned, "queued", true));
+		} catch (IllegalStateException e) {
+			return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", e.getMessage()));
+		}
 	}
 }

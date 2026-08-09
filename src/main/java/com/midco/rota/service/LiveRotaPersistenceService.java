@@ -52,6 +52,13 @@ public class LiveRotaPersistenceService {
 			if (sa.getEmployee() != null) {
 				sa.getEmployee().getId();
 			}
+			// @PlanningId (transient) is null after a JPA load — the no-arg
+			// constructor never sets it. Anchor it to the stable DB id so
+			// OptaPlanner has a valid planning id and live ProblemChanges can
+			// target a slot by its DB id.
+			if (sa.getPlanningId() == null && sa.getId() != null) {
+				sa.setPlanningId(String.valueOf(sa.getId()));
+			}
 		}
 		return rota;
 	}

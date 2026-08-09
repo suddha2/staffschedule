@@ -20,6 +20,8 @@ import com.midco.rota.dto.LiveRotaUpdate.Slot;
 import com.midco.rota.model.Employee;
 import com.midco.rota.model.Rota;
 import com.midco.rota.model.ShiftAssignment;
+import com.midco.rota.opt.AssignEmployeeProblemChange;
+import com.midco.rota.opt.SetPinProblemChange;
 
 /**
  * Owns the lifecycle of continuous / live real-time planning sessions (P2).
@@ -126,6 +128,37 @@ public class LiveSolverSessionService {
 		session.lastActivityMs = System.currentTimeMillis();
 		logger.info("Snapshotted live rota {} -> {} assignment change(s) persisted", rotaId, changed);
 		return changed;
+	}
+
+	/**
+	 * Live edit (P3): assign (or clear, when {@code employeeId} is null) the
+	 * employee on a slot and set its pin state, feeding it to the running solver
+	 * as a ProblemChange. The solver re-optimises and streams a new best solution.
+	 */
+	public void applyAssignment(Long rotaId, long assignmentId, Integer employeeId, boolean pin) {
+		requireActive(rotaId);
+		liveSolverManager.addProblemChange(rotaId, new AssignEmployeeProblemChange(assignmentId, employeeId, pin));
+		touch(rotaId);
+	}
+
+	/** Live edit (P3): pin or unpin a slot without changing its employee. */
+	public void applyPin(Long rotaId, long assignmentId, boolean pinned) {
+		requireActive(rotaId);
+		liveSolverManager.addProblemChange(rotaId, new SetPinProblemChange(assignmentId, pinned));
+		touch(rotaId);
+	}
+
+	private void requireActive(Long rotaId) {
+		if (!sessions.containsKey(rotaId) || liveSolverManager.getSolverStatus(rotaId) == SolverStatus.NOT_SOLVING) {
+			throw new IllegalStateException("No live solver running for rota " + rotaId);
+		}
+	}
+
+	private void touch(Long rotaId) {
+		LiveSession session = sessions.get(rotaId);
+		if (session != null) {
+			session.lastActivityMs = System.currentTimeMillis();
+		}
 	}
 
 	/** Terminate the live solver for {@code rotaId} and forget the session. */
