@@ -166,6 +166,31 @@ public class LiveSolverSessionService {
 		touch(rotaId);
 	}
 
+	/** True when a live session is tracked and its solver is actively running. */
+	public boolean isLive(Long rotaId) {
+		return sessions.containsKey(rotaId) && liveSolverManager.getSolverStatus(rotaId) != SolverStatus.NOT_SOLVING;
+	}
+
+	/**
+	 * Apply a whole desired assignment set (assignment id -&gt; employee id, null =
+	 * unassign) to the running solver as ProblemChanges. Used by /api/save when the
+	 * rota is live, so a save routes through the solver instead of writing straight
+	 * to the DB and diverging from the solver's in-memory truth. Assigning pins the
+	 * slot; unassigning unpins it. Returns the number of changes queued.
+	 */
+	public int applyAssignments(Long rotaId, Map<Long, Integer> assignmentToEmployee) {
+		requireActive(rotaId);
+		int count = 0;
+		for (Map.Entry<Long, Integer> entry : assignmentToEmployee.entrySet()) {
+			Integer employeeId = entry.getValue();
+			liveSolverManager.addProblemChange(rotaId,
+					new AssignEmployeeProblemChange(entry.getKey(), employeeId, employeeId != null));
+			count++;
+		}
+		touch(rotaId);
+		return count;
+	}
+
 	private void requireActive(Long rotaId) {
 		if (!sessions.containsKey(rotaId) || liveSolverManager.getSolverStatus(rotaId) == SolverStatus.NOT_SOLVING) {
 			throw new IllegalStateException("No live solver running for rota " + rotaId);

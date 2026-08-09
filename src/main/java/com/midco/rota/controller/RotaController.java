@@ -65,6 +65,7 @@ import com.midco.rota.service.PayCycleDataService;
 import com.midco.rota.service.PeriodService;
 import com.midco.rota.service.PinValidationService;
 import com.midco.rota.service.RosterAnalysisService;
+import com.midco.rota.service.LiveSolverSessionService;
 import com.midco.rota.service.RosterUpdateService;
 import com.midco.rota.service.ShiftRequestService;
 import com.midco.rota.util.PayCycleRow;
@@ -100,6 +101,7 @@ public class RotaController {
 	private final ShiftAssignmentRepository shiftAssignmentRepository;
 	private final RateTableProvider rateTableProvider;
 	private final SolverTrigger solverTrigger;
+	private final LiveSolverSessionService liveSolverSessionService;
 	// private final ExecutorService securityExecutorService;
 	@Autowired
 	private SimpUserRegistry simpUserRegistry;
@@ -111,7 +113,7 @@ public class RotaController {
 			RotaRepository rotaRepository, ShiftRepository shiftRepository, PayCycleDataService payCycleDataService,
 			PeriodService periodService, RotaCorrectionRepository rotaCorrectionRepository,
 			ShiftAssignmentRepository shiftAssignmentRepository, RateTableProvider rateTableProvider,
-			SolverTrigger solverTrigger) {
+			SolverTrigger solverTrigger, LiveSolverSessionService liveSolverSessionService) {
 		this.solverManager = solverManager;
 		this.updateService = updateService;
 		this.explanationService = explanationService;
@@ -128,6 +130,7 @@ public class RotaController {
 		this.shiftAssignmentRepository = shiftAssignmentRepository;
 		this.rateTableProvider = rateTableProvider;
 		this.solverTrigger = solverTrigger;
+		this.liveSolverSessionService = liveSolverSessionService;
 	}
 
 	@GetMapping("/regions")
@@ -390,6 +393,34 @@ public class RotaController {
 						sa.getShift().getShiftTemplate().getStartTime(), sa.getShift().getId());
 				existingAssignmentsByKey.computeIfAbsent(key, k -> new ArrayList<>()).add(sa);
 			}
+		}
+
+		// Live-aware reroute: if a live solver session owns this rota, a save must
+		// not write straight to the DB (that would diverge from the solver's
+		// in-memory truth). Translate the desired per-slot employees into
+		// ProblemChanges and hand them to the running solver instead; the caller
+		// then persists via the live snapshot. Assignments pair with incoming
+		// employees by index, exactly as the DB path below does.
+		if (liveSolverSessionService.isLive(rotaId)) {
+			Map<Long, Integer> desired = new HashMap<>();
+			for (Map.Entry<String, List<Map<String, Object>>> entry : incomingAssignments.entrySet()) {
+				List<ShiftAssignment> slotAssignments = existingAssignmentsByKey.get(entry.getKey());
+				if (slotAssignments == null || slotAssignments.isEmpty()) {
+					continue;
+				}
+				List<Map<String, Object>> empList = entry.getValue();
+				for (int i = 0; i < slotAssignments.size(); i++) {
+					Integer empId = null;
+					if (i < empList.size() && empList.get(i) != null && empList.get(i).get("id") != null) {
+						empId = Integer.valueOf(empList.get(i).get("id").toString());
+					}
+					desired.put(slotAssignments.get(i).getId(), empId);
+				}
+			}
+			int queued = liveSolverSessionService.applyAssignments(rotaId, desired);
+			log.info("Save rerouted to live solver for rota {}: {} change(s) queued", rotaId, queued);
+			return ResponseEntity.ok(Map.of("message", "Queued to live solver", "saveType", "Live",
+					"changesQueued", queued));
 		}
 
 		List<ShiftAssignment> modifiedAssignments = new ArrayList<>();
