@@ -1,5 +1,6 @@
 package com.midco.rota.service;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
@@ -14,6 +15,7 @@ import com.midco.rota.model.Rota;
 import com.midco.rota.model.ShiftAssignment;
 import com.midco.rota.repository.EmployeeRepository;
 import com.midco.rota.repository.RotaRepository;
+import com.midco.rota.util.IdealShiftCount;
 
 /**
  * Transactional DB boundary for live solver sessions (P2). Kept as its own bean
@@ -45,6 +47,18 @@ public class LiveRotaPersistenceService {
 
 		// Force-initialise lazy graph before the transaction closes.
 		rota.getEmployeeList().size();
+
+		// Transient @ProblemFactCollectionProperty fields are only populated by the
+		// Rota(employeeList, shiftAssignmentList) constructor; a JPA load uses the
+		// no-arg constructor and leaves idealShiftCountList null, which OptaPlanner
+		// rejects ("factCollectionProperty ... should never return null"). Rebuild
+		// it exactly as the constructor does.
+		if (rota.getIdealShiftCountList() == null) {
+			int ideal = rota.getEmployeeList().isEmpty() ? 0
+					: rota.getShiftAssignmentList().size() / rota.getEmployeeList().size();
+			rota.setIdealShiftCountList(List.of(new IdealShiftCount(ideal)));
+		}
+
 		for (ShiftAssignment sa : rota.getShiftAssignmentList()) {
 			if (sa.getShift() != null && sa.getShift().getShiftTemplate() != null) {
 				sa.getShift().getShiftTemplate().getShiftType();
