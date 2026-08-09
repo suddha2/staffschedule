@@ -17,6 +17,6 @@ public record LiveRotaUpdate(
 		int total,
 		List<Slot> slots) {
 
-	public record Slot(Long assignmentId, Integer employeeId, String employeeName) {
+	public record Slot(Long assignmentId, Integer employeeId, String employeeName, boolean pinned) {
 	}
 }

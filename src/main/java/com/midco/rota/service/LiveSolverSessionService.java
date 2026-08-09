@@ -206,7 +206,7 @@ public class LiveSolverSessionService {
 			if (emp != null) {
 				assigned++;
 			}
-			slots.add(new Slot(sa.getId(), empId, empName));
+			slots.add(new Slot(sa.getId(), empId, empName, sa.isPinned()));
 		}
 		String score = best.getScore() == null ? null : best.getScore().toString();
 		String solverStatus = liveSolverManager.getSolverStatus(rotaId).name();
