@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.midco.rota.service.LiveCapacityException;
 import com.midco.rota.service.LiveSolverSessionService;
 
 /**
@@ -42,11 +44,13 @@ public class LiveSolverController {
 
 	@PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER','ROTA_EDITOR')")
 	@PostMapping("/{id}/live/start")
-	public ResponseEntity<?> start(@PathVariable Long id) {
+	public ResponseEntity<?> start(@PathVariable Long id, Authentication auth) {
 		try {
-			boolean started = liveSolverSessionService.start(id);
+			boolean started = liveSolverSessionService.start(id, auth.getName());
 			return ResponseEntity.ok(Map.of("rotaId", id, "started", started,
 					"message", started ? "Live solver started" : "Live solver already running"));
+		} catch (LiveCapacityException e) {
+			return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(Map.of("error", e.getMessage()));
 		} catch (IllegalArgumentException e) {
 			return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
 		} catch (Exception e) {
@@ -58,9 +62,9 @@ public class LiveSolverController {
 
 	@PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER','ROTA_EDITOR')")
 	@PostMapping("/{id}/live/snapshot")
-	public ResponseEntity<?> snapshot(@PathVariable Long id) {
+	public ResponseEntity<?> snapshot(@PathVariable Long id, Authentication auth) {
 		try {
-			int changed = liveSolverSessionService.snapshot(id);
+			int changed = liveSolverSessionService.snapshot(id, auth.getName());
 			return ResponseEntity.ok(Map.of("rotaId", id, "assignmentsChanged", changed));
 		} catch (IllegalStateException e) {
 			return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", e.getMessage()));
@@ -75,8 +79,8 @@ public class LiveSolverController {
 
 	@PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER','ROTA_EDITOR')")
 	@PostMapping("/{id}/live/stop")
-	public ResponseEntity<?> stop(@PathVariable Long id) {
-		boolean tracked = liveSolverSessionService.stop(id);
+	public ResponseEntity<?> stop(@PathVariable Long id, Authentication auth) {
+		boolean tracked = liveSolverSessionService.stop(id, auth.getName());
 		return ResponseEntity.ok(Map.of("rotaId", id, "stopped", true, "wasTracked", tracked));
 	}
 

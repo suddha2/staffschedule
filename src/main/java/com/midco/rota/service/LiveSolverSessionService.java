@@ -45,6 +45,11 @@ public class LiveSolverSessionService {
 	private static final long MIN_PUSH_INTERVAL_MS = 1000L;
 	/** Stop a session that has produced no new best solution for this long. */
 	private static final long IDLE_TIMEOUT_MS = 15 * 60 * 1000L;
+	/**
+	 * Hard cap on concurrent live sessions (P5). Each holds a daemon solver busy,
+	 * so this bounds CPU/heap independently of the solver pool's parallel count.
+	 */
+	private static final int MAX_LIVE_SESSIONS = 3;
 
 	private final SolverManager<Rota, Long> liveSolverManager;
 	private final LiveRotaPersistenceService persistenceService;
@@ -66,9 +71,13 @@ public class LiveSolverSessionService {
 		volatile Rota latestBest;
 		volatile long lastActivityMs;
 		volatile long lastPushMs;
+		final long startedAtMs;
+		final String startedBy;
 
-		LiveSession(long nowMs) {
+		LiveSession(long nowMs, String startedBy) {
 			this.lastActivityMs = nowMs;
+			this.startedAtMs = nowMs;
+			this.startedBy = startedBy;
 		}
 	}
 
@@ -77,11 +86,18 @@ public class LiveSolverSessionService {
 	 * already active for that rota. Synchronized so two concurrent starts for the
 	 * same rota can't both call solveAndListen.
 	 */
-	public synchronized boolean start(Long rotaId) {
+	public synchronized boolean start(Long rotaId, String startedBy) {
 		SolverStatus status = liveSolverManager.getSolverStatus(rotaId);
 		if (status != SolverStatus.NOT_SOLVING) {
 			logger.info("Live solver already active for rota {} ({})", rotaId, status);
 			return false;
+		}
+
+		// Capacity guard (P5): only count sessions for *other* rotas — re-starting
+		// an already-tracked rota is fine.
+		if (!sessions.containsKey(rotaId) && sessions.size() >= MAX_LIVE_SESSIONS) {
+			throw new LiveCapacityException("At capacity: " + MAX_LIVE_SESSIONS
+					+ " live solver sessions already running. Stop one before starting another.");
 		}
 
 		Rota rota = persistenceService.loadFullRota(rotaId);
@@ -89,9 +105,10 @@ public class LiveSolverSessionService {
 		rota.setPlanningId(rotaId);
 		sleepInPairingService.resetSleepIns(rota);
 
-		sessions.put(rotaId, new LiveSession(System.currentTimeMillis()));
+		sessions.put(rotaId, new LiveSession(System.currentTimeMillis(), startedBy));
 		liveSolverManager.solveAndListen(rotaId, id -> rota, best -> onBestSolution(rotaId, best));
-		logger.info("Live solver started for rota {}", rotaId);
+		logger.info("Live solver started for rota {} by {}", rotaId, startedBy);
+		broadcastControl(rotaId, "STARTED", startedBy);
 		return true;
 	}
 
@@ -117,7 +134,7 @@ public class LiveSolverSessionService {
 	 * Persist the current live best solution back to the DB without stopping the
 	 * solver. Returns the number of assignments whose employee changed.
 	 */
-	public int snapshot(Long rotaId) {
+	public int snapshot(Long rotaId, String by) {
 		LiveSession session = sessions.get(rotaId);
 		if (session == null || session.latestBest == null) {
 			throw new IllegalStateException("No live best solution to snapshot for rota " + rotaId);
@@ -127,6 +144,7 @@ public class LiveSolverSessionService {
 		int changed = persistenceService.applySnapshot(rotaId, best);
 		session.lastActivityMs = System.currentTimeMillis();
 		logger.info("Snapshotted live rota {} -> {} assignment change(s) persisted", rotaId, changed);
+		broadcastControl(rotaId, "SNAPSHOT", by);
 		return changed;
 	}
 
@@ -162,11 +180,26 @@ public class LiveSolverSessionService {
 	}
 
 	/** Terminate the live solver for {@code rotaId} and forget the session. */
-	public boolean stop(Long rotaId) {
+	public boolean stop(Long rotaId, String by) {
 		boolean tracked = sessions.remove(rotaId) != null;
 		liveSolverManager.terminateEarly(rotaId);
-		logger.info("Live solver stopped for rota {} (was tracked: {})", rotaId, tracked);
+		logger.info("Live solver stopped for rota {} by {} (was tracked: {})", rotaId, by, tracked);
+		broadcastControl(rotaId, "STOPPED", by);
 		return tracked;
+	}
+
+	/**
+	 * Announce a lifecycle change to every viewer of the rota's control topic
+	 * (P5 multi-editor awareness). Clients use STOPPED to drop out of live mode
+	 * when another editor ends the shared session.
+	 */
+	private void broadcastControl(Long rotaId, String type, String by) {
+		Map<String, Object> event = new HashMap<>();
+		event.put("type", type);
+		event.put("rotaId", rotaId);
+		event.put("by", by);
+		event.put("at", System.currentTimeMillis());
+		messagingTemplate.convertAndSend("/topic/rota/" + rotaId + "/control", event);
 	}
 
 	public Map<String, Object> status(Long rotaId) {
@@ -179,6 +212,10 @@ public class LiveSolverSessionService {
 		result.put("score", session != null && session.latestBest != null && session.latestBest.getScore() != null
 				? session.latestBest.getScore().toString()
 				: null);
+		result.put("startedBy", session != null ? session.startedBy : null);
+		result.put("startedAt", session != null ? session.startedAtMs : null);
+		result.put("activeSessions", sessions.size());
+		result.put("maxSessions", MAX_LIVE_SESSIONS);
 		return result;
 	}
 
@@ -189,7 +226,7 @@ public class LiveSolverSessionService {
 		for (Map.Entry<Long, LiveSession> entry : sessions.entrySet()) {
 			if (now - entry.getValue().lastActivityMs > IDLE_TIMEOUT_MS) {
 				logger.info("Evicting idle live solver for rota {}", entry.getKey());
-				stop(entry.getKey());
+				stop(entry.getKey(), "system(idle-eviction)");
 			}
 		}
 	}
