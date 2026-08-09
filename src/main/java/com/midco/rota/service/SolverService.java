@@ -1,8 +1,6 @@
 package com.midco.rota.service;
 
 import java.time.LocalDateTime;
-import java.util.HashSet;
-import java.util.Set;
 import java.util.concurrent.ExecutionException;
 
 import org.optaplanner.core.api.solver.SolverJob;
@@ -15,9 +13,7 @@ import org.springframework.stereotype.Service;
 import com.midco.rota.controller.AuthController;
 import com.midco.rota.model.DeferredSolveRequest;
 import com.midco.rota.model.Rota;
-import com.midco.rota.model.ShiftAssignment;
 import com.midco.rota.repository.RotaRepository;
-import com.midco.rota.util.ShiftType;
 
 @Service
 public class SolverService {
@@ -30,16 +26,19 @@ public class SolverService {
 	private final ConstraintExplanationService explanationService;
 //	private final DeferredSolveRequestRepository deferredSolveRequestRepository;
 	private final RosterAnalysisService rosterAnalysisService;
+	private final SleepInPairingService sleepInPairingService;
 //	private final RotaRepository rotaRepository;
 
 	public SolverService(SolverManager<Rota, Long> solverManager, RosterUpdateService rosterUpdateService,
 			ConstraintExplanationService explanationService, RosterAnalysisService rosterAnalysisService,
-			RotaRepository rotaRepository, AuthController authController) {
+			RotaRepository rotaRepository, AuthController authController,
+			SleepInPairingService sleepInPairingService) {
 		this.solverManager = solverManager;
 		this.rosterUpdateService = rosterUpdateService;
 		this.explanationService = explanationService;
 //		this.deferredSolveRequestRepository = deferredSolveRequestRepository;
 		this.rosterAnalysisService = rosterAnalysisService;
+		this.sleepInPairingService = sleepInPairingService;
 //		this.rotaRepository = rotaRepository;
 //		this.pasetoAuthenticationFilter = pasetoAuthenticationFilter;
 
@@ -62,85 +61,16 @@ public class SolverService {
 //	}
 	public void solveAsync(Rota schedule, Long problemId, DeferredSolveRequest deferredSolveRequest) {
 
-		// Initialize SLEEP_IN as unassigned (pinned via isPinned())
-		for (ShiftAssignment sa : schedule.getShiftAssignmentList()) {
-			if (sa.getShift().getShiftTemplate().getShiftType() == ShiftType.SLEEP_IN) {
-				sa.setEmployee(null);
-			}
-		}
+		// Blank SLEEP_IN slots before solving (they are pinned; the service owns
+		// the reset + post-solve pairing rules — see SleepInPairingService).
+		sleepInPairingService.resetSleepIns(schedule);
 
 		solverManager.solve(problemId, id -> schedule, bestSolution -> {
 			try {
 
 				// ========== SLEEP_IN PAIRING ==========
-				int pairedCount = 0;
-				int failedPairings = 0;
-				Set<ShiftAssignment> pairedSleepIns = new HashSet<>();
+				sleepInPairingService.pairSleepIns(bestSolution);
 
-				for (ShiftAssignment longDaySa : bestSolution.getShiftAssignmentList()) {
-					if (longDaySa.getShift().getShiftTemplate().getShiftType() == ShiftType.LONG_DAY
-							&& longDaySa.getEmployee() != null) {
-
-						String pairId = longDaySa.getShift().getPairId();
-						if (pairId == null) {
-							continue;
-						}
-
-						boolean paired = false;
-
-						for (ShiftAssignment sleepInSa : bestSolution.getShiftAssignmentList()) {
-							if (sleepInSa.getShift().getShiftTemplate().getShiftType() == ShiftType.SLEEP_IN
-									&& pairId.equals(sleepInSa.getShift().getPairId())
-									&& !pairedSleepIns.contains(sleepInSa)) {
-
-								sleepInSa.setEmployee(longDaySa.getEmployee());
-								
-								// ✅ FIX 1: Ensure SLEEP_IN has Rota reference
-								// This is critical to avoid the null rota_id error
-								if (sleepInSa.getRota() == null) {
-									sleepInSa.setRota(bestSolution);
-								}
-								
-								pairedSleepIns.add(sleepInSa);
-								pairedCount++;
-								paired = true;
-								break;
-							}
-						}
-
-						if (!paired) {
-							failedPairings++;
-							logger.warn("No available SLEEP_IN for LONG_DAY at {} (pairId: {})",
-									longDaySa.getShift().getShiftTemplate().getLocation(), pairId);
-						}
-					}
-				}
-
-				logger.info("\n=== SLEEP_IN PAIRING ===");
-				logger.info("Successfully paired: {}", pairedCount);
-
-				if (failedPairings > 0) {
-					logger.info("Failed pairings: {}", failedPairings);
-				}
-
-				long unpairedSleepIn = bestSolution.getShiftAssignmentList().stream()
-						.filter(sa -> sa.getShift().getShiftTemplate().getShiftType() == ShiftType.SLEEP_IN)
-						.filter(sa -> sa.getEmployee() == null).count();
-
-				if (unpairedSleepIn > 0) {
-					logger.warn("{} SLEEP_IN shifts remain unassigned", unpairedSleepIn);
-				}
-
-				// ✅ FIX 2: Verify ALL shift assignments have Rota reference
-				// Double-check before persisting to catch any missed assignments
-				for (ShiftAssignment sa : bestSolution.getShiftAssignmentList()) {
-					if (sa.getRota() == null) {
-						logger.warn("ShiftAssignment missing Rota reference - fixing: {}", 
-							sa.getShift().getShiftTemplate().getShiftType());
-						sa.setRota(bestSolution);
-					}
-				}
-				
 				// ========== PERSIST ==========
 				deferredSolveRequest.setCompleted(true);
 				deferredSolveRequest.setCompletedAt(LocalDateTime.now());
