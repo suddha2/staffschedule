@@ -57,10 +57,42 @@ public class SolverTrigger {
 		this.pinnedTemplateAssignmentRepository = pinnedTemplateAssignmentRepository;
 	}
 
-	@Scheduled(cron = "0 */2 * * * *") // Every 2 Mins
+	// Serialises solve scheduling. Without it, two near-simultaneous enqueues
+	// could both pass the getSolverStatus guard for the same (oldest) request
+	// and call SolverManager.solve twice with the same problemId, which throws.
+	private final java.util.concurrent.locks.ReentrantLock triggerLock = new java.util.concurrent.locks.ReentrantLock();
 
+	/**
+	 * Fallback / backlog drain. Runs every 2 minutes and picks up anything the
+	 * immediate {@link #triggerSolverAsync()} kick missed — e.g. a request
+	 * enqueued while another was still solving, an async failure, or requests
+	 * left pending across a restart.
+	 */
+	@Scheduled(cron = "0 */2 * * * *") // Every 2 Mins
 	public void triggerSolver() {
-		deferredSolveRequestRepository.findFirstByCompletedFalse().ifPresentOrElse(deferredSolveRequest -> {
+		processNextPendingRequest();
+	}
+
+	/**
+	 * Immediate kick, invoked right after a request is enqueued so a solve
+	 * starts without waiting for the ≤2-minute cron tick. Runs off the HTTP
+	 * request thread via the shared security-aware async executor; the cron
+	 * above remains the safety net.
+	 */
+	@org.springframework.scheduling.annotation.Async("applicationTaskExecutor")
+	public void triggerSolverAsync() {
+		processNextPendingRequest();
+	}
+
+	private void processNextPendingRequest() {
+		// If a scheduling pass is already running, skip: the in-flight pass (or
+		// the next cron tick) will handle whatever is still pending.
+		if (!triggerLock.tryLock()) {
+			logger.info("Solve scheduling already in progress; skipping this trigger");
+			return;
+		}
+		try {
+			deferredSolveRequestRepository.findFirstByCompletedFalse().ifPresentOrElse(deferredSolveRequest -> {
 			if (solverService.getSolverStatus(deferredSolveRequest.getId()) != SolverStatus.NOT_SOLVING) {
 				logger.info("Solving in progress for request {}", deferredSolveRequest.getId());
 				return;
@@ -93,8 +125,11 @@ public class SolverTrigger {
 			logger.info("triggerSolver=== ");
 			solverService.solveAsync(problem, deferredSolveRequest.getId(), deferredSolveRequest);
 		}, () -> {
-			logger.info("No solver request available to process");
-		});
+				logger.info("No solver request available to process");
+			});
+		} finally {
+			triggerLock.unlock();
+		}
 	}
 
 	public Rota loadData(DeferredSolveRequest deferredSolveRequest) {

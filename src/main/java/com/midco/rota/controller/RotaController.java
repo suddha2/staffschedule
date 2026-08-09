@@ -43,6 +43,7 @@ import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBo
 
 import com.midco.rota.PinConflictException;
 import com.midco.rota.RateTableProvider;
+import com.midco.rota.SolverTrigger;
 import com.midco.rota.dto.ConflictError;
 import com.midco.rota.dto.ScheduleResponseDTO;
 import com.midco.rota.model.DeferredSolveRequest;
@@ -98,6 +99,7 @@ public class RotaController {
 	private final RotaCorrectionRepository rotaCorrectionRepository;
 	private final ShiftAssignmentRepository shiftAssignmentRepository;
 	private final RateTableProvider rateTableProvider;
+	private final SolverTrigger solverTrigger;
 	// private final ExecutorService securityExecutorService;
 	@Autowired
 	private SimpUserRegistry simpUserRegistry;
@@ -108,7 +110,8 @@ public class RotaController {
 			DeferredSolveRequestRepository deferredSolveRequestRepository, AuthController authController,
 			RotaRepository rotaRepository, ShiftRepository shiftRepository, PayCycleDataService payCycleDataService,
 			PeriodService periodService, RotaCorrectionRepository rotaCorrectionRepository,
-			ShiftAssignmentRepository shiftAssignmentRepository, RateTableProvider rateTableProvider) {
+			ShiftAssignmentRepository shiftAssignmentRepository, RateTableProvider rateTableProvider,
+			SolverTrigger solverTrigger) {
 		this.solverManager = solverManager;
 		this.updateService = updateService;
 		this.explanationService = explanationService;
@@ -124,6 +127,7 @@ public class RotaController {
 		this.rotaCorrectionRepository = rotaCorrectionRepository;
 		this.shiftAssignmentRepository = shiftAssignmentRepository;
 		this.rateTableProvider = rateTableProvider;
+		this.solverTrigger = solverTrigger;
 	}
 
 	@GetMapping("/regions")
@@ -191,6 +195,9 @@ public class RotaController {
 
 		request = deferredSolveRequestRepository.save(request);
 		System.out.println("============================= " + request.toString() + " : Saved  ");
+		// Kick the solver now instead of waiting for the ≤2-minute cron tick.
+		// Runs async; the @Scheduled SolverTrigger remains the fallback drain.
+		solverTrigger.triggerSolverAsync();
 		return ResponseEntity.ok(request);
 	}
 
@@ -229,6 +236,10 @@ public class RotaController {
 		}
 
 		request = deferredSolveRequestRepository.save(request);
+
+		// Kick the solver now instead of waiting for the ≤2-minute cron tick.
+		// Runs async; the @Scheduled SolverTrigger remains the fallback drain.
+		solverTrigger.triggerSolverAsync();
 
 		return ResponseEntity.ok(request);
 	}
