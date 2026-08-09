@@ -6,7 +6,7 @@ import java.util.stream.Collectors;
 
 import org.optaplanner.core.api.score.ScoreExplanation;
 import org.optaplanner.core.api.score.ScoreManager;
-import org.optaplanner.core.api.score.buildin.hardsoft.HardSoftScore;
+import org.optaplanner.core.api.score.buildin.hardsoftlong.HardSoftLongScore;
 import org.optaplanner.core.api.score.constraint.ConstraintMatchTotal;
 import org.optaplanner.core.api.score.constraint.Indictment;
 import org.slf4j.Logger;
@@ -23,9 +23,9 @@ import com.midco.rota.util.ContractType;
 @Service
 public class RosterAnalysisService {
 
-	private final ScoreManager<Rota, HardSoftScore> scoreManager;
+	private final ScoreManager<Rota, HardSoftLongScore> scoreManager;
 
-	public RosterAnalysisService(ScoreManager<Rota, HardSoftScore> scoreManager) {
+	public RosterAnalysisService(ScoreManager<Rota, HardSoftLongScore> scoreManager) {
 		this.scoreManager = scoreManager;
 
 	}
@@ -38,8 +38,8 @@ public class RosterAnalysisService {
 				.count();
 		logger.debug("Unassigned shifts: {}", unassignedCount);
 
-		ScoreExplanation<Rota, HardSoftScore> explanation = scoreManager.explain(solution);
-		Map<Object, Indictment<HardSoftScore>> indictmentMap = explanation.getIndictmentMap();
+		ScoreExplanation<Rota, HardSoftLongScore> explanation = scoreManager.explain(solution);
+		Map<Object, Indictment<HardSoftLongScore>> indictmentMap = explanation.getIndictmentMap();
 
 		logUnassignedShifts(solution);
 
@@ -71,8 +71,8 @@ public class RosterAnalysisService {
 		});
 	}
 
-	public void logConstraintViolations(Rota rota, ScoreManager<Rota, HardSoftScore> scoreMgr) {
-		ScoreExplanation<Rota, HardSoftScore> explanation = scoreMgr.explain(rota);
+	public void logConstraintViolations(Rota rota, ScoreManager<Rota, HardSoftLongScore> scoreMgr) {
+		ScoreExplanation<Rota, HardSoftLongScore> explanation = scoreMgr.explain(rota);
 
 		logger.info("🔍 Constraint Contributions:");
 		for (ConstraintMatchTotal<?> match : explanation.getConstraintMatchTotalMap().values()) {
@@ -81,9 +81,9 @@ public class RosterAnalysisService {
 		}
 
 		logger.info("🧠 Indictments:");
-		for (Map.Entry<Object, Indictment<HardSoftScore>> entry : explanation.getIndictmentMap().entrySet()) {
+		for (Map.Entry<Object, Indictment<HardSoftLongScore>> entry : explanation.getIndictmentMap().entrySet()) {
 			Object entity = entry.getKey();
-			Indictment<HardSoftScore> indictment = entry.getValue();
+			Indictment<HardSoftLongScore> indictment = entry.getValue();
 
 			if (!indictment.getConstraintMatchSet().isEmpty()) {
 				logger.info("  🔸 Entity: " + entity + " | Score impact: " + indictment.getScore() + " | Constraints: "
