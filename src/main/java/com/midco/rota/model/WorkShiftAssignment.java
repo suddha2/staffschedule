@@ -7,23 +7,18 @@ import com.midco.rota.opt.ShiftAssignmentDifficultyComparator;
 
 import jakarta.persistence.DiscriminatorValue;
 import jakarta.persistence.Entity;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Transient;
 
 /**
  * A work shift assignment (DAY / LONG_DAY / WAKING_NIGHT / FLOATING): its
  * {@code employee} is the genuine {@link PlanningVariable} the solver assigns.
+ * The backing field lives on {@link ShiftAssignment}; the annotation is on the
+ * overridden getter so both subclasses share the {@code employee_id} column.
  */
 @Entity
 @DiscriminatorValue("WORK")
 @PlanningEntity(difficultyComparatorClass = ShiftAssignmentDifficultyComparator.class)
 public class WorkShiftAssignment extends ShiftAssignment {
-
-	@ManyToOne
-	@JoinColumn(name = "employee_id")
-	@PlanningVariable(valueRangeProviderRefs = "employeeRange", nullable = true)
-	private Employee employee;
 
 	/**
 	 * For LONG_DAY assignments, the SLEEP_IN slot paired to this one (same
@@ -42,13 +37,9 @@ public class WorkShiftAssignment extends ShiftAssignment {
 	}
 
 	@Override
+	@PlanningVariable(valueRangeProviderRefs = "employeeRange", nullable = true)
 	public Employee getEmployee() {
-		return employee;
-	}
-
-	@Override
-	public void setEmployee(Employee employee) {
-		this.employee = employee;
+		return super.getEmployee();
 	}
 
 	public SleepInShiftAssignment getPairedSleepIn() {

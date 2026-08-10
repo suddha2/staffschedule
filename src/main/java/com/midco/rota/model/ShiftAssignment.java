@@ -62,6 +62,17 @@ public abstract class ShiftAssignment {
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
 
+	/**
+	 * Mapped to the shared {@code employee_id} column on the base so the two
+	 * subclasses don't both map it (Hibernate forbids duplicate column mappings in
+	 * single-table inheritance). The OptaPlanner role differs per subclass via the
+	 * overridden {@link #getEmployee()} getter: genuine variable in
+	 * {@link WorkShiftAssignment}, shadow in {@link SleepInShiftAssignment}.
+	 */
+	@ManyToOne
+	@JoinColumn(name = "employee_id")
+	private Employee employee;
+
 	@ManyToOne
 	@JoinColumn(name = "rota_id")
 	@JsonIgnore
@@ -110,10 +121,18 @@ public abstract class ShiftAssignment {
 		this.planningId = UUID.randomUUID().toString();
 	}
 
-	/** Genuine planning variable in {@link WorkShiftAssignment}; shadow in {@link SleepInShiftAssignment}. */
-	public abstract Employee getEmployee();
+	/**
+	 * Overridden in the subclasses to carry the OptaPlanner role annotation
+	 * (@PlanningVariable / @ShadowVariable); the backing field lives here on the
+	 * base to keep a single {@code employee_id} column.
+	 */
+	public Employee getEmployee() {
+		return employee;
+	}
 
-	public abstract void setEmployee(Employee employee);
+	public void setEmployee(Employee employee) {
+		this.employee = employee;
+	}
 
 	public Shift getShift() {
 		return shift;
