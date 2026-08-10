@@ -1,6 +1,11 @@
 <solver>
     <solutionClass>com.midco.rota.model.Rota</solutionClass>
-    <entityClass>com.midco.rota.model.ShiftAssignment</entityClass>
+    <!-- Planning entity hierarchy: work shifts hold the genuine employee variable;
+         SLEEP_IN holds a shadow that mirrors its paired LONG_DAY. Only the concrete
+         subclasses are entities; the non-entity superclass ShiftAssignment is what
+         the ~40 constraints forEach() over. -->
+    <entityClass>com.midco.rota.model.WorkShiftAssignment</entityClass>
+    <entityClass>com.midco.rota.model.SleepInShiftAssignment</entityClass>
     <environmentMode>FAST_ASSERT</environmentMode>
     
     <scoreDirectorFactory>

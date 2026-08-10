@@ -16,7 +16,8 @@
 -->
 <solver>
     <solutionClass>com.midco.rota.model.Rota</solutionClass>
-    <entityClass>com.midco.rota.model.ShiftAssignment</entityClass>
+    <entityClass>com.midco.rota.model.WorkShiftAssignment</entityClass>
+    <entityClass>com.midco.rota.model.SleepInShiftAssignment</entityClass>
 
     <daemon>true</daemon>
 

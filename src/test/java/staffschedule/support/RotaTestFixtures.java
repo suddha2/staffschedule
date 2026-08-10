@@ -11,6 +11,7 @@ import com.midco.rota.model.Employee;
 import com.midco.rota.model.Rota;
 import com.midco.rota.model.Shift;
 import com.midco.rota.model.ShiftAssignment;
+import com.midco.rota.model.ShiftAssignmentFactory;
 import com.midco.rota.model.ShiftTemplate;
 import com.midco.rota.util.ShiftType;
 
@@ -54,7 +55,7 @@ public final class RotaTestFixtures {
 	}
 
 	public static ShiftAssignment assignment(long id, String location, ShiftType type, LocalDate date) {
-		ShiftAssignment sa = new ShiftAssignment(new Shift(date, template(location, type), 1));
+		ShiftAssignment sa = ShiftAssignmentFactory.create(new Shift(date, template(location, type), 1));
 		sa.setId(id);
 		sa.setPlanningId(String.valueOf(id)); // mirror loadFullRota
 		return sa;

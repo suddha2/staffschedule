@@ -25,7 +25,9 @@ import com.midco.rota.model.Employee;
 import com.midco.rota.model.Rota;
 import com.midco.rota.model.Shift;
 import com.midco.rota.model.ShiftAssignment;
+import com.midco.rota.model.ShiftAssignmentFactory;
 import com.midco.rota.model.ShiftTemplate;
+import com.midco.rota.model.WorkShiftAssignment;
 import com.midco.rota.service.LiveRotaPersistenceService;
 import com.midco.rota.util.ShiftType;
 
@@ -83,7 +85,7 @@ class LiveRotaPersistenceServiceIT {
 		Shift shift = new Shift(LocalDate.of(2026, 1, 5), template, 1);
 		em.persist(shift);
 
-		ShiftAssignment sa = new ShiftAssignment(shift);
+		ShiftAssignment sa = ShiftAssignmentFactory.create(shift);
 		sa.setEmployee(alice);
 
 		Rota rota = new Rota(new ArrayList<>(List.of(alice, bob)), new ArrayList<>(List.of(sa)));
@@ -136,7 +138,7 @@ class LiveRotaPersistenceServiceIT {
 
 	/** A minimal "best solution" carrying one assignment (by id) -> employee (by id). */
 	private Rota bestWith(Long assignmentDbId, Integer employeeDbId) {
-		ShiftAssignment bestSa = new ShiftAssignment();
+		ShiftAssignment bestSa = new WorkShiftAssignment();
 		bestSa.setId(assignmentDbId);
 		Employee ref = new Employee();
 		ref.setId(employeeDbId);

@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.midco.rota.model.Employee;
 import com.midco.rota.model.Rota;
 import com.midco.rota.model.ShiftAssignment;
+import com.midco.rota.model.ShiftAssignmentFactory;
 import com.midco.rota.repository.EmployeeRepository;
 import com.midco.rota.repository.RotaRepository;
 import com.midco.rota.util.IdealShiftCount;
@@ -75,6 +76,8 @@ public class LiveRotaPersistenceService {
 				sa.setPlanningId(String.valueOf(sa.getId()));
 			}
 		}
+		// Link LONG_DAY → SLEEP_IN so the shadow-variable listener mirrors employees.
+		ShiftAssignmentFactory.linkSleepInPairs(rota.getShiftAssignmentList());
 		return rota;
 	}
 

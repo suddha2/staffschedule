@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 import com.midco.rota.model.Employee;
 import com.midco.rota.model.Rota;
 import com.midco.rota.model.ShiftAssignment;
+import com.midco.rota.model.WorkShiftAssignment;
 
 /**
  * Structural live edit (P3+): remove an employee from the running solve's value
@@ -36,10 +37,12 @@ public class RemoveEmployeeFromValueRangeProblemChange implements ProblemChange<
 			return;
 		}
 
-		// Unassign every slot held by this employee BEFORE removing the fact, so no
-		// planning variable is left pointing at a removed value.
+		// Unassign every WORK slot held by this employee BEFORE removing the fact, so
+		// no genuine variable is left pointing at a removed value. SLEEP_IN slots are
+		// shadows — they follow automatically when their LONG_DAY is unassigned.
 		for (ShiftAssignment sa : workingSolution.getShiftAssignmentList()) {
-			if (sa.getEmployee() != null && employeeId.equals(sa.getEmployee().getId())) {
+			if (sa instanceof WorkShiftAssignment && sa.getEmployee() != null
+					&& employeeId.equals(sa.getEmployee().getId())) {
 				problemChangeDirector.changeVariable(sa, "employee", a -> a.setEmployee(null));
 			}
 		}

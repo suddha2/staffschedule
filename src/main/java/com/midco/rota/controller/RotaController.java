@@ -52,6 +52,7 @@ import com.midco.rota.model.Rota;
 import com.midco.rota.model.RotaCorrection;
 import com.midco.rota.model.Shift;
 import com.midco.rota.model.ShiftAssignment;
+import com.midco.rota.model.ShiftAssignmentFactory;
 import com.midco.rota.model.ShiftTemplate;
 import com.midco.rota.repository.DeferredSolveRequestRepository;
 import com.midco.rota.repository.EmployeeRepository;
@@ -617,6 +618,7 @@ public class RotaController {
 		shiftAssignments = this.generateShiftInstances(startDate, endDate, shiftTemplates);
 //		System.out.println("shiftAssignments - " + shiftAssignments.size());
 		Long id = idGenerator.incrementAndGet();
+		ShiftAssignmentFactory.linkSleepInPairs(shiftAssignments);
 		Rota solution = new Rota(employees, shiftAssignments);
 
 		return solution;
@@ -647,7 +649,7 @@ public class RotaController {
 		// each shift ( N to 1 scenario)
 		for (Shift shift : instances) {
 			for (int i = 0; i < shift.getShiftTemplate().getEmpCount(); i++) {
-				ShiftAssignment assignment = new ShiftAssignment(shift);
+				ShiftAssignment assignment = ShiftAssignmentFactory.create(shift);
 				assignments.add(assignment);
 			}
 		}

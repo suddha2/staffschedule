@@ -39,6 +39,7 @@ import com.midco.rota.model.ScheduleVersion;
 import com.midco.rota.model.ScheduleVersionAudit;
 import com.midco.rota.model.Shift;
 import com.midco.rota.model.ShiftAssignment;
+import com.midco.rota.model.ShiftAssignmentFactory;
 import com.midco.rota.model.ShiftAssignmentVersion;
 import com.midco.rota.model.ShiftTemplate;
 import com.midco.rota.repository.EmployeeRepository;
@@ -461,10 +462,9 @@ public class ScheduleVersionService {
 			ShiftAssignment assignment = existingMap.get(va.getShiftId());
 
 			if (assignment == null) {
-				assignment = new ShiftAssignment();
 				Shift shift = shiftRepository.findById(va.getShiftId()).orElseThrow();
 				Rota rota = rotaRepository.findById(va.getRotaId()).orElseThrow();
-				assignment.setShift(shift);
+				assignment = ShiftAssignmentFactory.create(shift);
 				assignment.setRota(rota);
 			}
 
@@ -667,8 +667,7 @@ public class ScheduleVersionService {
 				// If shiftId has rows but none matched (oldEmployeeId, unused), that's a
 				// data inconsistency — log and skip rather than silently clobber a row.
 				if (existing.isEmpty() && newEmployeeId != null) {
-					target = new ShiftAssignment();
-					target.setShift(shiftRepository.findById(shiftId).orElseThrow());
+					target = ShiftAssignmentFactory.create(shiftRepository.findById(shiftId).orElseThrow());
 					target.setRota(rotaRepository.findById(rotaId).orElseThrow());
 					existing.add(target);
 				} else {
@@ -710,8 +709,7 @@ public class ScheduleVersionService {
 			Rota rota = rotaRepository.findById(rotaId).orElse(null);
 
 			if (shift != null && employee != null && rota != null) {
-				ShiftAssignment assignment = new ShiftAssignment();
-				assignment.setShift(shift);
+				ShiftAssignment assignment = ShiftAssignmentFactory.create(shift);
 				assignment.setEmployee(employee);
 				assignment.setRota(rota);
 				assignments.add(assignment);

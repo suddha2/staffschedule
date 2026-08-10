@@ -5,31 +5,51 @@ import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
-import org.optaplanner.core.api.domain.entity.PlanningEntity;
 import org.optaplanner.core.api.domain.entity.PlanningPin;
 import org.optaplanner.core.api.domain.lookup.PlanningId;
-import org.optaplanner.core.api.domain.variable.PlanningVariable;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.midco.rota.opt.ShiftAssignmentDifficultyComparator;
 import com.midco.rota.util.ShiftType;
 
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
+import jakarta.persistence.DiscriminatorColumn;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Inheritance;
+import jakarta.persistence.InheritanceType;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToOne;
+import jakarta.persistence.Table;
 import jakarta.persistence.Transient;
 import jakarta.persistence.Version;
 
+/**
+ * Base of the shift-assignment hierarchy (single-table inheritance on
+ * {@code rota_shift_assignment}, discriminator column {@code assignment_type}).
+ *
+ * <p>Split into two planning entities so SLEEP_IN can carry a genuinely different
+ * planning role from work shifts:
+ * <ul>
+ *   <li>{@link WorkShiftAssignment} (DAY / LONG_DAY / WAKING_NIGHT / FLOATING) —
+ *       {@code employee} is a genuine {@code @PlanningVariable}.</li>
+ *   <li>{@link SleepInShiftAssignment} — {@code employee} is a
+ *       {@code @ShadowVariable} that mirrors its paired LONG_DAY continuously
+ *       inside the solver (retires the post-solve SleepInPairingService).</li>
+ * </ul>
+ * The {@code employee} field lives in the subclasses (each maps the shared
+ * {@code employee_id} column) with its own OptaPlanner annotation; the base only
+ * declares the abstract accessors, so the ~40 constraints that call
+ * {@code sa.getEmployee()} on {@code ShiftAssignment} are unchanged.
+ */
 @Entity(name = "rota_shift_assignment")
-@PlanningEntity(difficultyComparatorClass = ShiftAssignmentDifficultyComparator.class)
-
-public class ShiftAssignment {
+@Table(name = "rota_shift_assignment")
+@Inheritance(strategy = InheritanceType.SINGLE_TABLE)
+@DiscriminatorColumn(name = "assignment_type")
+public abstract class ShiftAssignment {
 
 	@Transient
 	@PlanningId
@@ -41,10 +61,6 @@ public class ShiftAssignment {
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
-
-	@ManyToOne
-	@PlanningVariable(valueRangeProviderRefs = "employeeRange", nullable = true)
-	private Employee employee; // planning variable
 
 	@ManyToOne
 	@JoinColumn(name = "rota_id")
@@ -80,19 +96,24 @@ public class ShiftAssignment {
 		if (pinned) return true;
 		if (shift == null || shift.getShiftTemplate() == null) return false;
 		ShiftType type = shift.getShiftTemplate().getShiftType();
-		// SLEEP_IN is paired post-solve to its LONG_DAY (existing behavior).
 		// FLOATING is reserved for the mobile publish-and-grab flow — solver leaves it null.
-		return type == ShiftType.SLEEP_IN || type == ShiftType.FLOATING;
+		// SLEEP_IN is no longer pinned here: it's a shadow variable (SleepInShiftAssignment)
+		// that mirrors its paired LONG_DAY continuously.
+		return type == ShiftType.FLOATING;
 	}
 
-	public ShiftAssignment() {
+	protected ShiftAssignment() {
 	}
 
-	public ShiftAssignment(Shift shift) {
+	protected ShiftAssignment(Shift shift) {
 		this.shift = shift;
-
 		this.planningId = UUID.randomUUID().toString();
 	}
+
+	/** Genuine planning variable in {@link WorkShiftAssignment}; shadow in {@link SleepInShiftAssignment}. */
+	public abstract Employee getEmployee();
+
+	public abstract void setEmployee(Employee employee);
 
 	public Shift getShift() {
 		return shift;
@@ -110,16 +131,9 @@ public class ShiftAssignment {
 		this.shift = shift;
 	}
 
-	public Employee getEmployee() {
-		return employee;
-	}
-
-	public void setEmployee(Employee employee) {
-		this.employee = employee;
-	}
-
 	@Override
 	public String toString() {
+		Employee employee = getEmployee();
 		return shift.getShiftTemplate().getLocation() + " " + shift.getShiftTemplate().getShiftType().toString() + " "
 				+ shift.getShiftStart() + " " + shift.getShiftTemplate().getStartTime() + " -> "
 				+ (employee == null ? "UNASSIGNED" : employee.toString());
@@ -129,27 +143,21 @@ public class ShiftAssignment {
 	public boolean equals(Object o) {
 		if (this == o)
 			return true;
-		if (o == null || getClass() != o.getClass())
+		if (o == null || !(o instanceof ShiftAssignment))
 			return false;
 		ShiftAssignment that = (ShiftAssignment) o;
 
-		// ✅ Compare planningId if both have it
 		if (planningId != null && that.planningId != null) {
 			return Objects.equals(planningId, that.planningId);
 		}
-
-		// ✅ Fall back to database id
 		if (id != null && that.id != null) {
 			return Objects.equals(id, that.id);
 		}
-
-		// ✅ If neither has id, they're only equal if same instance
 		return false;
 	}
 
 	@Override
 	public int hashCode() {
-		// ✅ Use planningId if available, otherwise use id
 		if (planningId != null) {
 			return Objects.hash(planningId);
 		}

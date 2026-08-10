@@ -56,18 +56,16 @@ public class LiveSolverSessionService {
 
 	private final SolverManager<Rota, Long> liveSolverManager;
 	private final LiveRotaPersistenceService persistenceService;
-	private final SleepInPairingService sleepInPairingService;
 	private final SimpMessagingTemplate messagingTemplate;
 	private final EmployeeRepository employeeRepository;
 
 	private final Map<Long, LiveSession> sessions = new ConcurrentHashMap<>();
 
 	public LiveSolverSessionService(@Qualifier("liveSolverManager") SolverManager<Rota, Long> liveSolverManager,
-			LiveRotaPersistenceService persistenceService, SleepInPairingService sleepInPairingService,
+			LiveRotaPersistenceService persistenceService,
 			SimpMessagingTemplate messagingTemplate, EmployeeRepository employeeRepository) {
 		this.liveSolverManager = liveSolverManager;
 		this.persistenceService = persistenceService;
-		this.sleepInPairingService = sleepInPairingService;
 		this.messagingTemplate = messagingTemplate;
 		this.employeeRepository = employeeRepository;
 	}
@@ -108,7 +106,8 @@ public class LiveSolverSessionService {
 		Rota rota = persistenceService.loadFullRota(rotaId);
 		// Rota.equals/hashCode key on planningId — must be set before solving.
 		rota.setPlanningId(rotaId);
-		sleepInPairingService.resetSleepIns(rota);
+		// SLEEP_IN employees are mirrored by the shadow variable during solving; the
+		// pairing links are set in loadFullRota. No pre-solve reset needed.
 
 		sessions.put(rotaId, new LiveSession(System.currentTimeMillis(), startedBy));
 		liveSolverManager.solveAndListen(rotaId, id -> rota, best -> onBestSolution(rotaId, best));
@@ -129,8 +128,7 @@ public class LiveSolverSessionService {
 
 		if (now - session.lastPushMs >= MIN_PUSH_INTERVAL_MS) {
 			session.lastPushMs = now;
-			// Pair SLEEP_INs only on frames we actually stream (keeps it ~1 Hz).
-			sleepInPairingService.pairSleepIns(best);
+			// SLEEP_IN employees are already set by the shadow variable; just stream.
 			messagingTemplate.convertAndSend("/topic/rota/" + rotaId, buildUpdate(rotaId, best));
 		}
 	}
@@ -145,7 +143,7 @@ public class LiveSolverSessionService {
 			throw new IllegalStateException("No live best solution to snapshot for rota " + rotaId);
 		}
 		Rota best = session.latestBest;
-		sleepInPairingService.pairSleepIns(best); // ensure SLEEP_INs are filled before persist
+		// SLEEP_IN employees are already set by the shadow variable.
 		int changed = persistenceService.applySnapshot(rotaId, best);
 		session.lastActivityMs = System.currentTimeMillis();
 		logger.info("Snapshotted live rota {} -> {} assignment change(s) persisted", rotaId, changed);

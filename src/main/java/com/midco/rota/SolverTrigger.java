@@ -24,6 +24,7 @@ import com.midco.rota.model.PinnedTemplateAssignment;
 import com.midco.rota.model.Rota;
 import com.midco.rota.model.Shift;
 import com.midco.rota.model.ShiftAssignment;
+import com.midco.rota.model.ShiftAssignmentFactory;
 import com.midco.rota.model.ShiftTemplate;
 import com.midco.rota.repository.DeferredSolveRequestRepository;
 import com.midco.rota.repository.EmployeeRepository;
@@ -143,6 +144,8 @@ public class SolverTrigger {
 				deferredSolveRequest.getEndDate(), shiftTemplates);
 
 		applyTemplateBasedPinning(shiftAssignments, employees);
+		// Link LONG_DAY → SLEEP_IN so the shadow-variable listener mirrors employees.
+		ShiftAssignmentFactory.linkSleepInPairs(shiftAssignments);
 		Rota problem = new Rota(employees, shiftAssignments);
 
 		return problem;
@@ -172,7 +175,7 @@ public class SolverTrigger {
 		// 2 to 1 scenario)
 		for (Shift shift : instances) {
 			for (int i = 0; i < shift.getShiftTemplate().getEmpCount(); i++) {
-				ShiftAssignment assignment = new ShiftAssignment(shift);
+				ShiftAssignment assignment = ShiftAssignmentFactory.create(shift);
 				assignments.add(assignment);
 			}
 		}

@@ -26,19 +26,16 @@ public class SolverService {
 	private final ConstraintExplanationService explanationService;
 //	private final DeferredSolveRequestRepository deferredSolveRequestRepository;
 	private final RosterAnalysisService rosterAnalysisService;
-	private final SleepInPairingService sleepInPairingService;
 //	private final RotaRepository rotaRepository;
 
 	public SolverService(SolverManager<Rota, Long> solverManager, RosterUpdateService rosterUpdateService,
 			ConstraintExplanationService explanationService, RosterAnalysisService rosterAnalysisService,
-			RotaRepository rotaRepository, AuthController authController,
-			SleepInPairingService sleepInPairingService) {
+			RotaRepository rotaRepository, AuthController authController) {
 		this.solverManager = solverManager;
 		this.rosterUpdateService = rosterUpdateService;
 		this.explanationService = explanationService;
 //		this.deferredSolveRequestRepository = deferredSolveRequestRepository;
 		this.rosterAnalysisService = rosterAnalysisService;
-		this.sleepInPairingService = sleepInPairingService;
 //		this.rotaRepository = rotaRepository;
 //		this.pasetoAuthenticationFilter = pasetoAuthenticationFilter;
 
@@ -61,15 +58,12 @@ public class SolverService {
 //	}
 	public void solveAsync(Rota schedule, Long problemId, DeferredSolveRequest deferredSolveRequest) {
 
-		// Blank SLEEP_IN slots before solving (they are pinned; the service owns
-		// the reset + post-solve pairing rules — see SleepInPairingService).
-		sleepInPairingService.resetSleepIns(schedule);
+		// SLEEP_IN pairing is now a shadow variable (SleepInShiftAssignment mirrors
+		// its paired LONG_DAY continuously inside the solver); links are set at load
+		// time. No pre-solve reset or post-solve pairing needed here.
 
 		solverManager.solve(problemId, id -> schedule, bestSolution -> {
 			try {
-
-				// ========== SLEEP_IN PAIRING ==========
-				sleepInPairingService.pairSleepIns(bestSolution);
 
 				// ========== PERSIST ==========
 				deferredSolveRequest.setCompleted(true);

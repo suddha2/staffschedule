@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 import com.midco.rota.model.Employee;
 import com.midco.rota.model.Rota;
 import com.midco.rota.model.ShiftAssignment;
+import com.midco.rota.model.WorkShiftAssignment;
 
 /**
  * Live edit (P3): assign a specific employee to a shift-assignment slot (or clear
@@ -37,6 +38,12 @@ public class AssignEmployeeProblemChange implements ProblemChange<Rota> {
 		ShiftAssignment target = ProblemChangeSupport.findAssignment(workingSolution, assignmentId);
 		if (target == null) {
 			logger.warn("Live assign skipped: no assignment with id {} in working solution", assignmentId);
+			return;
+		}
+		// SLEEP_IN's employee is a shadow variable (mirrors its LONG_DAY); it can't be
+		// changed directly. Assign the paired LONG_DAY instead.
+		if (!(target instanceof WorkShiftAssignment)) {
+			logger.info("Live assign skipped for slot {}: SLEEP_IN employee follows its LONG_DAY", assignmentId);
 			return;
 		}
 
