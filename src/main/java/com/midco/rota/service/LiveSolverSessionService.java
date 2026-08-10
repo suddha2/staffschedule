@@ -20,8 +20,11 @@ import com.midco.rota.dto.LiveRotaUpdate.Slot;
 import com.midco.rota.model.Employee;
 import com.midco.rota.model.Rota;
 import com.midco.rota.model.ShiftAssignment;
+import com.midco.rota.opt.AddEmployeeToValueRangeProblemChange;
 import com.midco.rota.opt.AssignEmployeeProblemChange;
+import com.midco.rota.opt.RemoveEmployeeFromValueRangeProblemChange;
 import com.midco.rota.opt.SetPinProblemChange;
+import com.midco.rota.repository.EmployeeRepository;
 
 /**
  * Owns the lifecycle of continuous / live real-time planning sessions (P2).
@@ -55,16 +58,18 @@ public class LiveSolverSessionService {
 	private final LiveRotaPersistenceService persistenceService;
 	private final SleepInPairingService sleepInPairingService;
 	private final SimpMessagingTemplate messagingTemplate;
+	private final EmployeeRepository employeeRepository;
 
 	private final Map<Long, LiveSession> sessions = new ConcurrentHashMap<>();
 
 	public LiveSolverSessionService(@Qualifier("liveSolverManager") SolverManager<Rota, Long> liveSolverManager,
 			LiveRotaPersistenceService persistenceService, SleepInPairingService sleepInPairingService,
-			SimpMessagingTemplate messagingTemplate) {
+			SimpMessagingTemplate messagingTemplate, EmployeeRepository employeeRepository) {
 		this.liveSolverManager = liveSolverManager;
 		this.persistenceService = persistenceService;
 		this.sleepInPairingService = sleepInPairingService;
 		this.messagingTemplate = messagingTemplate;
+		this.employeeRepository = employeeRepository;
 	}
 
 	private static final class LiveSession {
@@ -189,6 +194,29 @@ public class LiveSolverSessionService {
 		}
 		touch(rotaId);
 		return count;
+	}
+
+	/**
+	 * Structural live edit: add an employee to the running solve's value range so
+	 * the solver can begin assigning them. Persisted to the rota's value-range join
+	 * on the next snapshot.
+	 */
+	public void addEmployee(Long rotaId, Integer employeeId) {
+		requireActive(rotaId);
+		Employee employee = employeeRepository.findById(employeeId)
+				.orElseThrow(() -> new IllegalArgumentException("Employee not found: " + employeeId));
+		liveSolverManager.addProblemChange(rotaId, new AddEmployeeToValueRangeProblemChange(employee));
+		touch(rotaId);
+	}
+
+	/**
+	 * Structural live edit: remove an employee from the value range (unassigns
+	 * their slots first). Persisted on the next snapshot.
+	 */
+	public void removeEmployee(Long rotaId, Integer employeeId) {
+		requireActive(rotaId);
+		liveSolverManager.addProblemChange(rotaId, new RemoveEmployeeFromValueRangeProblemChange(employeeId));
+		touch(rotaId);
 	}
 
 	private void requireActive(Long rotaId) {

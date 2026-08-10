@@ -131,4 +131,44 @@ public class LiveSolverController {
 			return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", e.getMessage()));
 		}
 	}
+
+	/**
+	 * Structural live edit: add an employee to the running solve's value range.
+	 * Body: {@code {"employeeId": <int>}}.
+	 */
+	@PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER','ROTA_EDITOR')")
+	@PostMapping("/{id}/live/employee/add")
+	public ResponseEntity<?> addEmployee(@PathVariable Long id, @RequestBody Map<String, Object> body) {
+		if (body.get("employeeId") == null) {
+			return ResponseEntity.badRequest().body(Map.of("error", "employeeId is required"));
+		}
+		Integer employeeId = Integer.valueOf(body.get("employeeId").toString());
+		try {
+			liveSolverSessionService.addEmployee(id, employeeId);
+			return ResponseEntity.ok(Map.of("rotaId", id, "employeeId", employeeId, "added", true, "queued", true));
+		} catch (IllegalStateException e) {
+			return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", e.getMessage()));
+		} catch (IllegalArgumentException e) {
+			return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
+		}
+	}
+
+	/**
+	 * Structural live edit: remove an employee from the value range (unassigns
+	 * their slots). Body: {@code {"employeeId": <int>}}.
+	 */
+	@PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER','ROTA_EDITOR')")
+	@PostMapping("/{id}/live/employee/remove")
+	public ResponseEntity<?> removeEmployee(@PathVariable Long id, @RequestBody Map<String, Object> body) {
+		if (body.get("employeeId") == null) {
+			return ResponseEntity.badRequest().body(Map.of("error", "employeeId is required"));
+		}
+		Integer employeeId = Integer.valueOf(body.get("employeeId").toString());
+		try {
+			liveSolverSessionService.removeEmployee(id, employeeId);
+			return ResponseEntity.ok(Map.of("rotaId", id, "employeeId", employeeId, "removed", true, "queued", true));
+		} catch (IllegalStateException e) {
+			return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", e.getMessage()));
+		}
+	}
 }

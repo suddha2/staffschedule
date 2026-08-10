@@ -3,6 +3,7 @@ package com.midco.rota.service;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
@@ -90,6 +91,27 @@ public class LiveRotaPersistenceService {
 		Rota managed = rotaRepository.findById(rotaId)
 				.orElseThrow(() -> new IllegalArgumentException("Rota not found: " + rotaId));
 
+		// Sync value-range membership (rota_employee join) with the live solution:
+		// employees added/removed during the session. Assignment employees are
+		// synced below; this keeps the join consistent so a later live reload sees
+		// the right value range (and doesn't reference an out-of-range employee).
+		Set<Integer> bestEmpIds = best.getEmployeeList().stream()
+				.map(Employee::getId).filter(Objects::nonNull).collect(Collectors.toSet());
+		int empAdded = 0;
+		for (Integer eid : bestEmpIds) {
+			boolean present = managed.getEmployeeList().stream().anyMatch(e -> eid.equals(e.getId()));
+			if (!present) {
+				Employee e = employeeRepository.findById(eid).orElse(null);
+				if (e != null) {
+					managed.getEmployeeList().add(e);
+					empAdded++;
+				}
+			}
+		}
+		long empRemoved = managed.getEmployeeList().stream()
+				.filter(e -> e.getId() != null && !bestEmpIds.contains(e.getId())).count();
+		managed.getEmployeeList().removeIf(e -> e.getId() != null && !bestEmpIds.contains(e.getId()));
+
 		Map<Long, ShiftAssignment> bestById = best.getShiftAssignmentList().stream()
 				.filter(sa -> sa.getId() != null)
 				.collect(Collectors.toMap(ShiftAssignment::getId, sa -> sa, (a, b) -> a));
@@ -108,7 +130,8 @@ public class LiveRotaPersistenceService {
 				changed++;
 			}
 		}
-		logger.info("applySnapshot rota {}: {} assignment change(s)", rotaId, changed);
+		logger.info("applySnapshot rota {}: {} assignment change(s), value-range +{}/-{} employee(s)",
+				rotaId, changed, empAdded, empRemoved);
 		return changed; // flushed on commit
 	}
 }
