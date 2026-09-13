@@ -27,12 +27,15 @@ import com.midco.rota.model.ShiftAssignment;
 import com.midco.rota.model.ShiftAssignmentFactory;
 import com.midco.rota.model.ShiftTemplate;
 import com.midco.rota.repository.DeferredSolveRequestRepository;
+import com.midco.rota.repository.EmployeeAvailabilityRepository;
 import com.midco.rota.repository.EmployeeRepository;
 import com.midco.rota.repository.PinnedTemplateAssignmentRepository;
 import com.midco.rota.repository.ShiftTemplateRepository;
 import com.midco.rota.service.PeriodService;
+import com.midco.rota.service.SolverConfigService;
 import com.midco.rota.service.SolverService;
 import com.midco.rota.util.ShiftType;
+import com.midco.rota.util.SolveWindow;
 
 @Component
 
@@ -46,16 +49,22 @@ public class SolverTrigger {
 	private final ShiftTemplateRepository shiftTemplateRepository;
 	private final PeriodService periodService;
 	private final PinnedTemplateAssignmentRepository pinnedTemplateAssignmentRepository;
+	private final SolverConfigService solverConfigService;
+	private final EmployeeAvailabilityRepository employeeAvailabilityRepository;
 
 	public SolverTrigger(SolverService solverService, DeferredSolveRequestRepository deferredSolveRequestRepository,
 			EmployeeRepository employeeRepository, ShiftTemplateRepository shiftTemplateRepository,
-			PeriodService periodService, PinnedTemplateAssignmentRepository pinnedTemplateAssignmentRepository) {
+			PeriodService periodService, PinnedTemplateAssignmentRepository pinnedTemplateAssignmentRepository,
+			SolverConfigService solverConfigService,
+			EmployeeAvailabilityRepository employeeAvailabilityRepository) {
 		this.solverService = solverService;
 		this.deferredSolveRequestRepository = deferredSolveRequestRepository;
 		this.employeeRepository = employeeRepository;
 		this.shiftTemplateRepository = shiftTemplateRepository;
 		this.periodService = periodService;
 		this.pinnedTemplateAssignmentRepository = pinnedTemplateAssignmentRepository;
+		this.solverConfigService = solverConfigService;
+		this.employeeAvailabilityRepository = employeeAvailabilityRepository;
 	}
 
 	// Serialises solve scheduling. Without it, two near-simultaneous enqueues
@@ -140,13 +149,40 @@ public class SolverTrigger {
 		List<ShiftTemplate> shiftTemplates = shiftTemplateRepository.findAllByRegion(deferredSolveRequest.getRegion());
 		List<ShiftAssignment> shiftAssignments = new ArrayList<>();
 
-		shiftAssignments = this.generateShiftInstances(deferredSolveRequest.getStartDate(),
-				deferredSolveRequest.getEndDate(), shiftTemplates);
+		// Ad-hoc ranges are expanded to whole weeks so the weekly constraints see
+		// complete weeks. A Monday-aligned pay period snaps to itself, so normal
+		// period solves are unchanged.
+		SolveWindow window = SolveWindow.snapToWholeWeeks(
+				deferredSolveRequest.getStartDate(), deferredSolveRequest.getEndDate());
+		if (!window.isWholeWeeks() || !window.start().equals(deferredSolveRequest.getStartDate())
+				|| !window.end().equals(deferredSolveRequest.getEndDate())) {
+			logger.info("Solve window snapped to whole weeks: {}..{} -> {}..{}",
+					deferredSolveRequest.getStartDate(), deferredSolveRequest.getEndDate(),
+					window.start(), window.end());
+		}
+
+		shiftAssignments = this.generateShiftInstances(window.start(), window.end(), shiftTemplates);
 
 		applyTemplateBasedPinning(shiftAssignments, employees);
 		// Link LONG_DAY → SLEEP_IN so the shadow-variable listener mirrors employees.
 		ShiftAssignmentFactory.linkSleepInPairs(shiftAssignments);
 		Rota problem = new Rota(employees, shiftAssignments);
+
+		// Weights and hard/soft severity come from constraint_setting and are read
+		// per solve, so a rule can be retuned or demoted without a restart. The
+		// numeric thresholds in SolverTuning are read when the constraint streams
+		// are first built, so a change there needs a restart to take effect.
+		problem.setConstraintConfiguration(solverConfigService.buildConstraintConfiguration());
+
+		// Load booked leave / unavailability for these employees over the solve
+		// window, so the "Employee unavailable (leave)" hard constraint can exclude
+		// anyone who can't work. Populated daily from People Planner (source PP_API)
+		// plus manual entry.
+		if (!employees.isEmpty()) {
+			List<Integer> empIds = employees.stream().map(Employee::getId).toList();
+			problem.setAvailabilityList(employeeAvailabilityRepository.findOverlapping(
+					empIds, window.start(), window.end()));
+		}
 
 		return problem;
 	}

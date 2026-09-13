@@ -69,6 +69,7 @@ import com.midco.rota.service.RosterAnalysisService;
 import com.midco.rota.service.LiveSolverSessionService;
 import com.midco.rota.service.RosterUpdateService;
 import com.midco.rota.service.ShiftRequestService;
+import com.midco.rota.service.SolverConfigService;
 import com.midco.rota.util.PayCycleRow;
 
 @RestController
@@ -82,6 +83,12 @@ public class RotaController {
 
 	@Autowired
 	private ShiftRequestService shiftRequestService;
+
+	@Autowired
+	private SolverConfigService solverConfigService;
+
+	@org.springframework.beans.factory.annotation.Autowired
+	private com.midco.rota.repository.EmployeeAvailabilityRepository employeeAvailabilityRepository;
 
 	private final PeriodService periodService;
 
@@ -620,6 +627,17 @@ public class RotaController {
 		Long id = idGenerator.incrementAndGet();
 		ShiftAssignmentFactory.linkSleepInPairs(shiftAssignments);
 		Rota solution = new Rota(employees, shiftAssignments);
+
+		// Same database-driven weights as the deferred solve path, so a rota built
+		// here scores identically to one built by SolverTrigger.
+		solution.setConstraintConfiguration(solverConfigService.buildConstraintConfiguration());
+
+		// Same leave/unavailability facts, so this path also never allocates onto booked leave.
+		if (!employees.isEmpty()) {
+			List<Integer> empIds = employees.stream().map(Employee::getId).toList();
+			solution.setAvailabilityList(
+					employeeAvailabilityRepository.findOverlapping(empIds, startDate, endDate));
+		}
 
 		return solution;
 

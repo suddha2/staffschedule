@@ -1,11 +1,13 @@
 package com.midco.rota.model;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
+import org.optaplanner.core.api.domain.constraintweight.ConstraintConfigurationProvider;
 import org.optaplanner.core.api.domain.lookup.PlanningId;
 import org.optaplanner.core.api.domain.solution.PlanningEntityCollectionProperty;
 import org.optaplanner.core.api.domain.solution.PlanningScore;
@@ -18,6 +20,7 @@ import org.optaplanner.core.api.score.buildin.hardsoftlong.HardSoftLongScore;
 import com.fasterxml.jackson.annotation.JsonIdentityInfo;
 import com.fasterxml.jackson.annotation.JsonManagedReference;
 import com.fasterxml.jackson.annotation.ObjectIdGenerators;
+import com.midco.rota.opt.RotaConstraintConfiguration;
 import com.midco.rota.util.IdealShiftCount;
 import com.midco.rota.util.ShiftType;
 
@@ -66,6 +69,37 @@ public class Rota {
 	@Transient
 	@ProblemFactCollectionProperty
 	private List<IdealShiftCount> idealShiftCountList;
+
+	/**
+	 * Leave / unavailability spans for the employees in this solve, loaded for the
+	 * solve window. The "Employee unavailable (leave)" hard constraint joins these
+	 * with assignments. Empty by default so a Rota built without them still solves;
+	 * mid-period leave can be delivered as a ProblemChange to the live solver.
+	 */
+	@Transient
+	@ProblemFactCollectionProperty
+	private List<EmployeeAvailability> availabilityList = new ArrayList<>();
+
+	/**
+	 * Per-constraint weights and hard/soft severity, loaded from the
+	 * {@code constraint_setting} table before a solve starts. Defaults to a
+	 * fresh configuration carrying the code defaults, so a Rota built without
+	 * going through {@code SolverConfigService} still solves.
+	 */
+	@Transient
+	@ConstraintConfigurationProvider
+	private RotaConstraintConfiguration constraintConfiguration = new RotaConstraintConfiguration();
+
+	public RotaConstraintConfiguration getConstraintConfiguration() {
+		return constraintConfiguration;
+	}
+
+	/** Never stores null: OptaPlanner requires the configuration to be present. */
+	public void setConstraintConfiguration(RotaConstraintConfiguration constraintConfiguration) {
+		this.constraintConfiguration = (constraintConfiguration == null)
+				? new RotaConstraintConfiguration()
+				: constraintConfiguration;
+	}
 
 	public Rota() {
 	}
@@ -127,6 +161,15 @@ public class Rota {
 
 	public void setIdealShiftCountList(List<IdealShiftCount> idealShiftCountList) {
 		this.idealShiftCountList = idealShiftCountList;
+	}
+
+	public List<EmployeeAvailability> getAvailabilityList() {
+		return availabilityList;
+	}
+
+	/** Never stores null: OptaPlanner requires the problem-fact collection to be non-null. */
+	public void setAvailabilityList(List<EmployeeAvailability> availabilityList) {
+		this.availabilityList = (availabilityList == null) ? new ArrayList<>() : availabilityList;
 	}
 
 	@Override
