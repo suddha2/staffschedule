@@ -78,6 +78,16 @@ public abstract class ShiftAssignment {
 	@JsonIgnore
 	private Rota rota;
 
+	/**
+	 * The employee who held this slot in the previous published period (one cycle
+	 * back), set by the pre-solve continuity seeding. The "Continuity — keep carer
+	 * in seeded slot" soft constraint penalises assigning anyone else, so the
+	 * solver carries the prior period forward unless a change scores better. Null
+	 * when there is no prior allocation for this slot. Not a planning variable.
+	 */
+	@Transient
+	private Integer seededEmployeeId;
+
 	@Transient
 	private List<String> diagnosticReasons = new ArrayList<>();
 
@@ -132,6 +142,14 @@ public abstract class ShiftAssignment {
 
 	public void setEmployee(Employee employee) {
 		this.employee = employee;
+	}
+
+	public Integer getSeededEmployeeId() {
+		return seededEmployeeId;
+	}
+
+	public void setSeededEmployeeId(Integer seededEmployeeId) {
+		this.seededEmployeeId = seededEmployeeId;
 	}
 
 	public Shift getShift() {

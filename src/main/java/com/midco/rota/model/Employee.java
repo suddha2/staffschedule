@@ -124,6 +124,14 @@ public class Employee {
 	@Column(name = "email", length = 255, unique = true)
 	private String email;
 
+	/** People Planner EmployeeID — leave-sync match key for the PP feed (typically zero-hours carers). */
+	@Column(name = "pp_employee_id", length = 50)
+	private String ppEmployeeId;
+
+	/** PeopleHR employee id — leave-sync match key for the HR feed (typically contracted staff). */
+	@Column(name = "peoplehr_employee_id", length = 50)
+	private String peopleHrEmployeeId;
+
 	@OneToMany(mappedBy = "employee", fetch = FetchType.EAGER)
 	@JsonIgnore
 	private List<EmployeeSchedulePattern> schedulePatterns;
@@ -139,6 +147,17 @@ public class Employee {
 	@Transient
 	@JsonIgnore
 	private Map<String, Integer> preferredServiceWeightsMap;
+
+	/**
+	 * Dates this employee cannot work, built by the pre-solve step from
+	 * {@link EmployeeAvailability} spans clipped to the solve window. The
+	 * "Employee unavailable (leave)" constraint checks this with an O(1) lookup
+	 * instead of joining availability facts in the stream. Empty/null means fully
+	 * available.
+	 */
+	@Transient
+	@JsonIgnore
+	private java.util.Set<LocalDate> unavailableDates;
 
 	// ============================================================================
 	// CONSTRUCTORS
@@ -421,6 +440,23 @@ public class Employee {
 
 	public String getName() {
 		return this.firstName + " " + this.lastName;
+	}
+
+	// ============================================================================
+	// AVAILABILITY (pre-solve map)
+	// ============================================================================
+
+	/** True if this employee is on leave / otherwise unavailable on the given date. O(1). */
+	public boolean isUnavailableOn(LocalDate date) {
+		return unavailableDates != null && date != null && unavailableDates.contains(date);
+	}
+
+	public java.util.Set<LocalDate> getUnavailableDates() {
+		return unavailableDates;
+	}
+
+	public void setUnavailableDates(java.util.Set<LocalDate> unavailableDates) {
+		this.unavailableDates = unavailableDates;
 	}
 
 	@Override
@@ -710,5 +746,21 @@ public class Employee {
 
 	public void setEmail(String email) {
 		this.email = email;
+	}
+
+	public String getPpEmployeeId() {
+		return ppEmployeeId;
+	}
+
+	public void setPpEmployeeId(String ppEmployeeId) {
+		this.ppEmployeeId = ppEmployeeId;
+	}
+
+	public String getPeopleHrEmployeeId() {
+		return peopleHrEmployeeId;
+	}
+
+	public void setPeopleHrEmployeeId(String peopleHrEmployeeId) {
+		this.peopleHrEmployeeId = peopleHrEmployeeId;
 	}
 }

@@ -207,8 +207,16 @@ public class RotaConstraintConfiguration {
 	@ConstraintWeight("Prioritize high-priority location assignments")
 	private HardSoftLongScore highPriorityLocations = HardSoftLongScore.ONE_SOFT;
 
+	/**
+	 * Affinity strength: how hard the solver pulls each carer toward their
+	 * historically-worked houses. Backtesting took this from the old 10,000 (which
+	 * left familiarity ~50%) to 1,000,000, which reproduced manager-level
+	 * concentration (~72% familiar) with better coverage. This is the seeded
+	 * default so a fresh deploy is good out of the box; still DB-tunable. Only
+	 * bites once employees carry mined {@code preferred_service} weights.
+	 */
 	@ConstraintWeight("Location preferences (reward only)")
-	private HardSoftLongScore locationPreferences = HardSoftLongScore.ofSoft(10_000);
+	private HardSoftLongScore locationPreferences = HardSoftLongScore.ofSoft(1_000_000);
 
 	// ------------------------------------------------ soft: continuity of place
 
@@ -229,6 +237,16 @@ public class RotaConstraintConfiguration {
 	/** Inactive by default. */
 	@ConstraintWeight("Reward consecutive days at same location")
 	private HardSoftLongScore consecutiveDaysSameLocation = HardSoftLongScore.ofSoft(500_000);
+
+	/**
+	 * Person-level continuity: keep each carer in the slot they held last period.
+	 * Active by default. Weight sits above ordinary preferences but below coverage
+	 * ({@code Unassigned shift} 1,000,000) so the solver keeps the prior carer
+	 * unless leave/a hard limit forces a change — never at the cost of leaving a
+	 * shift empty.
+	 */
+	@ConstraintWeight("Continuity - keep carer in seeded slot")
+	private HardSoftLongScore continuityKeepSeededCarer = HardSoftLongScore.ofSoft(300_000);
 
 	// ------------------------------------------------ accessors
 
@@ -314,4 +332,6 @@ public class RotaConstraintConfiguration {
 	public void setDailyLocationSwitches(HardSoftLongScore v) { this.dailyLocationSwitches = v; }
 	public HardSoftLongScore getConsecutiveDaysSameLocation() { return consecutiveDaysSameLocation; }
 	public void setConsecutiveDaysSameLocation(HardSoftLongScore v) { this.consecutiveDaysSameLocation = v; }
+	public HardSoftLongScore getContinuityKeepSeededCarer() { return continuityKeepSeededCarer; }
+	public void setContinuityKeepSeededCarer(HardSoftLongScore v) { this.continuityKeepSeededCarer = v; }
 }

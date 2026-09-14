@@ -12,25 +12,25 @@ import org.springframework.web.client.RestClient;
 import com.midco.rota.util.AvailabilitySource;
 
 /**
- * People Planner Data Engine API leave feed. Connection details come from
- * {@link PeoplePlannerProperties} ({@code peopleplanner.*}); nothing hardcoded.
- * The {@link RestClient} is built lazily so the app starts fine when disabled.
+ * PeopleHR API leave feed. Same contract as {@link DataEngineClient} but for the
+ * HR system: driven by {@link PeopleHrProperties}, safe no-op when disabled or on
+ * failure, tagged {@code HR_API}.
  */
 @Component
-public class DataEngineClient implements LeaveSource {
+public class PeopleHrClient implements LeaveSource {
 
-	private static final Logger logger = LoggerFactory.getLogger(DataEngineClient.class);
+	private static final Logger logger = LoggerFactory.getLogger(PeopleHrClient.class);
 
-	private final PeoplePlannerProperties props;
+	private final PeopleHrProperties props;
 	private volatile RestClient restClient;
 
-	public DataEngineClient(PeoplePlannerProperties props) {
+	public PeopleHrClient(PeopleHrProperties props) {
 		this.props = props;
 	}
 
 	@Override
 	public AvailabilitySource source() {
-		return AvailabilitySource.PP_API;
+		return AvailabilitySource.HR_API;
 	}
 
 	@Override
@@ -41,18 +41,18 @@ public class DataEngineClient implements LeaveSource {
 	@Override
 	public List<LeaveRecord> fetch(LocalDate from, LocalDate to) {
 		if (!isEnabled()) {
-			logger.debug("People Planner sync disabled or no base URL; skipping leave fetch");
+			logger.debug("PeopleHR sync disabled or no base URL; skipping leave fetch");
 			return List.of();
 		}
 		try {
-			PpLeaveRecord[] body = client()
+			PeopleHrLeaveRecord[] body = client()
 					.get()
 					.uri(uriBuilder -> uriBuilder.path(props.getLeavePath())
 							.queryParam("from", from)
 							.queryParam("to", to)
 							.build())
 					.retrieve()
-					.body(PpLeaveRecord[].class);
+					.body(PeopleHrLeaveRecord[].class);
 			if (body == null) {
 				return List.of();
 			}
@@ -61,7 +61,7 @@ public class DataEngineClient implements LeaveSource {
 							r.getType(), r.getExternalRef(), r.getReason(), r.isCancelled()))
 					.toList();
 		} catch (Exception e) {
-			logger.warn("People Planner leave fetch failed ({} to {}): {}", from, to, e.toString());
+			logger.warn("PeopleHR leave fetch failed ({} to {}): {}", from, to, e.toString());
 			return List.of();
 		}
 	}

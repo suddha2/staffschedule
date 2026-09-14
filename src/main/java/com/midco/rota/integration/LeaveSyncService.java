@@ -10,75 +10,121 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Locale;
+
+import com.midco.rota.model.Employee;
 import com.midco.rota.model.EmployeeAvailability;
 import com.midco.rota.repository.EmployeeAvailabilityRepository;
+import com.midco.rota.repository.EmployeeRepository;
 import com.midco.rota.util.AvailabilitySource;
 import com.midco.rota.util.AvailabilityType;
 
 /**
- * Daily job that pulls booked leave / unavailability from People Planner and
- * upserts it into {@code employee_availability}, so the solver's
- * "Employee unavailable (leave)" hard constraint never allocates onto leave.
+ * Daily job that pulls booked leave / unavailability from every configured
+ * {@link LeaveSource} — People Planner and PeopleHR today — and upserts it into
+ * {@code employee_availability}, so the solver's "Employee unavailable (leave)"
+ * constraint never allocates onto leave.
  *
- * <p>Idempotent: each PP record is matched by ({@code PP_API}, external ref) and
- * updated in place, so re-running never duplicates. A record flagged cancelled
- * in PP is deleted locally. Runs on {@code peopleplanner.sync-cron}; does nothing
- * while the integration is disabled.
+ * <p>Each source's rows are keyed by (its {@code source}, external ref), so the
+ * two feeds never collide and re-running is idempotent. A record a source flags
+ * cancelled is deleted locally. Sources that are disabled or unreachable
+ * contribute nothing and never remove existing rows.
  */
 @Service
 public class LeaveSyncService {
 
 	private static final Logger logger = LoggerFactory.getLogger(LeaveSyncService.class);
 
-	private final DataEngineClient dataEngineClient;
+	private final List<LeaveSource> sources;
 	private final EmployeeAvailabilityRepository availabilityRepository;
-	private final PeoplePlannerProperties props;
+	private final EmployeeRepository employeeRepository;
+	private final PeoplePlannerProperties ppProps; // supplies the shared window/cadence knobs
 
-	public LeaveSyncService(DataEngineClient dataEngineClient,
-			EmployeeAvailabilityRepository availabilityRepository, PeoplePlannerProperties props) {
-		this.dataEngineClient = dataEngineClient;
+	public LeaveSyncService(List<LeaveSource> sources,
+			EmployeeAvailabilityRepository availabilityRepository, EmployeeRepository employeeRepository,
+			PeoplePlannerProperties ppProps) {
+		this.sources = sources;
 		this.availabilityRepository = availabilityRepository;
-		this.props = props;
+		this.employeeRepository = employeeRepository;
+		this.ppProps = ppProps;
 	}
 
 	/** Scheduled entry point. Cron comes from {@code peopleplanner.sync-cron}. */
 	@Scheduled(cron = "${peopleplanner.sync-cron:0 30 3 * * *}")
 	public void scheduledSync() {
-		if (!props.isEnabled()) {
-			return;
-		}
-		LocalDate from = LocalDate.now().minusDays(props.getLookbackDays());
-		LocalDate to = LocalDate.now().plusDays(props.getLookaheadDays());
-		syncLeave(from, to);
+		LocalDate from = LocalDate.now().minusDays(ppProps.getLookbackDays());
+		LocalDate to = LocalDate.now().plusDays(ppProps.getLookaheadDays());
+		syncAll(from, to);
 	}
 
 	/**
-	 * Pull the window from PP and reconcile it into the table. Package-visible so
-	 * an admin endpoint can trigger an on-demand sync.
+	 * Sync every enabled source for [from, to]. Package-visible so an admin
+	 * endpoint could trigger it on demand.
 	 *
-	 * @return number of records applied (inserted or updated)
+	 * @return total records applied across all sources
 	 */
+	public int syncAll(LocalDate from, LocalDate to) {
+		int total = 0;
+		for (LeaveSource source : sources) {
+			if (!source.isEnabled()) {
+				continue;
+			}
+			total += syncOne(source, from, to);
+		}
+		return total;
+	}
+
+	/** Pull one source's window and reconcile it into the table under that source's tag. */
 	@Transactional
-	public int syncLeave(LocalDate from, LocalDate to) {
-		List<PpLeaveRecord> records = dataEngineClient.fetchLeave(from, to);
+	public int syncOne(LeaveSource source, LocalDate from, LocalDate to) {
+		AvailabilitySource tag = source.source();
+		List<LeaveRecord> records = source.fetch(from, to);
 		if (records.isEmpty()) {
-			logger.info("Leave sync {}..{}: no records returned (disabled, empty, or fetch failed)", from, to);
+			logger.info("Leave sync [{}] {}..{}: no records (disabled, empty, or fetch failed)", tag, from, to);
 			return 0;
+		}
+
+		// Build the match maps once. Primary: this source's own employee id, held on
+		// the employee record (pp_employee_id for PP, peoplehr_employee_id for HR).
+		// Fallback: email, for employees whose external id is not populated yet.
+		Map<String, Integer> idByExternalRef = new HashMap<>();
+		Map<String, Integer> idByEmail = new HashMap<>();
+		for (Employee e : employeeRepository.findAll()) {
+			String ext = (tag == AvailabilitySource.HR_API) ? e.getPeopleHrEmployeeId() : e.getPpEmployeeId();
+			if (ext != null && !ext.isBlank()) {
+				idByExternalRef.put(ext.trim(), e.getId());
+			}
+			if (e.getEmail() != null && !e.getEmail().isBlank()) {
+				idByEmail.put(e.getEmail().trim().toLowerCase(Locale.ROOT), e.getId());
+			}
 		}
 
 		int applied = 0;
 		int deleted = 0;
-		for (PpLeaveRecord r : records) {
-			if (r.getExternalRef() == null || r.getEmployeeId() == null
-					|| r.getStartDate() == null || r.getEndDate() == null) {
-				logger.warn("Skipping malformed PP leave record (ref={}, emp={})", r.getExternalRef(), r.getEmployeeId());
+		int unmatched = 0;
+		for (LeaveRecord r : records) {
+			if (!r.isValid()) {
+				logger.warn("[{}] skipping malformed leave record (ref={})", tag, r.externalRef());
 				continue;
 			}
+			Integer liveId = null;
+			if (r.sourceEmployeeId() != null && !r.sourceEmployeeId().isBlank()) {
+				liveId = idByExternalRef.get(r.sourceEmployeeId().trim());
+			}
+			if (liveId == null && r.employeeEmail() != null && !r.employeeEmail().isBlank()) {
+				liveId = idByEmail.get(r.employeeEmail().trim().toLowerCase(Locale.ROOT));
+			}
+			if (liveId == null) {
+				unmatched++;
+				logger.warn("[{}] leave for unresolved employee (sourceId={}, email={}, ref={}) — skipped",
+						tag, r.sourceEmployeeId(), r.employeeEmail(), r.externalRef());
+				continue;
+			}
+			EmployeeAvailability existing = availabilityRepository.findBySourceAndExternalRef(tag, r.externalRef());
 
-			EmployeeAvailability existing =
-					availabilityRepository.findBySourceAndExternalRef(AvailabilitySource.PP_API, r.getExternalRef());
-
-			if (r.isCancelled()) {
+			if (r.cancelled()) {
 				if (existing != null) {
 					availabilityRepository.delete(existing);
 					deleted++;
@@ -87,28 +133,29 @@ public class LeaveSyncService {
 			}
 
 			EmployeeAvailability row = (existing != null) ? existing : new EmployeeAvailability();
-			row.setEmployeeId(r.getEmployeeId());
-			row.setStartDate(r.getStartDate());
-			row.setEndDate(r.getEndDate());
-			row.setType(mapType(r.getType()));
-			row.setSource(AvailabilitySource.PP_API);
-			row.setExternalRef(r.getExternalRef());
-			row.setReason(r.getReason());
+			row.setEmployeeId(liveId);
+			row.setStartDate(r.startDate());
+			row.setEndDate(r.endDate());
+			row.setType(mapType(r.type()));
+			row.setSource(tag);
+			row.setExternalRef(r.externalRef());
+			row.setReason(r.reason());
 			row.setSyncedAt(LocalDateTime.now());
 			availabilityRepository.save(row);
 			applied++;
 		}
 
-		logger.info("Leave sync {}..{}: {} applied, {} cancelled/removed", from, to, applied, deleted);
+		logger.info("Leave sync [{}] {}..{}: {} applied, {} cancelled/removed, {} unmatched email(s)",
+				tag, from, to, applied, deleted, unmatched);
 		return applied;
 	}
 
-	/** Map PP's free-text category to our enum; unknown or null falls back to planned leave. */
-	private AvailabilityType mapType(String ppType) {
-		if (ppType == null) {
+	/** Map a source's free-text category to our enum; unknown/null falls back to planned leave. */
+	private AvailabilityType mapType(String raw) {
+		if (raw == null) {
 			return AvailabilityType.PLANNED_LEAVE;
 		}
-		String t = ppType.trim().toUpperCase();
+		String t = raw.trim().toUpperCase();
 		if (t.contains("SICK")) {
 			return AvailabilityType.SICK;
 		}

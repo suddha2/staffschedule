@@ -632,11 +632,16 @@ public class RotaController {
 		// here scores identically to one built by SolverTrigger.
 		solution.setConstraintConfiguration(solverConfigService.buildConstraintConfiguration());
 
-		// Same leave/unavailability facts, so this path also never allocates onto booked leave.
+		// Same pre-solve unavailability map, so this path also never allocates onto booked leave.
 		if (!employees.isEmpty()) {
 			List<Integer> empIds = employees.stream().map(Employee::getId).toList();
-			solution.setAvailabilityList(
-					employeeAvailabilityRepository.findOverlapping(empIds, startDate, endDate));
+			java.util.Map<Integer, java.util.Set<java.time.LocalDate>> unavailable =
+					com.midco.rota.util.AvailabilityCalendar.build(
+							employeeAvailabilityRepository.findOverlapping(empIds, startDate, endDate),
+							startDate, endDate);
+			for (Employee e : employees) {
+				e.setUnavailableDates(unavailable.get(e.getId()));
+			}
 		}
 
 		return solution;

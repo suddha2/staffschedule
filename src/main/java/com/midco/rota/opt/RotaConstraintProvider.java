@@ -21,7 +21,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 import com.midco.rota.ShiftTypeLimitConfig;
 import com.midco.rota.model.Employee;
-import com.midco.rota.model.EmployeeAvailability;
 import com.midco.rota.model.ShiftAssignment;
 import com.midco.rota.service.PeriodService;
 import com.midco.rota.util.ContractType;
@@ -126,7 +125,10 @@ public class RotaConstraintProvider implements ConstraintProvider {
 				// Continuity of place
 				minDaysPerLocationPerWeek(factory), maxDaysPerLocationPerWeek(factory),
 				limitLocationChangesPerWeek(factory), penalizeDailyLocationSwitches(factory),
-				rewardConsecutiveDaysAtLocation(factory), };
+				rewardConsecutiveDaysAtLocation(factory),
+
+				// Continuity of person (seed from prior period)
+				continuityKeepSeededCarer(factory), };
 	}
 
 	private Constraint penalizeOverloading(ConstraintFactory factory) {
@@ -228,13 +230,30 @@ public class RotaConstraintProvider implements ConstraintProvider {
 	 * whole-day and inclusive. This is the fix for staff being allocated onto
 	 * booked leave.
 	 */
+	/**
+	 * SOFT: keep each carer in the slot they held last period. The pre-solve
+	 * continuity seed records {@code seededEmployeeId} per assignment; this
+	 * penalises assigning anyone else, so the solver carries the prior period
+	 * forward unless a change scores better. This is the person-level continuity
+	 * that house-level affinity cannot express. Pure O(1) filter.
+	 */
+	private Constraint continuityKeepSeededCarer(ConstraintFactory factory) {
+		return factory.forEach(ShiftAssignment.class)
+				.filter(sa -> sa.getEmployee() != null
+						&& sa.getSeededEmployeeId() != null
+						&& !sa.getSeededEmployeeId().equals(sa.getEmployee().getId()))
+				.penalizeConfigurable()
+				.asConstraint("Continuity - keep carer in seeded slot");
+	}
+
 	private Constraint employeeUnavailableConstraint(ConstraintFactory factory) {
+		// The pre-solve step (SolverTrigger/RotaController loadData) builds each
+		// employee's unavailable-date set from EmployeeAvailability spans clipped
+		// to the solve window, so this is an O(1) lookup rather than a stream join.
 		return factory.forEach(ShiftAssignment.class)
 				.filter(sa -> sa.getEmployee() != null && sa.getShift() != null
-						&& sa.getShift().getShiftStart() != null)
-				.join(EmployeeAvailability.class,
-						Joiners.equal(sa -> sa.getEmployee().getId(), EmployeeAvailability::getEmployeeId))
-				.filter((sa, av) -> av.coversDate(sa.getShift().getShiftStart()))
+						&& sa.getShift().getShiftStart() != null
+						&& sa.getEmployee().isUnavailableOn(sa.getShift().getShiftStart()))
 				.penalizeConfigurable()
 				.asConstraint("Employee unavailable (leave)");
 	}

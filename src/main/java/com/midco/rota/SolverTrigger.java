@@ -32,8 +32,10 @@ import com.midco.rota.repository.EmployeeRepository;
 import com.midco.rota.repository.PinnedTemplateAssignmentRepository;
 import com.midco.rota.repository.ShiftTemplateRepository;
 import com.midco.rota.service.PeriodService;
+import com.midco.rota.service.ContinuitySeedService;
 import com.midco.rota.service.SolverConfigService;
 import com.midco.rota.service.SolverService;
+import com.midco.rota.util.AvailabilityCalendar;
 import com.midco.rota.util.ShiftType;
 import com.midco.rota.util.SolveWindow;
 
@@ -51,12 +53,14 @@ public class SolverTrigger {
 	private final PinnedTemplateAssignmentRepository pinnedTemplateAssignmentRepository;
 	private final SolverConfigService solverConfigService;
 	private final EmployeeAvailabilityRepository employeeAvailabilityRepository;
+	private final ContinuitySeedService continuitySeedService;
 
 	public SolverTrigger(SolverService solverService, DeferredSolveRequestRepository deferredSolveRequestRepository,
 			EmployeeRepository employeeRepository, ShiftTemplateRepository shiftTemplateRepository,
 			PeriodService periodService, PinnedTemplateAssignmentRepository pinnedTemplateAssignmentRepository,
 			SolverConfigService solverConfigService,
-			EmployeeAvailabilityRepository employeeAvailabilityRepository) {
+			EmployeeAvailabilityRepository employeeAvailabilityRepository,
+			ContinuitySeedService continuitySeedService) {
 		this.solverService = solverService;
 		this.deferredSolveRequestRepository = deferredSolveRequestRepository;
 		this.employeeRepository = employeeRepository;
@@ -65,6 +69,7 @@ public class SolverTrigger {
 		this.pinnedTemplateAssignmentRepository = pinnedTemplateAssignmentRepository;
 		this.solverConfigService = solverConfigService;
 		this.employeeAvailabilityRepository = employeeAvailabilityRepository;
+		this.continuitySeedService = continuitySeedService;
 	}
 
 	// Serialises solve scheduling. Without it, two near-simultaneous enqueues
@@ -174,15 +179,25 @@ public class SolverTrigger {
 		// are first built, so a change there needs a restart to take effect.
 		problem.setConstraintConfiguration(solverConfigService.buildConstraintConfiguration());
 
-		// Load booked leave / unavailability for these employees over the solve
-		// window, so the "Employee unavailable (leave)" hard constraint can exclude
-		// anyone who can't work. Populated daily from People Planner (source PP_API)
-		// plus manual entry.
+		// Pre-solve: build each employee's unavailable-date map from booked leave /
+		// unavailability over the solve window, so the "Employee unavailable (leave)"
+		// hard constraint is an O(1) lookup. Source: daily People Planner sync
+		// (PP_API) plus manual entry.
 		if (!employees.isEmpty()) {
 			List<Integer> empIds = employees.stream().map(Employee::getId).toList();
-			problem.setAvailabilityList(employeeAvailabilityRepository.findOverlapping(
-					empIds, window.start(), window.end()));
+			Map<Integer, java.util.Set<java.time.LocalDate>> unavailable = AvailabilityCalendar.build(
+					employeeAvailabilityRepository.findOverlapping(empIds, window.start(), window.end()),
+					window.start(), window.end());
+			for (Employee e : employees) {
+				e.setUnavailableDates(unavailable.get(e.getId()));
+			}
 		}
+
+		// Continuity: seed each slot from who held it last published period, so the
+		// solver carries the roster forward. Runs after the availability map so a
+		// seed carer on leave is skipped, and after pinning so hard pins win.
+		continuitySeedService.seedFromPriorPeriod(shiftAssignments, employees,
+				deferredSolveRequest.getRegion(), window.start(), window.end());
 
 		return problem;
 	}

@@ -6,7 +6,12 @@
          the ~40 constraints forEach() over. -->
     <entityClass>com.midco.rota.model.WorkShiftAssignment</entityClass>
     <entityClass>com.midco.rota.model.SleepInShiftAssignment</entityClass>
-    <environmentMode>FAST_ASSERT</environmentMode>
+    <!-- REPRODUCIBLE: no per-step integrity assertions (FAST_ASSERT is a debug
+         mode that runs ~10-100x slower), but still deterministic for a fixed
+         seed so runs stay comparable. FAST_ASSERT was silently throttling every
+         solve; switching it lets local search actually explore the neighbourhood
+         within the time budget. -->
+    <environmentMode>REPRODUCIBLE</environmentMode>
     
     <scoreDirectorFactory>
         <constraintProviderClass>com.midco.rota.opt.RotaConstraintProvider</constraintProviderClass>
@@ -48,25 +53,33 @@
         </constructionHeuristic>
     </phase>
 
-    <!-- PHASE 3: Simple local search - CHANGE MOVES ONLY -->
+    <!-- PHASE 3: local search over ALL assignments (permanents included).
+         Previously this only re-decided zero-hours assignments
+         (ZeroHoursAssignmentFilter), which froze permanent placements from the
+         construction heuristic. Backtest analysis showed ~90% of "not the usual
+         carer" cases were a permanent regular sitting idle that local search
+         could not move. Change moves (now unfiltered) let an idle regular take a
+         slot a non-regular holds; swap moves rebalance two assignments. Both are
+         scoped to the employee variable, so SLEEP_IN shadow entities are
+         untouched (their employee is a shadow, not a genuine variable). -->
     <phase>
         <localSearch>
             <acceptor>
                 <entityTabuSize>7</entityTabuSize>
                 <lateAcceptanceSize>400</lateAcceptanceSize>
             </acceptor>
-            <moveSelector>
+            <unionMoveSelector>
                 <changeMoveSelector>
-                    <entitySelector>
-                        <filterClass>com.midco.rota.opt.ZeroHoursAssignmentFilter</filterClass>
-                    </entitySelector>
                     <valueSelector>
                         <variableName>employee</variableName>
                         <cacheType>PHASE</cacheType>
                         <selectionOrder>SHUFFLED</selectionOrder>
                     </valueSelector>
                 </changeMoveSelector>
-            </moveSelector>
+                <swapMoveSelector>
+                    <variableNameInclude>employee</variableNameInclude>
+                </swapMoveSelector>
+            </unionMoveSelector>
         </localSearch>
     </phase>
 </solver>

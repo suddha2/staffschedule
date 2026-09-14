@@ -6,20 +6,18 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
- * One leave / unavailability record as returned by the People Planner Data
- * Engine API. Only the fields the sync needs are mapped; everything else is
- * ignored.
+ * One holiday / absence record from the PeopleHR API. Only the fields the sync
+ * needs are mapped.
  *
- * <p><b>Field mapping is provisional</b> — the {@code @JsonProperty} names below
- * are placeholders. When the real API response shape is available, adjust these
- * names to match (that is the only change needed to go live). The fields the
- * sync needs are: employee <b>email</b> (the cross-system match key), start date,
- * end date, a stable record id (for idempotent upsert), and optionally type/reason.
+ * <p><b>Field mapping is provisional</b> — the {@code @JsonProperty} names are
+ * placeholders. Adjust them to PeopleHR's real response when available (the only
+ * change needed to go live). PeopleHR's employee identifier must resolve to the
+ * live employee id — if it uses its own code, add a bridge upstream.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-public class PpLeaveRecord {
+public class PeopleHrLeaveRecord {
 
-	/** People Planner EmployeeID — the primary match key (stored on employee.pp_employee_id). */
+	/** PeopleHR employee id — the primary match key (stored on employee.peoplehr_employee_id). */
 	@JsonProperty("employeeId")
 	private String sourceEmployeeId;
 
@@ -33,18 +31,18 @@ public class PpLeaveRecord {
 	@JsonProperty("endDate")
 	private LocalDate endDate;
 
-	/** Stable id of this unavailability in PP (e.g. EmployeeUnavailabilityID) — the upsert key. */
-	@JsonProperty("unavailabilityId")
+	/** Stable id of this holiday/absence in PeopleHR — the upsert key. */
+	@JsonProperty("holidayId")
 	private String externalRef;
 
-	/** Free-text category from PP; mapped to AvailabilityType by the sync (defaults to PLANNED_LEAVE). */
-	@JsonProperty("type")
+	/** PeopleHR leave category (Holiday / Sickness / ...); mapped by the sync. */
+	@JsonProperty("leaveType")
 	private String type;
 
 	@JsonProperty("reason")
 	private String reason;
 
-	/** True if this record represents a cancelled/withdrawn leave — the sync deletes it locally. */
+	/** True if the holiday was cancelled/declined in PeopleHR. */
 	@JsonProperty("cancelled")
 	private boolean cancelled;
 

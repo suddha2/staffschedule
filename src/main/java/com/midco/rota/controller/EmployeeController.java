@@ -66,6 +66,12 @@ public class EmployeeController {
     public ResponseEntity<?> createEmployee(@RequestBody Employee employee) {
         try {
             employee.setId(null);
+            // New joiners are active by default: the solver pool is
+            // findByPreferredRegion(...) AND active = true, so without this a
+            // freshly-onboarded carer (active defaults to false) would be invisible
+            // to every solve. Deactivate later via PATCH /{id}/toggle-active, which
+            // also revokes mobile access.
+            employee.setActive(true);
             Employee savedEmployee = employeeRepository.save(employee);
             return ResponseEntity.status(HttpStatus.CREATED).body(savedEmployee);
         } catch (DataIntegrityViolationException e) {
@@ -100,6 +106,10 @@ public class EmployeeController {
         employee.setMaxHrs(employeeDetails.getMaxHrs());
         employee.setRateCode(employeeDetails.getRateCode());
         employee.setRestDays(employeeDetails.getRestDays());
+
+        // Source-system ids (leave-sync match keys)
+        employee.setPpEmployeeId(employeeDetails.getPpEmployeeId());
+        employee.setPeopleHrEmployeeId(employeeDetails.getPeopleHrEmployeeId());
 
         // Region and Services
         employee.setPreferredRegion(employeeDetails.getPreferredRegion());

@@ -1,6 +1,5 @@
 package com.midco.rota.model;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -70,15 +69,10 @@ public class Rota {
 	@ProblemFactCollectionProperty
 	private List<IdealShiftCount> idealShiftCountList;
 
-	/**
-	 * Leave / unavailability spans for the employees in this solve, loaded for the
-	 * solve window. The "Employee unavailable (leave)" hard constraint joins these
-	 * with assignments. Empty by default so a Rota built without them still solves;
-	 * mid-period leave can be delivered as a ProblemChange to the live solver.
-	 */
-	@Transient
-	@ProblemFactCollectionProperty
-	private List<EmployeeAvailability> availabilityList = new ArrayList<>();
+	// Leave / unavailability is not a problem fact: the pre-solve step
+	// (SolverTrigger/RotaController loadData) builds each Employee's
+	// unavailable-date set, and the "Employee unavailable (leave)" constraint
+	// checks it with an O(1) lookup rather than joining facts in the stream.
 
 	/**
 	 * Per-constraint weights and hard/soft severity, loaded from the
@@ -163,14 +157,6 @@ public class Rota {
 		this.idealShiftCountList = idealShiftCountList;
 	}
 
-	public List<EmployeeAvailability> getAvailabilityList() {
-		return availabilityList;
-	}
-
-	/** Never stores null: OptaPlanner requires the problem-fact collection to be non-null. */
-	public void setAvailabilityList(List<EmployeeAvailability> availabilityList) {
-		this.availabilityList = (availabilityList == null) ? new ArrayList<>() : availabilityList;
-	}
 
 	@Override
 	public String toString() {
