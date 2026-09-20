@@ -113,7 +113,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 				// Physical impossibilities
 				preventDuplicateAssignments(factory), tooManyEmployeesPerShift(factory),
 				noInvalidSameDayShifts(factory), // MOVED: Before noBackToBack
-				noBackToBack(factory),
+				noBackToBack(factory), noOverlappingShifts(factory),
 
 				// Eligibility
 				genderConstraint(factory), restrictedDayOfWeekConstraint(factory),
@@ -474,6 +474,57 @@ public class RotaConstraintProvider implements ConstraintProvider {
 						ConstraintCollectors.toList())
 				.filter((emp, date, dayAssignments) -> !isAllowedDayAssignments(dayAssignments))
 				.penalizeConfigurable().asConstraint("No invalid same-day shift combinations");
+	}
+
+	/**
+	 * Data-driven overlap: no carer works two shifts whose time windows intersect.
+	 * Works for ANY shift type (unlike the enum-keyed same-day/back-to-back rules),
+	 * so it catches overlaps those miss — e.g. a shift-lead 09:00–17:00 clashing with a
+	 * day 08:00–20:00. Contiguous shifts (LONG_DAY 08:00–20:00 then SLEEP_IN 20:00–08:00)
+	 * do NOT overlap, so pairing is unaffected — no exemption needed.
+	 */
+	private Constraint noOverlappingShifts(ConstraintFactory factory) {
+		return factory.forEach(ShiftAssignment.class)
+				.filter(sa -> sa.getEmployee() != null && sa.getShift() != null
+						&& sa.getShift().getShiftTemplate() != null)
+				.join(ShiftAssignment.class,
+						Joiners.equal(ShiftAssignment::getEmployee),
+						Joiners.lessThan(ShiftAssignment::getPlanningId))
+				.filter((a, b) -> shiftsOverlap(a, b))
+				.penalizeConfigurable()
+				.asConstraint("Overlapping shifts");
+	}
+
+	/** True if the two assignments' actual date-time windows intersect (handles overnight). */
+	private static boolean shiftsOverlap(ShiftAssignment a, ShiftAssignment b) {
+		java.time.LocalDateTime aStart = startOf(a), aEnd = endOf(a);
+		java.time.LocalDateTime bStart = startOf(b), bEnd = endOf(b);
+		if (aStart == null || aEnd == null || bStart == null || bEnd == null) {
+			return false;
+		}
+		return aStart.isBefore(bEnd) && bStart.isBefore(aEnd);
+	}
+
+	private static java.time.LocalDateTime startOf(ShiftAssignment sa) {
+		if (sa.getShift() == null || sa.getShift().getShiftStart() == null
+				|| sa.getShift().getShiftTemplate() == null || sa.getShift().getShiftTemplate().getStartTime() == null) {
+			return null;
+		}
+		return sa.getShift().getShiftStart().atTime(sa.getShift().getShiftTemplate().getStartTime());
+	}
+
+	private static java.time.LocalDateTime endOf(ShiftAssignment sa) {
+		if (sa.getShift() == null || sa.getShift().getShiftTemplate() == null
+				|| sa.getShift().getShiftTemplate().getEndTime() == null) {
+			return null;
+		}
+		// shiftEnd is the (possibly next-day) date for overnight shifts; fall back to start date.
+		java.time.LocalDate endDate = sa.getShift().getShiftEnd() != null
+				? sa.getShift().getShiftEnd() : sa.getShift().getShiftStart();
+		if (endDate == null) {
+			return null;
+		}
+		return endDate.atTime(sa.getShift().getShiftTemplate().getEndTime());
 	}
 
 	// ✅ FIXED: Back-to-back constraint (handles ONLY next-day transitions)

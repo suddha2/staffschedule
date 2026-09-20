@@ -82,6 +82,12 @@ public class RotaConstraintConfiguration {
 	@ConstraintWeight("No incompatible back-to-back shifts")
 	private HardSoftLongScore incompatibleBackToBack = HardSoftLongScore.ofHard(1);
 
+	/** Time-overlap of two shifts for the same carer — physically impossible, so a hard
+	 *  block. Data-driven (works for any shift type), catching overlaps the enum-keyed
+	 *  same-day/back-to-back rules miss (e.g. a shift-lead overlapping a day shift). */
+	@ConstraintWeight("Overlapping shifts")
+	private HardSoftLongScore overlappingShifts = HardSoftLongScore.ofHard(1000);
+
 	// ------------------------------------------------ hard: eligibility
 
 	@ConstraintWeight("Gender mismatch")
@@ -256,6 +262,9 @@ public class RotaConstraintConfiguration {
 	public void setTooManyEmployeesPerShift(HardSoftLongScore v) { this.tooManyEmployeesPerShift = v; }
 	public HardSoftLongScore getInvalidSameDayCombination() { return invalidSameDayCombination; }
 	public void setInvalidSameDayCombination(HardSoftLongScore v) { this.invalidSameDayCombination = v; }
+
+	public HardSoftLongScore getOverlappingShifts() { return overlappingShifts; }
+	public void setOverlappingShifts(HardSoftLongScore v) { this.overlappingShifts = v; }
 	public HardSoftLongScore getIncompatibleBackToBack() { return incompatibleBackToBack; }
 	public void setIncompatibleBackToBack(HardSoftLongScore v) { this.incompatibleBackToBack = v; }
 	public HardSoftLongScore getGenderMismatch() { return genderMismatch; }
