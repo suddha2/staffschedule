@@ -19,7 +19,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 
-import com.midco.rota.ShiftTypeLimitConfig;
 import com.midco.rota.model.Employee;
 import com.midco.rota.model.ShiftAssignment;
 import com.midco.rota.service.PeriodService;
@@ -343,32 +342,36 @@ public class RotaConstraintProvider implements ConstraintProvider {
 	}
 
 	private Constraint maxHoursPerShiftTypePerDay(ConstraintFactory factory) {
-		Map<ShiftType, Integer> maxHoursPerShiftType = ShiftTypeLimitConfig.maxHoursPerShiftType();
-
+		// Per-type daily hour caps are data-driven (shift_type.max_hours_per_day); null = no cap.
 		return factory.forEachIncludingNullVars(ShiftAssignment.class).filter(sa -> sa.getEmployee() != null)
 				.filter(RotaConstraintProvider::countsAsWork)
 				.groupBy(sa -> sa.getEmployee(), sa -> sa.getShift().getShiftStart(),
-						sa -> sa.getShift().getShiftTemplate().getShiftType(),
+						sa -> sa.getShift().getShiftTemplate().getShiftTypeCode(),
 						ConstraintCollectors.sumLong(sa -> sa.getShift().getDurationInMins()))
-				.filter((employee, date, shiftType, totalMinutes) -> {
-					long maxAllowedMinutes = maxHoursPerShiftType.getOrDefault(shiftType, Integer.MAX_VALUE) * 60L;
-					return totalMinutes > maxAllowedMinutes;
-				}).penalizeConfigurable((employee, date, shiftType, totalMinutes) -> {
-					long maxAllowedMinutes = maxHoursPerShiftType.getOrDefault(shiftType, 0) * 60L;
-					return (int) (totalMinutes - maxAllowedMinutes);
+				.filter((employee, date, code, totalMinutes) -> {
+					Integer maxHours = ShiftTypeMeta.maxHoursPerDay(code);
+					return maxHours != null && totalMinutes > maxHours * 60L;
+				}).penalizeConfigurable((employee, date, code, totalMinutes) -> {
+					Integer maxHours = ShiftTypeMeta.maxHoursPerDay(code);
+					long maxMins = (maxHours == null ? 0 : maxHours) * 60L;
+					return (int) (totalMinutes - maxMins);
 				}).asConstraint("Max hours per shift type per day");
 	}
 
 	private Constraint limitWeeklyShiftTypeCounts(ConstraintFactory factory) {
-		Map<ShiftType, Integer> weeklyShiftTypeLimit = ShiftTypeLimitConfig.weeklyShiftTypeLimit();
-
+		// Per-type weekly count caps are data-driven (shift_type.max_per_week); null = no cap.
 		return factory.forEachIncludingNullVars(ShiftAssignment.class).filter(sa -> sa.getEmployee() != null)
 				.filter(RotaConstraintProvider::countsAsWork)
-				.groupBy(sa -> sa.getEmployee(), sa -> sa.getShift().getShiftTemplate().getShiftType(),
+				.groupBy(sa -> sa.getEmployee(), sa -> sa.getShift().getShiftTemplate().getShiftTypeCode(),
 						sa -> YearWeek.from(sa.getShift().getShiftStart()), ConstraintCollectors.count())
-				.filter((emp, type, week, count) -> count > weeklyShiftTypeLimit.getOrDefault(type, Integer.MAX_VALUE))
-				.penalizeConfigurable(
-						(emp, type, week, count) -> count - weeklyShiftTypeLimit.getOrDefault(type, 0))
+				.filter((emp, code, week, count) -> {
+					Integer lim = ShiftTypeMeta.maxPerWeek(code);
+					return lim != null && count > lim;
+				})
+				.penalizeConfigurable((emp, code, week, count) -> {
+					Integer lim = ShiftTypeMeta.maxPerWeek(code);
+					return count - (lim == null ? 0 : lim);
+				})
 				.asConstraint("Weekly limit per shift type");
 	}
 

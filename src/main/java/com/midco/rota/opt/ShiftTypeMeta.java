@@ -122,6 +122,18 @@ public class ShiftTypeMeta {
         return d != null ? d.getRequiredSkill() : null;
     }
 
+    /** Max worked hours of this type per employee per day, or null for no cap. */
+    public static Integer maxHoursPerDay(String code) {
+        ShiftTypeDef d = def(code);
+        return d != null ? d.getMaxHoursPerDay() : Fallback.maxHoursPerDay(code);
+    }
+
+    /** Max shifts of this type per employee per week, or null for no cap. */
+    public static Integer maxPerWeek(String code) {
+        ShiftTypeDef d = def(code);
+        return d != null ? d.getMaxPerWeek() : Fallback.maxPerWeek(code);
+    }
+
     /** Active shift-type codes, ordered by display name — the dynamic column set for reports. */
     public static java.util.List<String> activeCodes() {
         return BY_CODE.values().stream()
@@ -153,6 +165,18 @@ public class ShiftTypeMeta {
             if ("LONG_DAY".equals(c)) return "DAILY";
             if ("SLEEP_IN".equals(c)) return "FLAT";
             return "HOURLY";
+        }
+        static Integer maxHoursPerDay(String c) {
+            if ("LONG_DAY".equals(c)) return 15;
+            if ("DAY".equals(c)) return 13;
+            if ("FLOATING".equals(c)) return 6;
+            if ("WAKING_NIGHT".equals(c)) return 12;
+            return null;
+        }
+        static Integer maxPerWeek(String c) {
+            if ("LONG_DAY".equals(c)) return 7;
+            if ("FLOATING".equals(c)) return 4;
+            return null;
         }
     }
 }

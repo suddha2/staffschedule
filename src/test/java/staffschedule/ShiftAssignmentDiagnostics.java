@@ -6,7 +6,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import com.midco.rota.ShiftTypeLimitConfig;
 import com.midco.rota.model.Employee;
 import com.midco.rota.model.Shift;
 import com.midco.rota.model.ShiftAssignment;
@@ -123,21 +122,21 @@ public class ShiftAssignmentDiagnostics {
             reasons.add("Schedule pattern violation");
         }
         
-        // Check max hours per shift type per day
-        Map<ShiftType, Integer> maxHoursPerShiftType = ShiftTypeLimitConfig.maxHoursPerShiftType();
-        if (maxHoursPerShiftType.containsKey(shiftType)) {
-            int maxMinutes = maxHoursPerShiftType.get(shiftType) * 60;
+        // Check max hours per shift type per day (data-driven)
+        Integer maxHours = com.midco.rota.opt.ShiftTypeMeta.maxHoursPerDay(shiftType == null ? null : shiftType.name());
+        if (maxHours != null) {
+            int maxMinutes = maxHours * 60;
             long shiftMinutes = shift.getDurationInMins();
             if (shiftMinutes > maxMinutes) {
-                reasons.add("Shift duration (" + (shiftMinutes/60) + "h) exceeds max for type (" + 
+                reasons.add("Shift duration (" + (shiftMinutes/60) + "h) exceeds max for type (" +
                     (maxMinutes/60) + "h)");
             }
         }
-        
-        // Check weekly shift type limit
-        Map<ShiftType, Integer> weeklyLimit = ShiftTypeLimitConfig.weeklyShiftTypeLimit();
-        if (weeklyLimit.containsKey(shiftType)) {
-            reasons.add("Note: Weekly " + shiftType + " limit is " + weeklyLimit.get(shiftType));
+
+        // Check weekly shift type limit (data-driven)
+        Integer weeklyLimit = com.midco.rota.opt.ShiftTypeMeta.maxPerWeek(shiftType == null ? null : shiftType.name());
+        if (weeklyLimit != null) {
+            reasons.add("Note: Weekly " + shiftType + " limit is " + weeklyLimit);
         }
         
         return reasons;

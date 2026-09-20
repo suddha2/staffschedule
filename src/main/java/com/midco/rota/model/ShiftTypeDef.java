@@ -60,8 +60,22 @@ public class ShiftTypeDef {
     @Column(name = "required_skill", length = 40)
     private String requiredSkill;
 
+    /** Max worked hours of this type per employee per day (null = no cap). */
+    @Column(name = "max_hours_per_day")
+    private Integer maxHoursPerDay;
+
+    /** Max shifts of this type per employee per week (null = no cap). */
+    @Column(name = "max_per_week")
+    private Integer maxPerWeek;
+
     public ShiftTypeDef() {
     }
+
+    public Integer getMaxHoursPerDay() { return maxHoursPerDay; }
+    public void setMaxHoursPerDay(Integer maxHoursPerDay) { this.maxHoursPerDay = maxHoursPerDay; }
+
+    public Integer getMaxPerWeek() { return maxPerWeek; }
+    public void setMaxPerWeek(Integer maxPerWeek) { this.maxPerWeek = maxPerWeek; }
 
     public java.math.BigDecimal getRate() { return rate; }
     public void setRate(java.math.BigDecimal rate) { this.rate = rate; }
