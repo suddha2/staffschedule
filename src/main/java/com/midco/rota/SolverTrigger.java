@@ -170,7 +170,7 @@ public class SolverTrigger {
 
 		applyTemplateBasedPinning(shiftAssignments, employees);
 		// Link LONG_DAY → SLEEP_IN so the shadow-variable listener mirrors employees.
-		ShiftAssignmentFactory.linkSleepInPairs(shiftAssignments);
+		ShiftAssignmentFactory.linkFollowerPairs(shiftAssignments);
 		Rota problem = new Rota(employees, shiftAssignments);
 
 		// Weights and hard/soft severity come from constraint_setting and are read

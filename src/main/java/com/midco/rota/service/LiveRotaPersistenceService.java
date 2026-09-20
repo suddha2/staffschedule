@@ -77,7 +77,7 @@ public class LiveRotaPersistenceService {
 			}
 		}
 		// Link LONG_DAY → SLEEP_IN so the shadow-variable listener mirrors employees.
-		ShiftAssignmentFactory.linkSleepInPairs(rota.getShiftAssignmentList());
+		ShiftAssignmentFactory.linkFollowerPairs(rota.getShiftAssignmentList());
 		return rota;
 	}
 

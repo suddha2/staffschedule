@@ -21,13 +21,13 @@ import jakarta.persistence.Transient;
 public class WorkShiftAssignment extends ShiftAssignment {
 
 	/**
-	 * For LONG_DAY assignments, the SLEEP_IN slot paired to this one (same
-	 * location + date). Transient; linked at load time so the shadow-variable
-	 * listener can mirror this assignment's employee onto its sleep-in. Null for
-	 * non-LONG_DAY work shifts or when no sleep-in is paired.
+	 * For a leader assignment (canonically a LONG_DAY), the follower slot paired to
+	 * this one (same location + date). Transient; linked at load time so the
+	 * shadow-variable listener can mirror this assignment's employee onto its
+	 * follower. Null for work shifts that lead no follower.
 	 */
 	@Transient
-	private SleepInShiftAssignment pairedSleepIn;
+	private FollowerShiftAssignment pairedFollower;
 
 	public WorkShiftAssignment() {
 	}
@@ -42,11 +42,11 @@ public class WorkShiftAssignment extends ShiftAssignment {
 		return super.getEmployee();
 	}
 
-	public SleepInShiftAssignment getPairedSleepIn() {
-		return pairedSleepIn;
+	public FollowerShiftAssignment getPairedFollower() {
+		return pairedFollower;
 	}
 
-	public void setPairedSleepIn(SleepInShiftAssignment pairedSleepIn) {
-		this.pairedSleepIn = pairedSleepIn;
+	public void setPairedFollower(FollowerShiftAssignment pairedFollower) {
+		this.pairedFollower = pairedFollower;
 	}
 }

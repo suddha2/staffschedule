@@ -15,7 +15,7 @@ import com.midco.rota.model.Shift;
 import com.midco.rota.model.ShiftAssignment;
 import com.midco.rota.model.ShiftAssignmentFactory;
 import com.midco.rota.model.ShiftTemplate;
-import com.midco.rota.model.SleepInShiftAssignment;
+import com.midco.rota.model.FollowerShiftAssignment;
 import com.midco.rota.model.WorkShiftAssignment;
 import com.midco.rota.util.ShiftType;
 
@@ -51,11 +51,11 @@ class ShiftAssignmentFactoryTest {
 
         // Follower → shadow entity; leader → genuine work entity (was: type == SLEEP_IN).
         assertInstanceOf(WorkShiftAssignment.class, ld, "LONG_DAY is a genuine work assignment");
-        assertInstanceOf(SleepInShiftAssignment.class, si, "SLEEP_IN is the follower/shadow assignment");
+        assertInstanceOf(FollowerShiftAssignment.class, si, "SLEEP_IN is the follower/shadow assignment");
 
-        ShiftAssignmentFactory.linkSleepInPairs(List.of(ld, si));
+        ShiftAssignmentFactory.linkFollowerPairs(List.of(ld, si));
 
-        assertSame(si, ((WorkShiftAssignment) ld).getPairedSleepIn(),
+        assertSame(si, ((WorkShiftAssignment) ld).getPairedFollower(),
                 "the long-day leader is linked to its sleep-in follower, same location + date");
     }
 
@@ -70,7 +70,7 @@ class ShiftAssignmentFactoryTest {
         ShiftAssignment a = ShiftAssignmentFactory.create(day);
         assertInstanceOf(WorkShiftAssignment.class, a);
         // Nothing to link; must not throw.
-        ShiftAssignmentFactory.linkSleepInPairs(List.of(a, ShiftAssignmentFactory.create(waking)));
+        ShiftAssignmentFactory.linkFollowerPairs(List.of(a, ShiftAssignmentFactory.create(waking)));
     }
 
     @Test
@@ -85,13 +85,13 @@ class ShiftAssignmentFactoryTest {
         ShiftAssignment b1 = ShiftAssignmentFactory.create(si1);
         ShiftAssignment b2 = ShiftAssignmentFactory.create(si2);
 
-        ShiftAssignmentFactory.linkSleepInPairs(List.of(a1, a2, b1, b2));
+        ShiftAssignmentFactory.linkFollowerPairs(List.of(a1, a2, b1, b2));
 
         // Each leader gets a distinct follower (position zip within the location+date group).
-        SleepInShiftAssignment f1 = ((WorkShiftAssignment) a1).getPairedSleepIn();
-        SleepInShiftAssignment f2 = ((WorkShiftAssignment) a2).getPairedSleepIn();
-        assertInstanceOf(SleepInShiftAssignment.class, f1);
-        assertInstanceOf(SleepInShiftAssignment.class, f2);
+        FollowerShiftAssignment f1 = ((WorkShiftAssignment) a1).getPairedFollower();
+        FollowerShiftAssignment f2 = ((WorkShiftAssignment) a2).getPairedFollower();
+        assertInstanceOf(FollowerShiftAssignment.class, f1);
+        assertInstanceOf(FollowerShiftAssignment.class, f2);
         org.junit.jupiter.api.Assertions.assertNotSame(f1, f2, "the two long-days pair to different sleep-ins");
     }
 }

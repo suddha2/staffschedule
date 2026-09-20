@@ -31,13 +31,13 @@ import jakarta.persistence.Version;
  * Base of the shift-assignment hierarchy (single-table inheritance on
  * {@code rota_shift_assignment}, discriminator column {@code assignment_type}).
  *
- * <p>Split into two planning entities so SLEEP_IN can carry a genuinely different
- * planning role from work shifts:
+ * <p>Split into two planning entities so a follower (canonically a SLEEP_IN) can
+ * carry a genuinely different planning role from work shifts:
  * <ul>
  *   <li>{@link WorkShiftAssignment} (DAY / LONG_DAY / WAKING_NIGHT / FLOATING) —
  *       {@code employee} is a genuine {@code @PlanningVariable}.</li>
- *   <li>{@link SleepInShiftAssignment} — {@code employee} is a
- *       {@code @ShadowVariable} that mirrors its paired LONG_DAY continuously
+ *   <li>{@link FollowerShiftAssignment} — {@code employee} is a
+ *       {@code @ShadowVariable} that mirrors its paired leader continuously
  *       inside the solver (retires the post-solve SleepInPairingService).</li>
  * </ul>
  * The {@code employee} field lives in the subclasses (each maps the shared
@@ -67,7 +67,7 @@ public abstract class ShiftAssignment {
 	 * subclasses don't both map it (Hibernate forbids duplicate column mappings in
 	 * single-table inheritance). The OptaPlanner role differs per subclass via the
 	 * overridden {@link #getEmployee()} getter: genuine variable in
-	 * {@link WorkShiftAssignment}, shadow in {@link SleepInShiftAssignment}.
+	 * {@link WorkShiftAssignment}, shadow in {@link FollowerShiftAssignment}.
 	 */
 	@ManyToOne
 	@JoinColumn(name = "employee_id")
@@ -118,7 +118,7 @@ public abstract class ShiftAssignment {
 		if (shift == null || shift.getShiftTemplate() == null) return false;
 		ShiftType type = shift.getShiftTemplate().getShiftType();
 		// FLOATING is reserved for the mobile publish-and-grab flow — solver leaves it null.
-		// SLEEP_IN is no longer pinned here: it's a shadow variable (SleepInShiftAssignment)
+		// SLEEP_IN is no longer pinned here: it's a shadow variable (FollowerShiftAssignment)
 		// that mirrors its paired LONG_DAY continuously.
 		return type == ShiftType.FLOATING;
 	}

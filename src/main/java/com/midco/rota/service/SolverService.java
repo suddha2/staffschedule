@@ -58,7 +58,7 @@ public class SolverService {
 //	}
 	public void solveAsync(Rota schedule, Long problemId, DeferredSolveRequest deferredSolveRequest) {
 
-		// SLEEP_IN pairing is now a shadow variable (SleepInShiftAssignment mirrors
+		// SLEEP_IN pairing is now a shadow variable (FollowerShiftAssignment mirrors
 		// its paired LONG_DAY continuously inside the solver); links are set at load
 		// time. No pre-solve reset or post-solve pairing needed here.
 

@@ -5,7 +5,7 @@
          subclasses are entities; the non-entity superclass ShiftAssignment is what
          the ~40 constraints forEach() over. -->
     <entityClass>com.midco.rota.model.WorkShiftAssignment</entityClass>
-    <entityClass>com.midco.rota.model.SleepInShiftAssignment</entityClass>
+    <entityClass>com.midco.rota.model.FollowerShiftAssignment</entityClass>
     <!-- REPRODUCIBLE: no per-step integrity assertions (FAST_ASSERT is a debug
          mode that runs ~10-100x slower), but still deterministic for a fixed
          seed so runs stay comparable. FAST_ASSERT was silently throttling every

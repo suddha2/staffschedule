@@ -668,7 +668,7 @@ public class RotaController {
 			}
 		}
 
-		ShiftAssignmentFactory.linkSleepInPairs(assignments);
+		ShiftAssignmentFactory.linkFollowerPairs(assignments);
 	}
 
 	private Rota loadData(LocalDate startDate, LocalDate endDate) {
@@ -685,7 +685,7 @@ public class RotaController {
 		shiftAssignments = this.generateShiftInstances(startDate, endDate, shiftTemplates);
 //		System.out.println("shiftAssignments - " + shiftAssignments.size());
 		Long id = idGenerator.incrementAndGet();
-		ShiftAssignmentFactory.linkSleepInPairs(shiftAssignments);
+		ShiftAssignmentFactory.linkFollowerPairs(shiftAssignments);
 		Rota solution = new Rota(employees, shiftAssignments);
 
 		// Same database-driven weights as the deferred solve path, so a rota built

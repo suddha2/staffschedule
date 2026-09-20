@@ -572,10 +572,10 @@ public class RotaConstraintProvider implements ConstraintProvider {
 
 	/** True if one of the pair is the other's paired follower (e.g. SLEEP_IN of a LONG_DAY). */
 	private static boolean isPairedSequence(ShiftAssignment a, ShiftAssignment b) {
-		if (a instanceof WorkShiftAssignment wa && wa.getPairedSleepIn() == b) {
+		if (a instanceof WorkShiftAssignment wa && wa.getPairedFollower() == b) {
 			return true;
 		}
-		return b instanceof WorkShiftAssignment wb && wb.getPairedSleepIn() == a;
+		return b instanceof WorkShiftAssignment wb && wb.getPairedFollower() == a;
 	}
 
 	// ✅ FIXED: Back-to-back constraint (handles ONLY next-day transitions)
