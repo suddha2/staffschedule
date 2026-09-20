@@ -26,6 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.midco.rota.RateTableProvider;
 import com.midco.rota.dto.BulkUpdateRequest;
 import com.midco.rota.dto.ShiftTemplateDTO;
+import com.midco.rota.dto.ShiftTemplateBulkRequest;
 import com.midco.rota.dto.ShiftTemplateRequest;
 import com.midco.rota.model.ShiftTemplate;
 import com.midco.rota.repository.ShiftTemplateRepository;
@@ -151,6 +152,89 @@ public class ShiftTemplateController {
 			e.printStackTrace();
 			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
 		}
+	}
+
+	/**
+	 * Reconcile a whole service's templates to the grid's desired state: create
+	 * newly-ticked (type, day) cells, update/reactivate existing ones, deactivate
+	 * cells that were unticked. Only shift types present in the payload are touched.
+	 * Rate + required_skills stay as they are (rate is the type's tag; skills are set
+	 * elsewhere), so this is safe to run repeatedly.
+	 */
+	@PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER')")
+	@PostMapping("/bulk")
+	@org.springframework.transaction.annotation.Transactional
+	public ResponseEntity<?> bulkSetTemplates(@RequestBody ShiftTemplateBulkRequest req) {
+		if (req.getLocation() == null || req.getRegion() == null || req.getRows() == null) {
+			return ResponseEntity.badRequest().body(Map.of("error", "location, region and rows are required"));
+		}
+
+		// Desired state: (code|DAY) -> row spec; and the set of types this grid covers.
+		Map<String, ShiftTemplateBulkRequest.Row> desired = new HashMap<>();
+		java.util.Set<String> codes = new java.util.HashSet<>();
+		for (ShiftTemplateBulkRequest.Row row : req.getRows()) {
+			if (row.getShiftType() == null) {
+				continue;
+			}
+			codes.add(row.getShiftType());
+			if (row.getDays() == null) {
+				continue;
+			}
+			for (DayOfWeek d : row.getDays()) {
+				desired.put(row.getShiftType() + "|" + d.name(), row);
+			}
+		}
+
+		List<ShiftTemplate> existing = shiftTemplateRepository.findByLocation(req.getLocation());
+		List<ShiftTemplate> toSave = new ArrayList<>();
+		java.util.Set<String> matched = new java.util.HashSet<>();
+		int created = 0, updated = 0, deactivated = 0;
+
+		for (ShiftTemplate t : existing) {
+			if (t.getShiftTypeCode() == null || t.getDayOfWeek() == null
+					|| !codes.contains(t.getShiftTypeCode())) {
+				continue; // type not shown in this grid — leave untouched
+			}
+			String key = t.getShiftTypeCode() + "|" + t.getDayOfWeek().name();
+			ShiftTemplateBulkRequest.Row row = desired.get(key);
+			if (row != null && !matched.contains(key)) {
+				applyRow(t, row);
+				t.setActive(true);
+				toSave.add(t);
+				matched.add(key);
+				updated++;
+			} else if (row == null && t.isActive()) {
+				t.setActive(false); // unticked -> deactivate (reversible, no FK issues)
+				toSave.add(t);
+				deactivated++;
+			}
+		}
+
+		for (Map.Entry<String, ShiftTemplateBulkRequest.Row> e : desired.entrySet()) {
+			if (matched.contains(e.getKey())) {
+				continue;
+			}
+			DayOfWeek day = DayOfWeek.valueOf(e.getKey().substring(e.getKey().indexOf('|') + 1));
+			ShiftTemplate t = new ShiftTemplate();
+			t.setLocation(req.getLocation());
+			t.setRegion(req.getRegion());
+			t.setDayOfWeek(day);
+			t.setActive(true);
+			applyRow(t, e.getValue());
+			toSave.add(t);
+			created++;
+		}
+
+		shiftTemplateRepository.saveAll(toSave);
+		return ResponseEntity.ok(Map.of("created", created, "updated", updated, "deactivated", deactivated));
+	}
+
+	private void applyRow(ShiftTemplate t, ShiftTemplateBulkRequest.Row row) {
+		t.setShiftTypeCode(row.getShiftType());
+		t.setStartTime(row.getStartTime());
+		t.setEndTime(row.getEndTime());
+		t.setEmpCount(row.getEmpCount() == null ? 1 : row.getEmpCount());
+		t.setTotalHours(computeTotalHours(row.getStartTime(), row.getEndTime(), t.getBreakStart(), t.getBreakEnd()));
 	}
 
 	/** Worked hours for a template's time window (handles overnight + break). Kept > 0
