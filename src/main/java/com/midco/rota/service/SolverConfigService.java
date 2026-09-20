@@ -261,6 +261,9 @@ public class SolverConfigService {
 		map.put("freeLocationsPerWeek", new TuningAccessor(SolverTuning::getFreeLocationsPerWeek,
 				SolverTuning::setFreeLocationsPerWeek,
 				"Locations per week before the soft switching penalty starts"));
+		map.put("minRestHours", new TuningAccessor(SolverTuning::getMinRestHours,
+				SolverTuning::setMinRestHours,
+				"Minimum hours' rest between a carer's consecutive shifts; 0 = rule off"));
 		return map;
 	}
 

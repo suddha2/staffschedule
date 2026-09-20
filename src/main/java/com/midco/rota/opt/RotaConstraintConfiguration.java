@@ -88,6 +88,12 @@ public class RotaConstraintConfiguration {
 	@ConstraintWeight("Overlapping shifts")
 	private HardSoftLongScore overlappingShifts = HardSoftLongScore.ofHard(1000);
 
+	/** Minimum rest between a carer's consecutive shifts. Gated by solver_tuning
+	 *  {@code minRestHours} (0 = off), so this stays inert until a threshold is set.
+	 *  Soft by default; switch to hard in constraint_setting if rest must be guaranteed. */
+	@ConstraintWeight("Minimum rest between shifts")
+	private HardSoftLongScore minRestBetweenShifts = HardSoftLongScore.ofSoft(100_000);
+
 	// ------------------------------------------------ hard: eligibility
 
 	@ConstraintWeight("Gender mismatch")
@@ -265,6 +271,9 @@ public class RotaConstraintConfiguration {
 
 	public HardSoftLongScore getOverlappingShifts() { return overlappingShifts; }
 	public void setOverlappingShifts(HardSoftLongScore v) { this.overlappingShifts = v; }
+
+	public HardSoftLongScore getMinRestBetweenShifts() { return minRestBetweenShifts; }
+	public void setMinRestBetweenShifts(HardSoftLongScore v) { this.minRestBetweenShifts = v; }
 	public HardSoftLongScore getIncompatibleBackToBack() { return incompatibleBackToBack; }
 	public void setIncompatibleBackToBack(HardSoftLongScore v) { this.incompatibleBackToBack = v; }
 	public HardSoftLongScore getGenderMismatch() { return genderMismatch; }

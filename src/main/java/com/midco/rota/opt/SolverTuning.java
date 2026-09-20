@@ -47,6 +47,9 @@ public final class SolverTuning {
 	/** Locations per week an employee may work before the soft switching penalty starts. */
 	private int freeLocationsPerWeek = 2;
 
+	/** Minimum hours' rest between a carer's consecutive shifts. 0 = rule off (not enforced). */
+	private int minRestHours = 0;
+
 	/** The tuning currently in force. Never null. */
 	public static SolverTuning current() {
 		return current;
@@ -126,5 +129,13 @@ public final class SolverTuning {
 
 	public void setFreeLocationsPerWeek(int freeLocationsPerWeek) {
 		this.freeLocationsPerWeek = freeLocationsPerWeek;
+	}
+
+	public int getMinRestHours() {
+		return minRestHours;
+	}
+
+	public void setMinRestHours(int minRestHours) {
+		this.minRestHours = minRestHours;
 	}
 }

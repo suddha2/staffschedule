@@ -21,6 +21,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 import com.midco.rota.model.Employee;
 import com.midco.rota.model.ShiftAssignment;
+import com.midco.rota.model.WorkShiftAssignment;
 import com.midco.rota.service.PeriodService;
 import com.midco.rota.util.ContractType;
 import com.midco.rota.util.Gender;
@@ -113,7 +114,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 				// Physical impossibilities
 				preventDuplicateAssignments(factory), tooManyEmployeesPerShift(factory),
 				noInvalidSameDayShifts(factory), // MOVED: Before noBackToBack
-				noBackToBack(factory), noOverlappingShifts(factory),
+				noBackToBack(factory), noOverlappingShifts(factory), minRestBetweenShifts(factory),
 
 				// Eligibility
 				genderConstraint(factory), restrictedDayOfWeekConstraint(factory),
@@ -525,6 +526,56 @@ public class RotaConstraintProvider implements ConstraintProvider {
 			return null;
 		}
 		return endDate.atTime(sa.getShift().getShiftTemplate().getEndTime());
+	}
+
+	/**
+	 * Minimum rest between a carer's consecutive shifts, derived from actual times.
+	 * Config-gated: {@code SolverTuning.minRestHours == 0} (the default) means the rule
+	 * is OFF — set the hours in solver_tuning to switch it on, no deploy. A follower
+	 * (SLEEP_IN) right after its paired LONG_DAY is the intended pattern and is exempt;
+	 * overlapping shifts are left to the overlap constraint.
+	 */
+	private Constraint minRestBetweenShifts(ConstraintFactory factory) {
+		return factory.forEach(ShiftAssignment.class)
+				.filter(sa -> sa.getEmployee() != null && sa.getShift() != null
+						&& sa.getShift().getShiftTemplate() != null)
+				.join(ShiftAssignment.class,
+						Joiners.equal(ShiftAssignment::getEmployee),
+						Joiners.lessThan(ShiftAssignment::getPlanningId))
+				.filter((a, b) -> restGapTooShort(a, b))
+				.penalizeConfigurable()
+				.asConstraint("Minimum rest between shifts");
+	}
+
+	private static boolean restGapTooShort(ShiftAssignment a, ShiftAssignment b) {
+		int minRest = SolverTuning.current().getMinRestHours();
+		if (minRest <= 0) {
+			return false; // rule off
+		}
+		if (isPairedSequence(a, b)) {
+			return false; // sleep-in follows its long-day — intended, no rest needed
+		}
+		java.time.LocalDateTime aStart = startOf(a), aEnd = endOf(a), bStart = startOf(b), bEnd = endOf(b);
+		if (aStart == null || aEnd == null || bStart == null || bEnd == null) {
+			return false;
+		}
+		long gapMins;
+		if (!aEnd.isAfter(bStart)) {
+			gapMins = java.time.Duration.between(aEnd, bStart).toMinutes();      // a before b
+		} else if (!bEnd.isAfter(aStart)) {
+			gapMins = java.time.Duration.between(bEnd, aStart).toMinutes();      // b before a
+		} else {
+			return false; // overlap — handled by the overlap constraint
+		}
+		return gapMins >= 0 && gapMins < minRest * 60L;
+	}
+
+	/** True if one of the pair is the other's paired follower (e.g. SLEEP_IN of a LONG_DAY). */
+	private static boolean isPairedSequence(ShiftAssignment a, ShiftAssignment b) {
+		if (a instanceof WorkShiftAssignment wa && wa.getPairedSleepIn() == b) {
+			return true;
+		}
+		return b instanceof WorkShiftAssignment wb && wb.getPairedSleepIn() == a;
 	}
 
 	// ✅ FIXED: Back-to-back constraint (handles ONLY next-day transitions)

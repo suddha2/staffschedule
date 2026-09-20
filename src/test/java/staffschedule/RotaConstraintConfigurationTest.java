@@ -53,7 +53,7 @@ class RotaConstraintConfigurationTest {
 		}
 		assertEquals(names.size(), names.stream().distinct().count(),
 				"Two @ConstraintWeight fields name the same constraint");
-		assertEquals(43, names.size(),
+		assertEquals(44, names.size(),
 				"Every constraint in defineConstraints needs a weight, including the inactive ones");
 	}
 
