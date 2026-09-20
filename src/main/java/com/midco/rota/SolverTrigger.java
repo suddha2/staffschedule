@@ -269,7 +269,8 @@ public class SolverTrigger {
 
 		// Load all pins
 		List<PinnedTemplateAssignment> allPins = pinnedTemplateAssignmentRepository.findAll();
-		logger.info("Found {} pinned template assignments", allPins.size());
+		logger.info("Loaded {} pinned template assignments across ALL regions; only those matching this batch's "
+				+ "templates are applied (see 'Successfully pinned' below)", allPins.size());
 
 		// Build employee lookup map
 		Map<Integer, Employee> employeeMap = new HashMap<>();

@@ -243,7 +243,7 @@ public class StatsController {
 			row.createCell(col++).setCellValue(
 					"Week " + (sa.getShift().getAbsoluteWeek() % 4 == 0 ? 4 : sa.getShift().getAbsoluteWeek() % 4 ));
 			row.createCell(col++).setCellValue(sa.getShift().getShiftTemplate().getLocation());
-			row.createCell(col++).setCellValue(sa.getShift().getShiftTemplate().getShiftType().name());
+			row.createCell(col++).setCellValue(sa.getShift().getShiftTemplate().getShiftTypeCode());
 			row.createCell(col++).setCellValue(sa.getShift().getShiftTemplate().getDayOfWeek().name());
 			row.createCell(col++).setCellValue(shiftStart.format(formatter));
 			row.createCell(col++).setCellValue(shiftEnd.format(formatter));
@@ -669,7 +669,7 @@ public class StatsController {
 						if (s != null) {
 							shifts += s.count;
 							// Exclude SLEEP_IN hours from totals
-							if (shiftType != ShiftType.SLEEP_IN && s.hours != null) {
+							if (com.midco.rota.opt.ShiftTypeMeta.paidHours(shiftType.name()) && s.hours != null) {
 								hrs += s.hours.doubleValue();
 							}
 						}
@@ -732,27 +732,14 @@ public class StatsController {
 
 	// Decide whether a shift type is paid hourly or daily
 	private String getRateTypeForShiftType(ShiftType st) {
-		switch (st) {
-		case LONG_DAY:
-			return "DAILY";
-		case FLOATING:
-			return "HOURLY";
-		case DAY:
-			return "HOURLY";
-		case WAKING_NIGHT:
-			return "HOURLY";
-		case CARE_CALL:
-			return "HOURLY";
-		case SLEEP_IN:
-			return "DAILY";
-		default:
-			return "DAILY"; // fallback
-		}
+		// Data-driven pay basis (was a switch): HOURLY | DAILY | FLAT from the shift_type row.
+		return com.midco.rota.opt.ShiftTypeMeta.rateBasis(st.name());
 	}
 
 	// Return the numeric rate for a shift type + contract type
 	private BigDecimal getRateForShiftType(String region, String rateType, RateCode rateCode, ShiftType shiftType) {
-		if (shiftType == ShiftType.SLEEP_IN) {
+		// Non-hourly / salaried types (e.g. SLEEP_IN) earn no per-shift rate here — data-driven.
+		if (!com.midco.rota.opt.ShiftTypeMeta.paidHours(shiftType.name())) {
 			return BigDecimal.ZERO;
 		}
 		if ("DAILY".equals(rateType)) {

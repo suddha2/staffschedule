@@ -314,7 +314,7 @@ public class RotaController {
 					Duration duration = Duration.between(shiftStart, shiftEnd);
 
 					writer.write(String.join(",", escapeCsv(sa.getShift().getShiftTemplate().getLocation()),
-							escapeCsv(sa.getShift().getShiftTemplate().getShiftType().name()),
+							escapeCsv(sa.getShift().getShiftTemplate().getShiftTypeCode()),
 							escapeCsv(shiftStart.format(formatter)), escapeCsv(shiftEnd.format(formatter)),
 							escapeCsv(String.valueOf(duration.toMinutes() / 60.0)), escapeCsv(firstName),
 							escapeCsv(lastName)) + "\n");
@@ -397,7 +397,7 @@ public class RotaController {
 		for (ShiftAssignment sa : rota.getShiftAssignmentList()) {
 			if (sa.getShift() != null && sa.getShift().getShiftTemplate() != null) {
 				String key = buildShiftKey(sa.getShift().getShiftTemplate().getLocation(),
-						sa.getShift().getShiftTemplate().getShiftType().name(), sa.getShift().getShiftStart(),
+						sa.getShift().getShiftTemplate().getShiftTypeCode(), sa.getShift().getShiftStart(),
 						sa.getShift().getShiftTemplate().getStartTime(), sa.getShift().getId());
 				existingAssignmentsByKey.computeIfAbsent(key, k -> new ArrayList<>()).add(sa);
 			}
@@ -611,6 +611,66 @@ public class RotaController {
 		return simpUserRegistry.getUsers().stream().map(SimpUser::getName).collect(Collectors.toList());
 	}
 
+	/**
+	 * Score breakdown for an already-persisted rota: which constraints it breaks and
+	 * which slots break them, straight from OptaPlanner's {@code explainScore}.
+	 * Read-only; rehydrates only the transient planning state (constraint config,
+	 * per-employee unavailable dates, SLEEP_IN pairing, planning ids) so the score
+	 * matches what the solver produced.
+	 */
+	@PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER','ROTA_EDITOR')")
+	@GetMapping("/rota/{id}/violations")
+	@Transactional(readOnly = true)
+	public ResponseEntity<?> explainRotaViolations(@PathVariable("id") Long id) {
+		Rota rota = rotaRepository.findById(id).orElse(null);
+		if (rota == null || rota.getShiftAssignmentList() == null || rota.getShiftAssignmentList().isEmpty()) {
+			return ResponseEntity.status(HttpStatus.NOT_FOUND)
+					.body(Map.of("error", "No rota with assignments for id " + id));
+		}
+		hydrateForScoring(rota);
+		return ResponseEntity.ok(explanationService.explainDetailed(rota));
+	}
+
+	/**
+	 * Rebuild the transient planning state a persisted rota loses on load, so
+	 * {@code explainScore} reproduces the solve-time score. Only {@code @Transient}
+	 * fields are touched, so this is safe inside a read-only transaction. Mirrors the
+	 * wiring in {@link #loadData}.
+	 */
+	private void hydrateForScoring(Rota rota) {
+		List<ShiftAssignment> assignments = rota.getShiftAssignmentList();
+
+		LocalDate start = assignments.stream().map(ShiftAssignment::getShift).filter(java.util.Objects::nonNull)
+				.map(Shift::getShiftStart).filter(java.util.Objects::nonNull).min(LocalDate::compareTo).orElse(null);
+		LocalDate end = assignments.stream().map(ShiftAssignment::getShift).filter(java.util.Objects::nonNull)
+				.map(Shift::getShiftStart).filter(java.util.Objects::nonNull).max(LocalDate::compareTo).orElse(null);
+
+		rota.setPlanningId(rota.getId());
+		rota.setConstraintConfiguration(solverConfigService.buildConstraintConfiguration());
+		if (rota.getIdealShiftCountList() == null) {
+			rota.setIdealShiftCountList(new ArrayList<>()); // no constraint reads it; keep the fact collection non-null
+		}
+
+		for (ShiftAssignment sa : assignments) {
+			if (sa.getPlanningId() == null) {
+				sa.setPlanningId(String.valueOf(sa.getId()));
+			}
+		}
+
+		List<Employee> emps = assignments.stream().map(ShiftAssignment::getEmployee).filter(java.util.Objects::nonNull)
+				.distinct().toList();
+		if (!emps.isEmpty() && start != null && end != null) {
+			List<Integer> empIds = emps.stream().map(Employee::getId).toList();
+			java.util.Map<Integer, java.util.Set<LocalDate>> unavailable = com.midco.rota.util.AvailabilityCalendar
+					.build(employeeAvailabilityRepository.findOverlapping(empIds, start, end), start, end);
+			for (Employee e : emps) {
+				e.setUnavailableDates(unavailable.get(e.getId()));
+			}
+		}
+
+		ShiftAssignmentFactory.linkSleepInPairs(assignments);
+	}
+
 	private Rota loadData(LocalDate startDate, LocalDate endDate) {
 
 		final AtomicLong idGenerator = new AtomicLong();
@@ -746,7 +806,7 @@ public class RotaController {
 		List<String> keys = rota.getShiftAssignmentList().stream()
 				.filter(sa -> sa.getShift() != null && sa.getShift().getShiftTemplate() != null)
 				.map(sa -> buildShiftKey(sa.getShift().getShiftTemplate().getLocation(),
-						sa.getShift().getShiftTemplate().getShiftType().name(), sa.getShift().getShiftStart(),
+						sa.getShift().getShiftTemplate().getShiftTypeCode(), sa.getShift().getShiftStart(),
 						sa.getShift().getShiftTemplate().getStartTime(), sa.getShift().getId()))
 				.limit(10).collect(Collectors.toList());
 

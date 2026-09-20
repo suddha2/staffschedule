@@ -196,7 +196,7 @@ public class Rota {
 				continue; // Skip if any part is null
 			}
 
-			String shiftTypeName = sa.getShift().getShiftTemplate().getShiftType().name();
+			String shiftTypeName = sa.getShift().getShiftTemplate().getShiftTypeCode();
 			boolean isAssigned = sa.getEmployee() != null;
 
 			summaryStats.computeIfAbsent(shiftTypeName, k -> {

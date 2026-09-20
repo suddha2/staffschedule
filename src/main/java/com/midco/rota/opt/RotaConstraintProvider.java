@@ -65,9 +65,30 @@ public class RotaConstraintProvider implements ConstraintProvider {
 	 * SLEEP_IN region becomes massively hard-infeasible. This predicate marks the
 	 * assignments those rules still apply to (everything except SLEEP_IN).
 	 */
-	private static boolean isNotSleepIn(ShiftAssignment sa) {
-		return sa.getShift() == null || sa.getShift().getShiftTemplate() == null
-				|| sa.getShift().getShiftTemplate().getShiftType() != ShiftType.SLEEP_IN;
+	private static boolean countsAsWork(ShiftAssignment sa) {
+		// Data-driven "counts as work" (was: type != SLEEP_IN). A new non-work type
+		// (e.g. a salaried shift-lead) is excluded from these rules by seeding its
+		// shift_type row with counts_as_work=false — no code change.
+		if (sa.getShift() == null || sa.getShift().getShiftTemplate() == null
+				|| sa.getShift().getShiftTemplate().getShiftTypeCode() == null) {
+			return true;
+		}
+		return ShiftTypeMeta.countsAsWork(sa.getShift().getShiftTemplate().getShiftTypeCode());
+	}
+
+	/**
+	 * A slot needs a carer unless it's a follower (shadow) shift, which is filled
+	 * automatically by mirroring its leader. Used by the coverage (unassigned)
+	 * penalty so genuine slots — including new types like a shift-lead — are pushed
+	 * to be filled, while SLEEP_IN followers are not spuriously penalised. For the
+	 * six built-ins this matches the old {@code countsAsWork} filter exactly (SLEEP_IN
+	 * is the only follower), so it is behaviour-neutral for existing data.
+	 */
+	private static boolean coverageRequired(ShiftAssignment sa) {
+		if (sa.getShift() == null || sa.getShift().getShiftTemplate() == null) {
+			return true;
+		}
+		return !sa.getShift().getShiftTemplate().isEffectiveFollower();
 	}
 
 	/**
@@ -134,7 +155,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 	private Constraint penalizeOverloading(ConstraintFactory factory) {
 		return factory.forEach(ShiftAssignment.class).filter(sa -> sa.getEmployee() != null)
 				.filter(sa -> sa.getEmployee().getMinHrs() != null)
-				.filter(sa -> sa.getShift().getShiftTemplate().getShiftType() != ShiftType.SLEEP_IN)
+				.filter(RotaConstraintProvider::countsAsWork)
 				.groupBy(ShiftAssignment::getEmployee,
 						ConstraintCollectors.sumLong(sa -> sa.getShift().getDurationInMins()))
 				.filter((emp, totalMins) -> {
@@ -151,7 +172,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 
 	private Constraint encourageBalancedHours(ConstraintFactory factory) {
 		return factory.forEach(ShiftAssignment.class).filter(sa -> sa.getEmployee() != null)
-				.filter(RotaConstraintProvider::isNotSleepIn)
+				.filter(RotaConstraintProvider::countsAsWork)
 				.groupBy(ShiftAssignment::getEmployee,
 						ConstraintCollectors.sumLong(sa -> sa.getShift().getDurationInMins()))
 				.rewardConfigurable((emp, totalMins) -> {
@@ -178,7 +199,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 	private Constraint employeeMaxHours(ConstraintFactory factory) {
 		return factory.forEach(ShiftAssignment.class).filter(sa -> sa.getEmployee() != null)
 				.filter(sa -> sa.getEmployee().getMaxHrs() != null)
-				.filter(RotaConstraintProvider::isNotSleepIn)
+				.filter(RotaConstraintProvider::countsAsWork)
 				.groupBy(ShiftAssignment::getEmployee, sa -> YearWeek.from(sa.getShift().getShiftStart()),
 						ConstraintCollectors.sumLong(sa -> sa.getShift().getDurationInMins()))
 				.filter((emp, week, totalMins) -> {
@@ -193,7 +214,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 
 	private Constraint unassignedShiftConstraint(ConstraintFactory factory) {
 		return factory.forEachIncludingNullVars(ShiftAssignment.class).filter(sa -> sa.getEmployee() == null)
-				.filter(RotaConstraintProvider::isNotSleepIn)
+				.filter(RotaConstraintProvider::coverageRequired)
 				.penalizeConfigurable().asConstraint("Unassigned shift");
 	}
 
@@ -268,7 +289,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 	}
 
 	private Constraint genderConstraint(ConstraintFactory factory) {
-		return factory.forEachIncludingNullVars(ShiftAssignment.class).filter(RotaConstraintProvider::isNotSleepIn).filter(sa -> {
+		return factory.forEachIncludingNullVars(ShiftAssignment.class).filter(RotaConstraintProvider::countsAsWork).filter(sa -> {
 			Employee employee = sa.getEmployee();
 			Gender required = sa.getShift().getShiftTemplate().getGender();
 			if (required == Gender.ANY || employee == null) {
@@ -279,7 +300,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 	}
 
 	private Constraint restrictedDayOfWeekConstraint(ConstraintFactory factory) {
-		return factory.forEachIncludingNullVars(ShiftAssignment.class).filter(RotaConstraintProvider::isNotSleepIn).filter(sa -> {
+		return factory.forEachIncludingNullVars(ShiftAssignment.class).filter(RotaConstraintProvider::countsAsWork).filter(sa -> {
 			Employee emp = sa.getEmployee();
 			return emp != null && emp.getRestrictedDays() != null
 					&& emp.getRestrictedDays().contains(sa.getShift().getShiftTemplate().getDay());
@@ -287,7 +308,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 	}
 
 	private Constraint restrictedShiftTypeConstraint(ConstraintFactory factory) {
-		return factory.forEachIncludingNullVars(ShiftAssignment.class).filter(RotaConstraintProvider::isNotSleepIn).filter(sa -> {
+		return factory.forEachIncludingNullVars(ShiftAssignment.class).filter(RotaConstraintProvider::countsAsWork).filter(sa -> {
 			Employee emp = sa.getEmployee();
 			return emp != null && emp.getRestrictedShifts() != null
 					&& emp.getRestrictedShifts().contains(sa.getShift().getShiftTemplate().getShiftType());
@@ -295,7 +316,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 	}
 
 	private Constraint restrictedServiceConstraint(ConstraintFactory factory) {
-		return factory.forEachIncludingNullVars(ShiftAssignment.class).filter(RotaConstraintProvider::isNotSleepIn).filter(sa -> {
+		return factory.forEachIncludingNullVars(ShiftAssignment.class).filter(RotaConstraintProvider::countsAsWork).filter(sa -> {
 			Employee emp = sa.getEmployee();
 			return emp != null && emp.getRestrictedService() != null
 					&& emp.getRestrictedService().contains(sa.getShift().getShiftTemplate().getLocation());
@@ -304,7 +325,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 
 	private Constraint maxWeeklyHoursConstraint(ConstraintFactory factory) {
 		return factory.forEachIncludingNullVars(ShiftAssignment.class).filter(sa -> sa.getEmployee() != null)
-				.filter(RotaConstraintProvider::isNotSleepIn)
+				.filter(RotaConstraintProvider::countsAsWork)
 				.groupBy(ShiftAssignment::getEmployee, sa -> YearWeek.from(sa.getShift().getShiftStart()),
 						ConstraintCollectors.sumLong(sa -> sa.getShift().getDurationInMins()))
 				.filter((employee, week, totalMinutes) -> totalMinutes > (employee.getMaxHrs().longValue() * 60))
@@ -325,7 +346,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 		Map<ShiftType, Integer> maxHoursPerShiftType = ShiftTypeLimitConfig.maxHoursPerShiftType();
 
 		return factory.forEachIncludingNullVars(ShiftAssignment.class).filter(sa -> sa.getEmployee() != null)
-				.filter(RotaConstraintProvider::isNotSleepIn)
+				.filter(RotaConstraintProvider::countsAsWork)
 				.groupBy(sa -> sa.getEmployee(), sa -> sa.getShift().getShiftStart(),
 						sa -> sa.getShift().getShiftTemplate().getShiftType(),
 						ConstraintCollectors.sumLong(sa -> sa.getShift().getDurationInMins()))
@@ -342,7 +363,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 		Map<ShiftType, Integer> weeklyShiftTypeLimit = ShiftTypeLimitConfig.weeklyShiftTypeLimit();
 
 		return factory.forEachIncludingNullVars(ShiftAssignment.class).filter(sa -> sa.getEmployee() != null)
-				.filter(RotaConstraintProvider::isNotSleepIn)
+				.filter(RotaConstraintProvider::countsAsWork)
 				.groupBy(sa -> sa.getEmployee(), sa -> sa.getShift().getShiftTemplate().getShiftType(),
 						sa -> YearWeek.from(sa.getShift().getShiftStart()), ConstraintCollectors.count())
 				.filter((emp, type, week, count) -> count > weeklyShiftTypeLimit.getOrDefault(type, Integer.MAX_VALUE))
@@ -372,8 +393,8 @@ public class RotaConstraintProvider implements ConstraintProvider {
 				.filter(sa -> sa.getEmployee() != null)
 				.filter(sa -> sa.getEmployee().getContractType() == ContractType.PERMANENT)
 				.filter(sa -> {
-					ShiftType type = sa.getShift().getShiftTemplate().getShiftType();
-					return type != ShiftType.LONG_DAY && type != ShiftType.FLOATING && type != ShiftType.SLEEP_IN;
+					String code = sa.getShift().getShiftTemplate().getShiftTypeCode();
+					return code != null && ShiftTypeMeta.countsTowardWeeklyCap(code);
 				})
 				.groupBy(ShiftAssignment::getEmployee,
 						sa -> sa.getShift().getShiftStart().with(DayOfWeek.MONDAY),
@@ -407,8 +428,8 @@ public class RotaConstraintProvider implements ConstraintProvider {
 				.filter(sa -> sa.getEmployee() != null)
 				.filter(sa -> sa.getEmployee().getContractType() == ContractType.PERMANENT)
 				.filter(sa -> {
-					ShiftType type = sa.getShift().getShiftTemplate().getShiftType();
-					return type != ShiftType.LONG_DAY && type != ShiftType.FLOATING && type != ShiftType.SLEEP_IN;
+					String code = sa.getShift().getShiftTemplate().getShiftTypeCode();
+					return code != null && ShiftTypeMeta.countsTowardWeeklyCap(code);
 				})
 				.groupBy(ShiftAssignment::getEmployee,
 						sa -> sa.getShift().getShiftStart().with(DayOfWeek.MONDAY),
@@ -445,7 +466,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 	// ✅ FIXED: Same-day constraint (handles all same-day logic)
 	private Constraint noInvalidSameDayShifts(ConstraintFactory factory) {
 		return factory.forEach(ShiftAssignment.class).filter(sa -> sa.getEmployee() != null && sa.getShift() != null)
-				.filter(RotaConstraintProvider::isNotSleepIn)
+				.filter(RotaConstraintProvider::countsAsWork)
 				.groupBy(ShiftAssignment::getEmployee, sa -> sa.getShift().getShiftStart(),
 						ConstraintCollectors.toList())
 				.filter((emp, date, dayAssignments) -> !isAllowedDayAssignments(dayAssignments))
@@ -457,7 +478,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 		return factory.forEach(ShiftAssignment.class)
 				.join(ShiftAssignment.class, Joiners.equal(ShiftAssignment::getEmployee),
 						Joiners.lessThan(sa -> sa.getShift().getShiftStart()))
-				.filter((sa1, sa2) -> isNotSleepIn(sa1) && isNotSleepIn(sa2) && areIncompatibleBackToBack(sa1, sa2))
+				.filter((sa1, sa2) -> countsAsWork(sa1) && countsAsWork(sa2) && areIncompatibleBackToBack(sa1, sa2))
 				.penalizeConfigurable()
 				.asConstraint("No incompatible back-to-back shifts");
 	}
@@ -517,11 +538,10 @@ public class RotaConstraintProvider implements ConstraintProvider {
 	}
 
 	private Constraint maxMonthlyHoursWithExclusions(ConstraintFactory factory) {
-		Set<ShiftType> excludedShiftTypes = Set.of(ShiftType.SLEEP_IN);
 		final long capMinutes = SolverTuning.current().getMonthlyHoursCap() * 60L;
 
 		return factory.forEach(ShiftAssignment.class).filter(sa -> sa.getEmployee() != null)
-				.filter(sa -> !excludedShiftTypes.contains(sa.getShift().getShiftTemplate().getShiftType()))
+				.filter(RotaConstraintProvider::countsAsWork)
 				.groupBy(ShiftAssignment::getEmployee,
 						ConstraintCollectors.sumLong(sa -> sa.getShift().getDurationInMins()))
 				.filter((employee, totalMinutes) -> totalMinutes > capMinutes)
@@ -539,7 +559,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 
 	private Constraint minWeeklyHoursConstraint(ConstraintFactory factory) {
 		return factory.forEachIncludingNullVars(ShiftAssignment.class).filter(sa -> sa.getEmployee() != null)
-				.filter(RotaConstraintProvider::isNotSleepIn)
+				.filter(RotaConstraintProvider::countsAsWork)
 				.groupBy(ShiftAssignment::getEmployee, sa -> YearWeek.from(sa.getShift().getShiftStart()),
 						ConstraintCollectors.sumLong(sa -> sa.getShift().getDurationInMins()))
 				.filter((employee, week, totalMinutes) -> totalMinutes < (employee.getMinHrs().longValue() * 60))
@@ -565,7 +585,9 @@ public class RotaConstraintProvider implements ConstraintProvider {
 			if (emp == null || emp.getPreferredShifts() == null)
 				return false;
 			ShiftType shiftType = sa.getShift().getShiftTemplate().getShiftType();
-			return emp.getPreferredShifts().contains(shiftType);
+			// shiftType is null for a new data-driven type; List.of(...).contains(null) NPEs,
+			// and a new type is never in a carer's built-in preferred list anyway.
+			return shiftType != null && emp.getPreferredShifts().contains(shiftType);
 		}).rewardConfigurable().asConstraint("Prefer working on preferred shift");
 	}
 
@@ -575,7 +597,9 @@ public class RotaConstraintProvider implements ConstraintProvider {
 					ShiftType shiftType = sa.getShift().getShiftTemplate().getShiftType();
 					int priority = sa.getShift().getShiftTemplate().getPriority();
 
-					int shiftWeight = switch (shiftType) {
+					// shiftType is null for a new data-driven type (not a built-in enum) —
+					// give it the same low default the switch's default branch used.
+					int shiftWeight = shiftType == null ? 1 : switch (shiftType) {
 					case DAY -> 450;
 					case WAKING_NIGHT -> 400;
 					case LONG_DAY -> 300;
@@ -745,7 +769,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 
 	private Constraint minDaysPerLocationPerWeek(ConstraintFactory factory) {
 		return factory.forEach(ShiftAssignment.class).filter(sa -> sa.getEmployee() != null)
-				.filter(sa -> sa.getShift().getShiftTemplate().getShiftType() != ShiftType.SLEEP_IN)
+				.filter(RotaConstraintProvider::countsAsWork)
 				.groupBy(ShiftAssignment::getEmployee, sa -> sa.getShift().getShiftTemplate().getLocation(),
 						sa -> getWeekNumber(sa.getShift().getShiftStart()),
 						ConstraintCollectors.countDistinct(sa -> sa.getShift().getShiftStart()))
@@ -756,7 +780,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 	private Constraint maxDaysPerLocationPerWeek(ConstraintFactory factory) {
 		final int maxDays = SolverTuning.current().getMaxDaysPerLocationPerWeek();
 		return factory.forEach(ShiftAssignment.class).filter(sa -> sa.getEmployee() != null)
-				.filter(sa -> sa.getShift().getShiftTemplate().getShiftType() != ShiftType.SLEEP_IN)
+				.filter(RotaConstraintProvider::countsAsWork)
 				.groupBy(ShiftAssignment::getEmployee, sa -> sa.getShift().getShiftTemplate().getLocation(),
 						sa -> getWeekNumber(sa.getShift().getShiftStart()),
 						ConstraintCollectors.countDistinct(sa -> sa.getShift().getShiftStart()))
@@ -767,7 +791,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 
 	private Constraint penalizeDailyLocationSwitches(ConstraintFactory factory) {
 		return factory.forEach(ShiftAssignment.class).filter(sa -> sa.getEmployee() != null)
-				.filter(sa -> sa.getShift().getShiftTemplate().getShiftType() != ShiftType.SLEEP_IN)
+				.filter(RotaConstraintProvider::countsAsWork)
 				.join(ShiftAssignment.class, Joiners.equal(ShiftAssignment::getEmployee),
 						Joiners.filtering((sa1, sa2) -> {
 							LocalDate date1 = sa1.getShift().getShiftStart();
@@ -783,7 +807,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 
 	private Constraint rewardConsecutiveDaysAtLocation(ConstraintFactory factory) {
 		return factory.forEach(ShiftAssignment.class).filter(sa -> sa.getEmployee() != null)
-				.filter(sa -> sa.getShift().getShiftTemplate().getShiftType() != ShiftType.SLEEP_IN)
+				.filter(RotaConstraintProvider::countsAsWork)
 				.join(ShiftAssignment.class, Joiners.equal(ShiftAssignment::getEmployee),
 						Joiners.equal(sa -> sa.getShift().getShiftTemplate().getLocation()),
 						Joiners.filtering((sa1, sa2) -> {
@@ -796,7 +820,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 
 	private Constraint limitLocationChangesPerWeek(ConstraintFactory factory) {
 		return factory.forEach(ShiftAssignment.class).filter(sa -> sa.getEmployee() != null)
-				.filter(sa -> sa.getShift().getShiftTemplate().getShiftType() != ShiftType.SLEEP_IN)
+				.filter(RotaConstraintProvider::countsAsWork)
 				.groupBy(ShiftAssignment::getEmployee, sa -> getWeekNumber(sa.getShift().getShiftStart()),
 						ConstraintCollectors.countDistinct(sa -> sa.getShift().getShiftTemplate().getLocation()))
 				.penalizeConfigurable((emp, weekNum, locationCount) -> {
@@ -811,10 +835,11 @@ public class RotaConstraintProvider implements ConstraintProvider {
 	}
 
 	private Constraint locationPreferences(ConstraintFactory factory) {
-		Set<ShiftType> applicableTypes = Set.of(ShiftType.DAY, ShiftType.WAKING_NIGHT, ShiftType.LONG_DAY);
-
 		return factory.forEach(ShiftAssignment.class).filter(sa -> sa.getEmployee() != null)
-				.filter(sa -> applicableTypes.contains(sa.getShift().getShiftTemplate().getShiftType()))
+				.filter(sa -> {
+					String tc = sa.getShift().getShiftTemplate().getShiftTypeCode();
+					return tc != null && ShiftTypeMeta.countsAsLocationCoverage(tc);
+				})
 				.filter(sa -> sa.getEmployee().hasServicePreferences()).rewardConfigurable(sa -> {
 					Employee emp = sa.getEmployee();
 					String location = sa.getShift().getShiftTemplate().getLocation();
@@ -834,7 +859,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 	private Constraint maxLocationsPerEmployeePerPeriod(ConstraintFactory factory) {
 		final int maxLocations = SolverTuning.current().getMaxLocationsPerPeriod();
 		return factory.forEach(ShiftAssignment.class).filter(sa -> sa.getEmployee() != null)
-				.filter(sa -> sa.getShift().getShiftTemplate().getShiftType() != ShiftType.SLEEP_IN)
+				.filter(RotaConstraintProvider::countsAsWork)
 				.groupBy(ShiftAssignment::getEmployee,
 						ConstraintCollectors.countDistinct(sa -> sa.getShift().getShiftTemplate().getLocation()))
 				.filter((emp, locationCount) -> locationCount > maxLocations)

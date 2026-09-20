@@ -24,9 +24,6 @@ public interface ShiftTemplateRepository extends JpaRepository<ShiftTemplate, In
 	@Query("SELECT s FROM ShiftTemplate s WHERE s.region = :region and s.totalHours > 0 and active=true")
 	List<ShiftTemplate> findAllByRegion(@Param("region") String region);
 
-	ShiftTemplate findByLocationAndShiftTypeAndStartTimeAndDayOfWeek(String location, ShiftType shiftType,
-			LocalTime startTime, DayOfWeek dayOfWeek);
-
 	/**
 	 * Find all active shift templates
 	 */
@@ -63,15 +60,11 @@ public interface ShiftTemplateRepository extends JpaRepository<ShiftTemplate, In
 	List<ShiftTemplate> findByDayOfWeek(DayOfWeek dayOfWeek);
 
 	/**
-	 * Find shift templates by shift type
+	 * Find shift templates by shift type. Shift type is now stored as a free-text code
+	 * (data-driven); this keeps the ShiftType-enum signature for existing callers.
 	 */
-	List<ShiftTemplate> findByShiftType(ShiftType shiftType);
-
-	/**
-	 * Find shift templates by location, day, and shift type
-	 */
-	List<ShiftTemplate> findByLocationAndDayOfWeekAndShiftType(String location, DayOfWeek dayOfWeek,
-			ShiftType shiftType);
+	@Query("SELECT s FROM ShiftTemplate s WHERE s.shiftTypeCode = :#{#shiftType?.name()}")
+	List<ShiftTemplate> findByShiftType(@Param("shiftType") ShiftType shiftType);
 
 
 
@@ -97,11 +90,12 @@ public interface ShiftTemplateRepository extends JpaRepository<ShiftTemplate, In
 	List<ShiftTemplate> findByRegionAndActiveTrueOrderByPriorityAsc(String region);
 	
 	
+	@Query("SELECT s FROM ShiftTemplate s WHERE s.location = :location "
+			+ "AND s.shiftTypeCode = :#{#shiftType?.name()} AND s.region = :region")
 	List<ShiftTemplate> findByLocationAndShiftTypeAndRegion(
-		    String location,
-		    ShiftType shiftType,
-		    String region
-		);
+			@Param("location") String location,
+			@Param("shiftType") ShiftType shiftType,
+			@Param("region") String region);
 
 	/**
 	 * Find any ACTIVE template whose natural-key tuple

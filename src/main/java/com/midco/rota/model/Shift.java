@@ -60,10 +60,10 @@ public class Shift {
 	private void generatePairId() {
 		if (shiftTemplate != null && shiftTemplate.getLocation() != null && shiftStart != null) {
 
-			ShiftType type = shiftTemplate.getShiftType();
-
-			// Only LONG_DAY and SLEEP_IN need pairId
-			if (type == ShiftType.LONG_DAY || type == ShiftType.SLEEP_IN) {
+			// Leaders and followers both need a pairId so the linker can zip them.
+			// Data-driven by code (was: type == LONG_DAY || SLEEP_IN), so new paired types work too.
+			String code = shiftTemplate.getShiftTypeCode();
+			if (code != null && com.midco.rota.opt.ShiftTypeMeta.participatesInPairing(code)) {
 				this.pairId = String.format("%s_%s", shiftTemplate.getLocation(), shiftStart.toString());
 			}
 		}

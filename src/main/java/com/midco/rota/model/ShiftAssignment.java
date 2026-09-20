@@ -171,7 +171,7 @@ public abstract class ShiftAssignment {
 	@Override
 	public String toString() {
 		Employee employee = getEmployee();
-		return shift.getShiftTemplate().getLocation() + " " + shift.getShiftTemplate().getShiftType().toString() + " "
+		return shift.getShiftTemplate().getLocation() + " " + shift.getShiftTemplate().getShiftTypeCode() + " "
 				+ shift.getShiftStart() + " " + shift.getShiftTemplate().getStartTime() + " -> "
 				+ (employee == null ? "UNASSIGNED" : employee.toString());
 	}

@@ -43,14 +43,6 @@ public class CorrectionExtractorService {
     // ============================================================================
     
     /**
-     * Shift types to exclude from learning
-     * SLEEP_IN: Always manually assigned after solving, not a real correction
-     */
-    private static final List<ShiftType> EXCLUDED_SHIFT_TYPES = List.of(
-        ShiftType.SLEEP_IN  // Add more shift types here if needed: ShiftType.WAKING_NIGHT, etc.
-    );
-    
-    /**
      * Extract corrections from the last month
      */
     @Transactional
@@ -89,7 +81,8 @@ public class CorrectionExtractorService {
         
         for (RotaFeeder manual : manualEntries) {
             // ✅ EXCLUDE SLEEP_IN and other configured shift types
-            if (EXCLUDED_SHIFT_TYPES.contains(manual.getShiftType())) {
+            if (manual.getShiftType() != null
+                    && !com.midco.rota.opt.ShiftTypeMeta.mineable(manual.getShiftType().name())) {
                 excludedCount++;
                 continue; // Skip this shift - it's always manually assigned
             }

@@ -48,13 +48,6 @@ public class PatternAnalyzer {
     private static final int MIN_UNASSIGNED_FOR_FLAG = 5; // Minimum unassigned at location to flag
     
     /**
-     * Shift types to exclude from analysis (should match CorrectionExtractorService exclusions)
-     */
-    private static final List<ShiftType> EXCLUDED_SHIFT_TYPES = List.of(
-        ShiftType.SLEEP_IN  // Always manually assigned, not a preference indicator
-    );
-    
-    /**
      * Analyze corrections from the last month
      */
     public List<Learning> analyzeLastMonth() {
@@ -85,7 +78,8 @@ public class PatternAnalyzer {
         // ✅ FILTER OUT EXCLUDED SHIFT TYPES (safety measure - should already be filtered)
         int originalCount = corrections.size();
         corrections = corrections.stream()
-            .filter(c -> !EXCLUDED_SHIFT_TYPES.contains(c.getShiftType()))
+            .filter(c -> c.getShiftType() == null
+                    || com.midco.rota.opt.ShiftTypeMeta.mineable(c.getShiftType().name()))
             .collect(Collectors.toList());
         
         int excludedCount = originalCount - corrections.size();

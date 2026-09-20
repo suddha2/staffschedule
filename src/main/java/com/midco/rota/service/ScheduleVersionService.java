@@ -385,7 +385,7 @@ public class ScheduleVersionService {
 
 			differences.add(AssignmentDiffDTO.builder().shiftId(shiftId)
 					.location(template != null ? template.getLocation() : null)
-					.shiftType(template != null ? template.getShiftType().name() : null)
+					.shiftType(template != null ? template.getShiftTypeCode() : null)
 					.shiftStart(shift != null && shift.getShiftStart() != null ? shift.getShiftStart().atStartOfDay()
 							: null)
 					.changeType(changeType).employeeAId(empAId).employeeAName(getEmployeeName(empAId))
@@ -538,7 +538,7 @@ public class ScheduleVersionService {
 				.employeeFirstName(employee != null ? employee.getFirstName() : null)
 				.employeeLastName(employee != null ? employee.getLastName() : null).rotaId(assignment.getRotaId())
 				.assignedAt(assignment.getAssignedAt()).location(template != null ? template.getLocation() : null)
-				.shiftType(template != null ? template.getShiftType().name() : null)
+				.shiftType(template != null ? template.getShiftTypeCode() : null)
 				.dayOfWeek(template != null ? template.getDayOfWeek().name() : null)
 				.startTime(
 						template != null ? template.getStartTime() != null ? template.getStartTime().toString() : null
@@ -575,7 +575,7 @@ public class ScheduleVersionService {
 				.changeReason(change.getChangeReason() != null ? change.getChangeReason().name() : null)
 				.changedAt(change.getChangedAt()).changedBy(change.getChangedBy())
 				.location(template != null ? template.getLocation() : null)
-				.shiftType(template != null ? template.getShiftType().name() : null)
+				.shiftType(template != null ? template.getShiftTypeCode() : null)
 				.shiftStart(
 						shift != null && shift.getShiftStart() != null ? shift.getShiftStart().atStartOfDay() : null)
 

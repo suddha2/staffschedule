@@ -36,9 +36,11 @@ public class ShiftTemplate {
 	@Column(length = 50)
 	private String region;
 
-	@Enumerated(EnumType.STRING)
-	@Column(name = "shift_type", length = 20)
-	private ShiftType shiftType;
+	// Data-driven shift type: stored as a free-text code (matches shift_type.code) so a
+	// new type needs no enum change. getShiftType() still returns the built-in enum for
+	// the six known codes (null otherwise) so existing callers keep working unchanged.
+	@Column(name = "shift_type", length = 40)
+	private String shiftTypeCode;
 	
 	@Enumerated(EnumType.STRING)
 	@Column(name = "day_of_week", length = 15)
@@ -75,7 +77,27 @@ public class ShiftTemplate {
 
 	@Column(name="active")
 	private boolean active;
-	
+
+	// --- Data-driven shift-type config (V013). Set per service when the template is
+	// built; null/false means "inherit the shift_type default". Nothing reads these
+	// yet beyond accessors — the constraint/factory migration lands in later installments.
+
+	/** Flat rate that overrides the rate card for this shift (e.g. complex 20, sleep-in 0). Null = use rate card. */
+	@Column(name = "rate", precision = 8, scale = 2)
+	private BigDecimal rate;
+
+	/** HOURLY | DAILY | FLAT; null = inherit the shift type's default basis. */
+	@Column(name = "rate_basis", length = 20)
+	private String rateBasis;
+
+	/** True when this template mirrors a leader's carer (the generalised SLEEP_IN shadow). */
+	@Column(name = "is_follower", nullable = false)
+	private boolean follower = false;
+
+	/** The leader template this one follows (its carer is mirrored onto this shift). Null unless {@link #follower}. */
+	@Column(name = "paired_with_template_id")
+	private Integer pairedWithTemplateId;
+
 	public ShiftTemplate() {
 	}
 
@@ -108,7 +130,18 @@ public class ShiftTemplate {
 	}
 
 	public void setShiftType(ShiftType shiftType) {
-		this.shiftType = shiftType;
+		this.shiftTypeCode = (shiftType == null) ? null : shiftType.name();
+	}
+
+	/** Raw shift-type code (JSON {@code shiftType}); any value, including new data-driven types. */
+	@com.fasterxml.jackson.annotation.JsonProperty("shiftType")
+	public String getShiftTypeCode() {
+		return shiftTypeCode;
+	}
+
+	@com.fasterxml.jackson.annotation.JsonProperty("shiftType")
+	public void setShiftTypeCode(String shiftTypeCode) {
+		this.shiftTypeCode = shiftTypeCode;
 	}
 
 //	public void setDay(DayOfWeek day) {
@@ -135,8 +168,17 @@ public class ShiftTemplate {
 		return location;
 	}
 
+	/** Legacy enum view: the built-in {@link ShiftType} for the six known codes, else null. */
+	@com.fasterxml.jackson.annotation.JsonIgnore
 	public ShiftType getShiftType() {
-		return shiftType;
+		if (shiftTypeCode == null) {
+			return null;
+		}
+		try {
+			return ShiftType.valueOf(shiftTypeCode);
+		} catch (IllegalArgumentException e) {
+			return null; // a new data-driven type with no enum constant
+		}
 	}
 
 	public DayOfWeek getDay() {
@@ -161,7 +203,7 @@ public class ShiftTemplate {
 
 	@Override
 	public String toString() {
-		return "Shift [id=" + id + ", region=" + region + ", location=" + location + ", shiftType=" + shiftType
+		return "Shift [id=" + id + ", region=" + region + ", location=" + location + ", shiftType=" + shiftTypeCode
 				+ ", day=" + dayOfWeek + ", startTime=" + startTime + ", endTime=" + endTime + ", totalHours="
 				+ totalHours + ", gender=" + requiredGender + "skills = " + requiredSkills + "empcount =" + empCount +" priority ="+priority
 				+ "]";
@@ -237,6 +279,51 @@ public class ShiftTemplate {
 
 	public void setActive(boolean active) {
 		this.active = active;
+	}
+
+	public BigDecimal getRate() {
+		return rate;
+	}
+
+	public void setRate(BigDecimal rate) {
+		this.rate = rate;
+	}
+
+	public String getRateBasis() {
+		return rateBasis;
+	}
+
+	public void setRateBasis(String rateBasis) {
+		this.rateBasis = rateBasis;
+	}
+
+	public boolean isFollower() {
+		return follower;
+	}
+
+	public void setFollower(boolean follower) {
+		this.follower = follower;
+	}
+
+	public Integer getPairedWithTemplateId() {
+		return pairedWithTemplateId;
+	}
+
+	public void setPairedWithTemplateId(Integer pairedWithTemplateId) {
+		this.pairedWithTemplateId = pairedWithTemplateId;
+	}
+
+	/**
+	 * True when this template's shift mirrors a leader's carer (the generalised
+	 * SLEEP_IN shadow): the per-template {@code is_follower} flag if set, otherwise
+	 * the shift type's seeded default. Drives which assignment subtype the factory
+	 * creates and how the linker pairs shifts.
+	 */
+	public boolean isEffectiveFollower() {
+		if (follower) {
+			return true;
+		}
+		return shiftTypeCode != null && com.midco.rota.opt.ShiftTypeMeta.isFollower(shiftTypeCode);
 	}
 
 }

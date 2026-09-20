@@ -90,7 +90,7 @@ public class ShiftTemplateController {
 				List<ShiftTemplate> clashes = shiftTemplateRepository.findActiveDuplicates(
 						request.getRegion(), request.getLocation(),
 						day.name(),
-						request.getShiftType() != null ? request.getShiftType().name() : null,
+						request.getShiftTypeCode(),
 						request.getStartTime(), request.getEndTime(),
 						request.getBreakStart(), request.getBreakEnd(),
 						null);
@@ -157,7 +157,7 @@ public class ShiftTemplateController {
 			List<ShiftTemplate> clashes = shiftTemplateRepository.findActiveDuplicates(
 					shiftTemplateDetails.getRegion(), shiftTemplateDetails.getLocation(),
 					shiftTemplateDetails.getDayOfWeek() != null ? shiftTemplateDetails.getDayOfWeek().name() : null,
-					shiftTemplateDetails.getShiftType() != null ? shiftTemplateDetails.getShiftType().name() : null,
+					shiftTemplateDetails.getShiftTypeCode(),
 					shiftTemplateDetails.getStartTime(), shiftTemplateDetails.getEndTime(),
 					shiftTemplateDetails.getBreakStart(), shiftTemplateDetails.getBreakEnd(),
 					id);

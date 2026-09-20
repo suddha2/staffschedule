@@ -72,8 +72,9 @@ public class PaycycleStatsService {
 			if (template == null)
 				continue;
 
-			// ✅ CHANGE 1: Exclude SLEEP_IN from service statistics
-			if (template.getShiftType() == ShiftType.SLEEP_IN) {
+			// Exclude non-work (e.g. SLEEP_IN shadow) from service statistics — data-driven.
+			if (template.getShiftTypeCode() != null
+					&& !com.midco.rota.opt.ShiftTypeMeta.countsAsWork(template.getShiftTypeCode())) {
 				continue;
 			}
 
@@ -171,8 +172,8 @@ public class PaycycleStatsService {
 			Shift shift = a.getShift();
 			ShiftType type = shift.getShiftTemplate().getShiftType();
 
-			// Exclude SLEEP_IN from employee statistics
-			if (type == ShiftType.SLEEP_IN) {
+			// Exclude non-work (e.g. SLEEP_IN shadow) from employee statistics — data-driven.
+			if (type != null && !com.midco.rota.opt.ShiftTypeMeta.countsAsWork(type.name())) {
 				continue;
 			}
 
@@ -254,7 +255,7 @@ public class PaycycleStatsService {
 				Employee emp = a.getEmployee();
 				if (emp == null) continue;
 				ShiftType type = a.getShift().getShiftTemplate().getShiftType();
-				if (type == ShiftType.SLEEP_IN) continue;
+				if (type != null && !com.midco.rota.opt.ShiftTypeMeta.countsAsWork(type.name())) continue;
 
 				summaryByEmp
 						.computeIfAbsent(emp.getId(), k -> new HashMap<>())
