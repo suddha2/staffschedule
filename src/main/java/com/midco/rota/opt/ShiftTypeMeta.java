@@ -35,6 +35,15 @@ public class ShiftTypeMeta {
 
     @EventListener(ApplicationReadyEvent.class)
     public void init() {
+        reload();
+    }
+
+    /**
+     * Rebuilds the static view from the table. Called once at startup and again
+     * after any admin edit to {@code shift_type}, so a changed rate, cap or flag
+     * is picked up by the next solve/report without a restart.
+     */
+    public void reload() {
         List<ShiftTypeDef> all = repo.findAll();
         Map<String, ShiftTypeDef> map = new HashMap<>();
         for (ShiftTypeDef d : all) {
