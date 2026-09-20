@@ -1,5 +1,6 @@
 package com.midco.rota.controller;
 
+import java.math.BigDecimal;
 import java.time.DayOfWeek;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -115,7 +116,8 @@ public class ShiftTemplateController {
 				template.setDayOfWeek(day);
 				template.setStartTime(request.getStartTime());
 				template.setEndTime(request.getEndTime());
-				template.setShiftType(request.getShiftType());
+				// Use the raw code, not the derived enum (null for new data-driven types).
+				template.setShiftTypeCode(request.getShiftTypeCode());
 				template.setRegion(request.getRegion());
 				template.setActive(request.isActive());
 				template.setBreakEnd(request.getBreakEnd());
@@ -125,9 +127,20 @@ public class ShiftTemplateController {
 				template.setLocation(request.getLocation());
 				template.setRequiredGender(request.getRequiredGender());
 				template.setRequiredSkills(request.getRequiredSkills());
-				template.setShiftType(request.getShiftType());
-				template.setTotalHours(request.getTotalHours());
 				template.setPriority(request.getPriority());
+				// Data-driven type config (rate override, pairing).
+				template.setRate(request.getRate());
+				template.setRateBasis(request.getRateBasis());
+				template.setFollower(request.isFollower());
+				template.setPairedWithTemplateId(request.getPairedWithTemplateId());
+				// total_hours must be > 0 or findAllByRegion won't feed it to the solver;
+				// compute from the times if the caller didn't supply it.
+				BigDecimal totalHours = request.getTotalHours();
+				if (totalHours == null || totalHours.signum() <= 0) {
+					totalHours = computeTotalHours(request.getStartTime(), request.getEndTime(),
+							request.getBreakStart(), request.getBreakEnd());
+				}
+				template.setTotalHours(totalHours);
 
 				created.add(template);
 			}
@@ -138,6 +151,31 @@ public class ShiftTemplateController {
 			e.printStackTrace();
 			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
 		}
+	}
+
+	/** Worked hours for a template's time window (handles overnight + break). Kept > 0
+	 *  so findAllByRegion feeds the template to the solver. */
+	private java.math.BigDecimal computeTotalHours(java.time.LocalTime start, java.time.LocalTime end,
+			java.time.LocalTime breakStart, java.time.LocalTime breakEnd) {
+		if (start == null || end == null) {
+			return java.math.BigDecimal.ZERO;
+		}
+		long mins = java.time.Duration.between(start, end).toMinutes();
+		if (mins < 0) {
+			mins += 24 * 60;
+		}
+		if (breakStart != null && breakEnd != null) {
+			long b = java.time.Duration.between(breakStart, breakEnd).toMinutes();
+			if (b < 0) {
+				b += 24 * 60;
+			}
+			mins -= b;
+		}
+		if (mins < 0) {
+			mins = 0;
+		}
+		return java.math.BigDecimal.valueOf(mins)
+				.divide(java.math.BigDecimal.valueOf(60), 2, java.math.RoundingMode.HALF_UP);
 	}
 
 	/**
