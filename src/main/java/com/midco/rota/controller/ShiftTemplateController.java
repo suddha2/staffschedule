@@ -128,6 +128,18 @@ public class ShiftTemplateController {
 				template.setLocation(request.getLocation());
 				template.setRequiredGender(request.getRequiredGender());
 				template.setRequiredSkills(request.getRequiredSkills());
+				// Ensure the type's eligibility skill is present (e.g. SHIFT_LEAD).
+				String typeSkill = com.midco.rota.opt.ShiftTypeMeta.requiredSkill(request.getShiftTypeCode());
+				if (typeSkill != null && !typeSkill.isBlank()) {
+					java.util.List<String> skills = new java.util.ArrayList<>();
+					if (request.getRequiredSkills() != null) {
+						skills.addAll(request.getRequiredSkills());
+					}
+					if (!skills.contains(typeSkill)) {
+						skills.add(typeSkill);
+					}
+					template.setRequiredSkills(skills);
+				}
 				template.setPriority(request.getPriority());
 				// Data-driven type config (rate override, pairing).
 				template.setRate(request.getRate());
@@ -235,6 +247,12 @@ public class ShiftTemplateController {
 		t.setEndTime(row.getEndTime());
 		t.setEmpCount(row.getEmpCount() == null ? 1 : row.getEmpCount());
 		t.setTotalHours(computeTotalHours(row.getStartTime(), row.getEndTime(), t.getBreakStart(), t.getBreakEnd()));
+		// Auto-tag the type's eligibility skill (e.g. SHIFT_LEAD) so it's lead-only without
+		// hand-editing. Types with no required_skill leave existing skills untouched.
+		String reqSkill = com.midco.rota.opt.ShiftTypeMeta.requiredSkill(row.getShiftType());
+		if (reqSkill != null && !reqSkill.isBlank()) {
+			t.setRequiredSkills(java.util.List.of(reqSkill));
+		}
 	}
 
 	/** Worked hours for a template's time window (handles overnight + break). Kept > 0

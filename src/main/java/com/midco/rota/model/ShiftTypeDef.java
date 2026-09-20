@@ -56,11 +56,18 @@ public class ShiftTypeDef {
     @Column(name = "rate", precision = 8, scale = 2)
     private java.math.BigDecimal rate;
 
+    /** Skill/role required to work this type (null = none). Auto-applied to templates by the builder. */
+    @Column(name = "required_skill", length = 40)
+    private String requiredSkill;
+
     public ShiftTypeDef() {
     }
 
     public java.math.BigDecimal getRate() { return rate; }
     public void setRate(java.math.BigDecimal rate) { this.rate = rate; }
+
+    public String getRequiredSkill() { return requiredSkill; }
+    public void setRequiredSkill(String requiredSkill) { this.requiredSkill = requiredSkill; }
 
     public String getCode() { return code; }
     public void setCode(String code) { this.code = code; }

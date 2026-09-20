@@ -116,6 +116,12 @@ public class ShiftTypeMeta {
         return d != null ? d.getRate() : null;
     }
 
+    /** Skill/role required to work this type (null = none), auto-applied to its templates. */
+    public static String requiredSkill(String code) {
+        ShiftTypeDef d = def(code);
+        return d != null ? d.getRequiredSkill() : null;
+    }
+
     /** Active shift-type codes, ordered by display name — the dynamic column set for reports. */
     public static java.util.List<String> activeCodes() {
         return BY_CODE.values().stream()
