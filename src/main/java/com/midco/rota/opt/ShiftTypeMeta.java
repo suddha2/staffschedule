@@ -110,6 +110,22 @@ public class ShiftTypeMeta {
         return d != null ? d.getDefaultRateBasis() : Fallback.rateBasis(code);
     }
 
+    /** Flat rate override for this type, or null to use the region/level rate card. */
+    public static java.math.BigDecimal rateOverride(String code) {
+        ShiftTypeDef d = def(code);
+        return d != null ? d.getRate() : null;
+    }
+
+    /** Active shift-type codes, ordered by display name — the dynamic column set for reports. */
+    public static java.util.List<String> activeCodes() {
+        return BY_CODE.values().stream()
+                .filter(ShiftTypeDef::isActive)
+                .sorted(java.util.Comparator.comparing(ShiftTypeDef::getDisplayName,
+                        java.util.Comparator.nullsLast(String::compareTo)))
+                .map(ShiftTypeDef::getCode)
+                .collect(java.util.stream.Collectors.toList());
+    }
+
     /**
      * Hard-coded mirror of the V013 seed. Used only when the row isn't loaded, so
      * behaviour is identical either way during the enum-retirement transition.

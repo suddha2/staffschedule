@@ -52,8 +52,15 @@ public class ShiftTypeDef {
     @Column(name = "default_pairs_with", length = 40)
     private String defaultPairsWith;
 
+    /** Flat rate override for this type (null = use the region/level rate card). */
+    @Column(name = "rate", precision = 8, scale = 2)
+    private java.math.BigDecimal rate;
+
     public ShiftTypeDef() {
     }
+
+    public java.math.BigDecimal getRate() { return rate; }
+    public void setRate(java.math.BigDecimal rate) { this.rate = rate; }
 
     public String getCode() { return code; }
     public void setCode(String code) { this.code = code; }

@@ -2,10 +2,9 @@ package com.midco.rota.model;
 
 import java.math.BigDecimal;
 
-import com.midco.rota.util.ShiftType;
-
 public class ShiftTypeStatsDTO {
-	 	public ShiftType shiftType;
+	 	// Shift-type CODE (data-driven), not the legacy enum.
+	 	public String shiftType;
 	    public BigDecimal totalHours = BigDecimal.ZERO;
 	    public BigDecimal allocatedHours = BigDecimal.ZERO;
 	    public BigDecimal unallocatedHours = BigDecimal.ZERO;

@@ -373,8 +373,8 @@ public class StatsController {
 
 		int dataRowCount = 0;
 
-		// Decide an order for ShiftType columns; keeps exported rows predictable
-		List<ShiftType> shiftTypeOrder = Arrays.asList(ShiftType.values()); // or custom order
+		// Dynamic, data-driven shift-type order (was ShiftType.values()).
+		List<String> shiftTypeOrder = com.midco.rota.opt.ShiftTypeMeta.activeCodes();
 
 		for (EmployeeShiftStatDTO emp : data) {
 			if (emp == null || emp.weeklyStats == null)
@@ -390,7 +390,7 @@ public class StatsController {
 				LocalDate end = week.weekEnd;
 
 				// For each shift type present in the map (or all types in ordered list)
-				for (ShiftType st : shiftTypeOrder) {
+				for (String st : shiftTypeOrder) {
 					ShiftSummaryDTO summary = week.shiftSummary.get(st);
 					// Skip empty summaries if you prefer fewer rows:
 					if (summary == null || (summary.count == 0
@@ -513,7 +513,7 @@ public class StatsController {
 		if (sortedWeeks.isEmpty())
 			sortedWeeks = Arrays.asList(1, 2, 3, 4);
 
-		List<ShiftType> shiftTypes = Arrays.asList(ShiftType.values());
+		List<String> shiftTypes = com.midco.rota.opt.ShiftTypeMeta.activeCodes();
 
 		CellStyle headerStyle = createHeaderStyle(workbook);
 		DataFormat df = workbook.createDataFormat();
@@ -602,7 +602,7 @@ public class StatsController {
 		tsCell.setCellValue("Shifts");
 		tsCell.setCellStyle(headerStyle);
 
-		for (ShiftType st : shiftTypes) {
+		for (String st : shiftTypes) {
 			String rateType = getRateTypeForShiftType(st); // "Hourly" or "Daily"
 			if ("HOURLY".equals(rateType)) {
 				Cell h = subHeader.createCell(col++);
@@ -662,14 +662,14 @@ public class StatsController {
 				int shifts = 0;
 				if (ws != null && ws.shiftSummary != null) {
 					// ✅ CHANGE 3: Exclude SLEEP_IN hours from weekly totals
-					for (Map.Entry<ShiftType, ShiftSummaryDTO> entry : ws.shiftSummary.entrySet()) {
-						ShiftType shiftType = entry.getKey();
+					for (Map.Entry<String, ShiftSummaryDTO> entry : ws.shiftSummary.entrySet()) {
+						String shiftType = entry.getKey();
 						ShiftSummaryDTO s = entry.getValue();
 
 						if (s != null) {
 							shifts += s.count;
 							// Exclude SLEEP_IN hours from totals
-							if (com.midco.rota.opt.ShiftTypeMeta.paidHours(shiftType.name()) && s.hours != null) {
+							if (com.midco.rota.opt.ShiftTypeMeta.paidHours(shiftType) && s.hours != null) {
 								hrs += s.hours.doubleValue();
 							}
 						}
@@ -689,7 +689,7 @@ public class StatsController {
 			thrs.setCellStyle(intStyle);
 
 			double totalPay = 0;
-			for (ShiftType st : shiftTypes) {
+			for (String st : shiftTypes) {
 				ShiftSummaryDTO summary = emp.weeklyStats == null ? null
 						: emp.weeklyStats.stream().map(ws -> ws.shiftSummary == null ? null : ws.shiftSummary.get(st))
 								.filter(Objects::nonNull).reduce(new ShiftSummaryDTO(), (a, b) -> {
@@ -730,27 +730,29 @@ public class StatsController {
 		sheet.createFreezePane(0, 2);
 	}
 
-	// Decide whether a shift type is paid hourly or daily
-	private String getRateTypeForShiftType(ShiftType st) {
-		// Data-driven pay basis (was a switch): HOURLY | DAILY | FLAT from the shift_type row.
-		return com.midco.rota.opt.ShiftTypeMeta.rateBasis(st.name());
+	// Pay basis for a shift-type code: HOURLY | DAILY | FLAT (from the shift_type row).
+	private String getRateTypeForShiftType(String code) {
+		return com.midco.rota.opt.ShiftTypeMeta.rateBasis(code);
 	}
 
-	// Return the numeric rate for a shift type + contract type
-	private BigDecimal getRateForShiftType(String region, String rateType, RateCode rateCode, ShiftType shiftType) {
-		// Non-hourly / salaried types (e.g. SLEEP_IN) earn no per-shift rate here — data-driven.
-		if (!com.midco.rota.opt.ShiftTypeMeta.paidHours(shiftType.name())) {
+	// Two-tier rate for a shift-type code: the type's own rate tag wins (e.g. complex 20,
+	// shift-lead 0); otherwise fall back to the region/level rate card.
+	private BigDecimal getRateForShiftType(String region, String rateType, RateCode rateCode, String code) {
+		BigDecimal override = com.midco.rota.opt.ShiftTypeMeta.rateOverride(code);
+		if (override != null) {
+			return override;
+		}
+		// Non-hourly / salaried types earn no per-shift rate from the card.
+		if (!com.midco.rota.opt.ShiftTypeMeta.paidHours(code)) {
 			return BigDecimal.ZERO;
 		}
+		if ("CARE_CALL".equals(code)) {
+			return careCallHourlyRate;
+		}
 		if ("DAILY".equals(rateType)) {
-			// if rate Type is DAILY, override ratecode and pick daily rate
+			// Daily rate is flat: override the level and pick the L1 daily rate.
 			return RateTableProvider.getAmount(region, rateType, RateCode.L1.name());
 		}
-		
-		if (shiftType == ShiftType.CARE_CALL) {
-	        return careCallHourlyRate;
-	    }
-
 		return RateTableProvider.getAmount(region, rateType, rateCode.name());
 	}
 

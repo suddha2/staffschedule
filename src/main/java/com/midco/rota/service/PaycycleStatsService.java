@@ -80,7 +80,7 @@ public class PaycycleStatsService {
 
 			String region = template.getRegion();
 			String location = template.getLocation();
-			ShiftType type = template.getShiftType();
+			String type = template.getShiftTypeCode();
 			BigDecimal hours = shift.getDurationInHours();
 //			int weekIndex = (int) ChronoUnit.WEEKS.between(startDate, shift.getShiftStart());
 
@@ -162,7 +162,8 @@ public class PaycycleStatsService {
 
 		// Group assignments by employee id → weekNumber → shiftType. Keying by id
 		// (not name) keeps two employees who share a name from merging.
-		Map<Integer, Map<Integer, Map<ShiftType, ShiftSummaryDTO>>> empWeekMap = new HashMap<>();
+		// Keyed by shift-type CODE (data-driven), so new types flow through and null enums don't NPE.
+		Map<Integer, Map<Integer, Map<String, ShiftSummaryDTO>>> empWeekMap = new HashMap<>();
 
 		for (ShiftAssignment a : assignments) {
 			Employee emp = a.getEmployee();
@@ -170,10 +171,12 @@ public class PaycycleStatsService {
 				continue;
 
 			Shift shift = a.getShift();
-			ShiftType type = shift.getShiftTemplate().getShiftType();
+			String type = shift.getShiftTemplate().getShiftTypeCode();
+			if (type == null)
+				continue;
 
 			// Exclude non-work (e.g. SLEEP_IN shadow) from employee statistics — data-driven.
-			if (type != null && !com.midco.rota.opt.ShiftTypeMeta.countsAsWork(type.name())) {
+			if (!com.midco.rota.opt.ShiftTypeMeta.countsAsWork(type)) {
 				continue;
 			}
 
@@ -191,11 +194,11 @@ public class PaycycleStatsService {
 		List<EmployeeShiftStatDTO> result = new ArrayList<>();
 
 		for (Employee emp : employees) {
-			Map<Integer, Map<ShiftType, ShiftSummaryDTO>> weekMap = empWeekMap.getOrDefault(emp.getId(),
+			Map<Integer, Map<String, ShiftSummaryDTO>> weekMap = empWeekMap.getOrDefault(emp.getId(),
 					Collections.emptyMap());
 
 			List<WeeklyShiftStatDTO> weeklyStats = new ArrayList<>();
-			for (Map.Entry<Integer, Map<ShiftType, ShiftSummaryDTO>> entry : weekMap.entrySet()) {
+			for (Map.Entry<Integer, Map<String, ShiftSummaryDTO>> entry : weekMap.entrySet()) {
 				int weekNumber = entry.getKey();
 				LocalDate start = startDate.plusWeeks(weekNumber - 1L);
 				LocalDate end = start.plusDays(6);
