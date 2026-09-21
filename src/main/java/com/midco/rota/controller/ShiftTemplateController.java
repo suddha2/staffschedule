@@ -311,7 +311,7 @@ public class ShiftTemplateController {
 			// Update all fields
 			template.setLocation(shiftTemplateDetails.getLocation());
 			template.setRegion(shiftTemplateDetails.getRegion());
-			template.setShiftType(shiftTemplateDetails.getShiftType());
+			template.setShiftTypeCode(shiftTemplateDetails.getShiftTypeCode());
 			template.setDayOfWeek(shiftTemplateDetails.getDayOfWeek());
 			template.setStartTime(shiftTemplateDetails.getStartTime());
 			template.setEndTime(shiftTemplateDetails.getEndTime());
@@ -520,7 +520,7 @@ public class ShiftTemplateController {
 		dto.setId(template.getId());
 		dto.setLocation(template.getLocation());
 		dto.setRegion(template.getRegion());
-		dto.setShiftType(template.getShiftType());
+		dto.setShiftType(template.getShiftTypeCode());
 		dto.setDayOfWeek(template.getDayOfWeek());
 		dto.setStartTime(template.getStartTime());
 		dto.setEndTime(template.getEndTime());

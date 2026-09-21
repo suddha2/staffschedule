@@ -2,18 +2,18 @@ package com.midco.rota.dto;
 
 import java.time.LocalTime;
 
-import com.midco.rota.util.ShiftType;
-
 public class ConflictingShiftDTO {
     private String location;
-    private ShiftType shiftType;
+    /** Data-driven shift-type CODE (e.g. LONG_DAY, SHIFT_LEAD). Was the ShiftType enum,
+     *  which serialised null for new types that have no enum constant. */
+    private String shiftType;
     private LocalTime startTime;
     private LocalTime endTime;
 
     public ConflictingShiftDTO() {
     }
 
-    public ConflictingShiftDTO(String location, ShiftType shiftType, LocalTime startTime, LocalTime endTime) {
+    public ConflictingShiftDTO(String location, String shiftType, LocalTime startTime, LocalTime endTime) {
         this.location = location;
         this.shiftType = shiftType;
         this.startTime = startTime;
@@ -29,11 +29,11 @@ public class ConflictingShiftDTO {
         this.location = location;
     }
 
-    public ShiftType getShiftType() {
+    public String getShiftType() {
         return shiftType;
     }
 
-    public void setShiftType(ShiftType shiftType) {
+    public void setShiftType(String shiftType) {
         this.shiftType = shiftType;
     }
 
@@ -60,7 +60,7 @@ public class ConflictingShiftDTO {
 
     public static class Builder {
         private String location;
-        private ShiftType shiftType;
+        private String shiftType;
         private LocalTime startTime;
         private LocalTime endTime;
 
@@ -69,7 +69,7 @@ public class ConflictingShiftDTO {
             return this;
         }
 
-        public Builder shiftType(ShiftType shiftType) {
+        public Builder shiftType(String shiftType) {
             this.shiftType = shiftType;
             return this;
         }

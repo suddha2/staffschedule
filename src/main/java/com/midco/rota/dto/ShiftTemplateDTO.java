@@ -2,7 +2,6 @@ package com.midco.rota.dto;
 
 import com.midco.rota.model.ShiftTemplate;
 import com.midco.rota.util.Gender;
-import com.midco.rota.util.ShiftType;
 import java.math.BigDecimal;
 import java.time.DayOfWeek;
 import java.time.LocalTime;
@@ -12,7 +11,9 @@ public class ShiftTemplateDTO {
     private Integer id;
     private String location;
     private String region;
-    private ShiftType shiftType;
+    /** Data-driven shift-type CODE (e.g. LONG_DAY, SHIFT_LEAD). Was the ShiftType enum,
+     *  which serialised null for new types with no enum constant. JSON key stays "shiftType". */
+    private String shiftType;
     private DayOfWeek dayOfWeek;
     private LocalTime startTime;
     private LocalTime endTime;
@@ -35,8 +36,8 @@ public class ShiftTemplateDTO {
     public String getRegion() { return region; }
     public void setRegion(String region) { this.region = region; }
     
-    public ShiftType getShiftType() { return shiftType; }
-    public void setShiftType(ShiftType shiftType) { this.shiftType = shiftType; }
+    public String getShiftType() { return shiftType; }
+    public void setShiftType(String shiftType) { this.shiftType = shiftType; }
     
     public DayOfWeek getDayOfWeek() { return dayOfWeek; }
     public void setDayOfWeek(DayOfWeek dayOfWeek) { this.dayOfWeek = dayOfWeek; }
@@ -81,7 +82,7 @@ public class ShiftTemplateDTO {
         dto.setId(template.getId());
         dto.setLocation(template.getLocation());
         dto.setRegion(template.getRegion());
-        dto.setShiftType(template.getShiftType());
+        dto.setShiftType(template.getShiftTypeCode());
         dto.setDayOfWeek(template.getDayOfWeek());
         dto.setStartTime(template.getStartTime());
         dto.setEndTime(template.getEndTime());

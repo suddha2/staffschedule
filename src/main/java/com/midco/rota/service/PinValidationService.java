@@ -51,7 +51,7 @@ public class PinValidationService {
 					List<ConflictingShiftDTO> shiftDTOs = dayAssignments.stream()
 							.map(sa -> ConflictingShiftDTO.builder()
 									.location(sa.getShift().getShiftTemplate().getLocation())
-									.shiftType(sa.getShift().getShiftTemplate().getShiftType())
+									.shiftType(sa.getShift().getShiftTemplate().getShiftTypeCode())
 									.startTime(sa.getShift().getShiftTemplate().getStartTime())
 									.endTime(sa.getShift().getShiftTemplate().getEndTime()).build())
 							.toList();
