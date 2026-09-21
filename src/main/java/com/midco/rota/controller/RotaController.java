@@ -665,6 +665,25 @@ public class RotaController {
 	 * CONTINUITY): fill, carers used, weekly stability, and the soft trade-off costs.
 	 * Lets a planner see the concrete effect of each solve profile and pick one.
 	 */
+	/**
+	 * Find the solved rota for a region + exact date range, so the schedule view can
+	 * open an existing custom-period solve or, when none exists, show a fresh
+	 * (unsolved) state where the user can auto-generate. Returns {@code {rotaId: <id or null>}}.
+	 */
+	@PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER','ROTA_EDITOR')")
+	@GetMapping("/rota/find")
+	public ResponseEntity<?> findRota(@RequestParam String region,
+			@RequestParam String startDate, @RequestParam String endDate) {
+		Long rotaId = deferredSolveRequestRepository
+				.findByStartDateAndEndDateAndRegionAndCompleted(
+						LocalDate.parse(startDate), LocalDate.parse(endDate), region, true)
+				.map(DeferredSolveRequest::getRotaId)
+				.orElse(null);
+		Map<String, Object> body = new java.util.HashMap<>();
+		body.put("rotaId", rotaId);
+		return ResponseEntity.ok(body);
+	}
+
 	@PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER','ROTA_EDITOR')")
 	@GetMapping("/rota/compare")
 	public ResponseEntity<?> compareRotas(@RequestParam Long a, @RequestParam Long b) {
