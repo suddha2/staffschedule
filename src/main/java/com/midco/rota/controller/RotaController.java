@@ -184,6 +184,9 @@ public class RotaController {
 			request.setCreatedBy(authentication.getName());
 			request.setCompleted(false);
 			request.setCompletedAt(null);
+			// Solve objective: SPREAD (even hours) or CONTINUITY (stable/matching); default SPREAD.
+			request.setProfile(com.midco.rota.opt.SolveProfile
+					.fromString((String) payload.get("profile")).name());
 
 		} catch (Exception ex) {
 			return ResponseEntity.badRequest().body(ex.getMessage());
