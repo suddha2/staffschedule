@@ -11,8 +11,18 @@ public class ScheduleResponseDTO {
 	private Long rotaId;
 	private LocalDate startDate;
 	private LocalDate endDate;
+	/** Solve objective this rota was generated with (SPREAD / CONTINUITY), for display. */
+	private String profile;
 	private List<ShiftAssignmentDTO> shiftAssignmentList;
 	private List<EmployeeDTO> employeeList;
+
+	public String getProfile() {
+		return profile;
+	}
+
+	public void setProfile(String profile) {
+		this.profile = profile;
+	}
 
 	// Getters and setters
 	public Long getRotaId() {

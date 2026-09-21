@@ -596,6 +596,12 @@ public class RotaController {
 			// ✅ Convert to DTO (no circular references!)
 			ScheduleResponseDTO response = ScheduleResponseDTO.fromRotaAndFullEmpList(rotaEntity, fullEmpListByRegion);
 
+			// Surface the solve objective this rota was generated with, for the view screen.
+			DeferredSolveRequest dsr = deferredSolveRequestRepository.findByRotaId(id);
+			if (dsr != null) {
+				response.setProfile(dsr.getProfile());
+			}
+
 			return ResponseEntity.ok(response);
 		} else {
 			return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "Rota not found for ID: " + id));
