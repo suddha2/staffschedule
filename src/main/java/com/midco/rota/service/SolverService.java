@@ -56,6 +56,39 @@ public class SolverService {
 //			logger.info("Solve complete for " + problemId);
 //		});
 //	}
+
+	/**
+	 * Logs the per-constraint score breakdown of a solved rota (each constraint's hard,
+	 * soft and match count, biggest impact first). Diagnostic: shows what actually
+	 * dominates the soft score and whether continuity constraints are firing.
+	 */
+	private void logScoreBreakdown(Rota solution) {
+		try {
+			java.util.List<org.optaplanner.core.api.score.constraint.ConstraintMatchTotal<?>> totals =
+					explanationService.getConstraintViolations(solution);
+			logger.info("=== Score breakdown ({} constraints) — name | hard | soft | matches ===", totals.size());
+			totals.stream()
+					.filter(t -> {
+						var s = (org.optaplanner.core.api.score.buildin.hardsoftlong.HardSoftLongScore) t.getScore();
+						return s.hardScore() != 0L || s.softScore() != 0L;
+					})
+					.sorted((a, b) -> {
+						var sa = (org.optaplanner.core.api.score.buildin.hardsoftlong.HardSoftLongScore) a.getScore();
+						var sb = (org.optaplanner.core.api.score.buildin.hardsoftlong.HardSoftLongScore) b.getScore();
+						long ka = Math.abs(sa.hardScore()) * 1_000_000_000L + Math.abs(sa.softScore());
+						long kb = Math.abs(sb.hardScore()) * 1_000_000_000L + Math.abs(sb.softScore());
+						return Long.compare(kb, ka);
+					})
+					.forEach(t -> {
+						var s = (org.optaplanner.core.api.score.buildin.hardsoftlong.HardSoftLongScore) t.getScore();
+						logger.info("  [score] {} | hard={} soft={} matches={}",
+								t.getConstraintName(), s.hardScore(), s.softScore(), t.getConstraintMatchCount());
+					});
+		} catch (Exception e) {
+			logger.warn("Score breakdown failed: {}", e.toString());
+		}
+	}
+
 	public void solveAsync(Rota schedule, Long problemId, DeferredSolveRequest deferredSolveRequest) {
 
 		// SLEEP_IN pairing is now a shadow variable (FollowerShiftAssignment mirrors
@@ -70,6 +103,7 @@ public class SolverService {
 				deferredSolveRequest.setCompletedAt(LocalDateTime.now());
 
 				rosterUpdateService.persistSolvedRota(bestSolution, deferredSolveRequest);
+				logScoreBreakdown(bestSolution);
 				logger.info("Solve complete for problemId: {}", problemId);
 
 			} catch (Exception e) {
