@@ -1,6 +1,8 @@
 package com.midco.rota.service;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -13,7 +15,6 @@ import com.midco.rota.dto.ConflictingShiftDTO;
 import com.midco.rota.model.Employee;
 import com.midco.rota.model.ShiftAssignment;
 import com.midco.rota.repository.EmployeeRepository;
-import com.midco.rota.util.ShiftType;
 
 @Service
 public class PinValidationService {
@@ -97,48 +98,58 @@ public class PinValidationService {
 	}
 
 	/**
-	 * Same-day assignment validation logic Returns true if allowed, false if
-	 * violates rules
+	 * Same-day assignment validation. Data-driven: a carer's shifts on one day are
+	 * allowed unless two of them overlap in clock time (overnight-aware). Replaces the
+	 * old enum matrix, which had no concept of new types (e.g. SHIFT_LEAD) and wrongly
+	 * flagged non-overlapping combinations. Returns true if allowed, false if two shifts
+	 * clash in time.
 	 */
 	private boolean isAllowedDayAssignments(List<ShiftAssignment> dayAssignments) {
-		if (dayAssignments == null || dayAssignments.isEmpty())
+		if (dayAssignments == null || dayAssignments.size() < 2) {
 			return true;
-		if (dayAssignments.size() == 1)
-			return true;
-
-		List<ShiftType> types = dayAssignments.stream().map(sa -> sa.getShift().getShiftTemplate().getShiftType())
-				.toList();
-
-		List<String> locations = dayAssignments.stream().map(sa -> sa.getShift().getShiftTemplate().getLocation())
-				.toList();
-
-		// Check: All FLOATING
-		boolean allFloating = types.stream().allMatch(t -> t == ShiftType.FLOATING);
-		if (allFloating) {
-			long distinctLocs = locations.stream().distinct().count();
-			return distinctLocs == locations.size();
 		}
+		for (int i = 0; i < dayAssignments.size(); i++) {
+			for (int j = i + 1; j < dayAssignments.size(); j++) {
+				if (shiftsOverlap(dayAssignments.get(i), dayAssignments.get(j))) {
+					return false;
+				}
+			}
+		}
+		return true;
+	}
 
-		// Check: No mixing FLOATING with non-FLOATING
-		boolean containsFloating = types.stream().anyMatch(t -> t == ShiftType.FLOATING);
-		boolean containsNonFloating = types.stream().anyMatch(t -> t == ShiftType.DAY || t == ShiftType.LONG_DAY
-				|| t == ShiftType.WAKING_NIGHT || t == ShiftType.SLEEP_IN);
-
-		if (containsFloating && containsNonFloating) {
+	/** True if the two assignments' time intervals overlap (overnight-aware). */
+	private static boolean shiftsOverlap(ShiftAssignment a, ShiftAssignment b) {
+		LocalDateTime aStart = startOf(a), aEnd = endOf(a), bStart = startOf(b), bEnd = endOf(b);
+		if (aStart == null || aEnd == null || bStart == null || bEnd == null) {
 			return false;
 		}
+		return aStart.isBefore(bEnd) && bStart.isBefore(aEnd);
+	}
 
-		// Check: Exactly 2 shifts - LONG_DAY + SLEEP_IN at same location
-		if (dayAssignments.size() == 2) {
-			ShiftType t1 = types.get(0);
-			ShiftType t2 = types.get(1);
-			boolean ldSiPair = (t1 == ShiftType.LONG_DAY && t2 == ShiftType.SLEEP_IN)
-					|| (t1 == ShiftType.SLEEP_IN && t2 == ShiftType.LONG_DAY);
-			boolean sameLocation = locations.get(0) != null && locations.get(0).equals(locations.get(1));
-			return ldSiPair && sameLocation;
+	private static LocalDateTime startOf(ShiftAssignment sa) {
+		if (sa.getShift() == null || sa.getShift().getShiftTemplate() == null) {
+			return null;
 		}
+		LocalDate date = sa.getShift().getShiftStart();
+		LocalTime start = sa.getShift().getShiftTemplate().getStartTime();
+		return (date == null || start == null) ? null : date.atTime(start);
+	}
 
-		// Any other case with 2+ non-floating shifts is invalid
-		return false;
+	private static LocalDateTime endOf(ShiftAssignment sa) {
+		if (sa.getShift() == null || sa.getShift().getShiftTemplate() == null) {
+			return null;
+		}
+		LocalDate date = sa.getShift().getShiftStart();
+		LocalTime start = sa.getShift().getShiftTemplate().getStartTime();
+		LocalTime end = sa.getShift().getShiftTemplate().getEndTime();
+		if (date == null || start == null || end == null) {
+			return null;
+		}
+		LocalDateTime endDt = date.atTime(end);
+		if (!end.isAfter(start)) {
+			endDt = endDt.plusDays(1); // overnight shift ends the next day
+		}
+		return endDt;
 	}
 }

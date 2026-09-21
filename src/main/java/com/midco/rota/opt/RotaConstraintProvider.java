@@ -762,46 +762,29 @@ public class RotaConstraintProvider implements ConstraintProvider {
 
 	// ========== HELPER METHODS ==========
 
+	/**
+	 * Data-driven same-day validity: a carer's shifts on one day are allowed unless
+	 * two of them overlap in clock time (overnight-aware, via {@link #shiftsOverlap}).
+	 * Replaces the old enum matrix ("any two non-FLOATING = invalid"), which had no
+	 * concept of new types like SHIFT_LEAD and wrongly flagged non-overlapping combos
+	 * (e.g. a 09:00–17:00 lead shift plus a 22:00 waking night). Non-overlapping
+	 * combinations are governed by min-rest and the per-day hour caps instead.
+	 *
+	 * <p>Note: for same-day pairs this now mirrors the "Overlapping shifts" constraint,
+	 * so it is effectively subsumed by it and could be retired in a later cleanup.
+	 */
 	private boolean isAllowedDayAssignments(List<ShiftAssignment> dayAssignments) {
-		if (dayAssignments == null || dayAssignments.isEmpty())
-			return true; // nothing assigned is fine at this stage
-		if (dayAssignments.size() == 1)
-			return true; // any single shift is OK
-
-		// Extract type and location
-		List<ShiftType> types = dayAssignments.stream().map(sa -> sa.getShift().getShiftTemplate().getShiftType())
-				.toList();
-		List<String> locations = dayAssignments.stream().map(sa -> sa.getShift().getShiftTemplate().getLocation())
-				.toList();
-
-		boolean allFloating = types.stream().allMatch(t -> t == ShiftType.FLOATING);
-		if (allFloating) {
-			// Allow multiple FLOATING but enforce all at DIFFERENT locations
-			long distinctLocs = locations.stream().distinct().count();
-			return distinctLocs == locations.size();
+		if (dayAssignments == null || dayAssignments.size() < 2) {
+			return true;
 		}
-
-		// Disallow mixing FLOATING with any non-floating
-		boolean containsFloating = types.stream().anyMatch(t -> t == ShiftType.FLOATING);
-		boolean containsNonFloating = types.stream().anyMatch(t -> t == ShiftType.DAY || t == ShiftType.LONG_DAY
-				|| t == ShiftType.WAKING_NIGHT || t == ShiftType.SLEEP_IN);
-		if (containsFloating && containsNonFloating) {
-			return false;
+		for (int i = 0; i < dayAssignments.size(); i++) {
+			for (int j = i + 1; j < dayAssignments.size(); j++) {
+				if (shiftsOverlap(dayAssignments.get(i), dayAssignments.get(j))) {
+					return false;
+				}
+			}
 		}
-
-		// Non-floating combos:
-		if (dayAssignments.size() == 2) {
-			// Allow exactly LONG_DAY + SLEEP_IN at the SAME location
-			ShiftType t1 = types.get(0);
-			ShiftType t2 = types.get(1);
-			boolean ldSiPair = (t1 == ShiftType.LONG_DAY && t2 == ShiftType.SLEEP_IN)
-					|| (t1 == ShiftType.SLEEP_IN && t2 == ShiftType.LONG_DAY);
-			boolean sameLocation = locations.get(0) != null && locations.get(0).equals(locations.get(1));
-			return ldSiPair && sameLocation;
-		}
-
-		// Any other case with 2+ non-floating shifts is invalid
-		return false;
+		return true;
 	}
 
 	
