@@ -90,6 +90,46 @@ public class SolverConfigService {
 	 * also resolves to zero, so deleting a row cannot silently switch on a rule
 	 * that has never been in force.
 	 */
+	/**
+	 * Builds the constraint configuration for a solve and then applies a
+	 * {@link com.midco.rota.opt.SolveProfile}'s trade-off weight overrides on top,
+	 * so the same period can be solved for SPREAD or CONTINUITY. Overrides keep each
+	 * constraint's hard/soft nature; only the magnitude changes. A null profile
+	 * behaves like {@link #buildConstraintConfiguration()}.
+	 */
+	public RotaConstraintConfiguration buildConstraintConfiguration(com.midco.rota.opt.SolveProfile profile) {
+		RotaConstraintConfiguration configuration = buildConstraintConfiguration();
+		if (profile == null) {
+			return configuration;
+		}
+		Map<String, Long> overrides = profile.weightOverrides();
+		int applied = 0;
+		for (Field field : RotaConstraintConfiguration.class.getDeclaredFields()) {
+			ConstraintWeight weight = field.getAnnotation(ConstraintWeight.class);
+			if (weight == null) {
+				continue;
+			}
+			Long newWeight = overrides.get(weight.value());
+			if (newWeight == null) {
+				continue;
+			}
+			try {
+				field.setAccessible(true);
+				HardSoftLongScore current = (HardSoftLongScore) field.get(configuration);
+				// Preserve hard/soft nature; profiles only retune the magnitude.
+				HardSoftLongScore replacement = current.hardScore() != 0L
+						? HardSoftLongScore.ofHard(newWeight)
+						: HardSoftLongScore.ofSoft(newWeight);
+				field.set(configuration, replacement);
+				applied++;
+			} catch (ReflectiveOperationException e) {
+				logger.warn("Could not apply profile override for '{}': {}", weight.value(), e.toString());
+			}
+		}
+		logger.info("Solve profile {}: applied {} weight overrides", profile, applied);
+		return configuration;
+	}
+
 	public RotaConstraintConfiguration buildConstraintConfiguration() {
 		RotaConstraintConfiguration configuration = new RotaConstraintConfiguration();
 		Map<String, ConstraintSetting> rows;

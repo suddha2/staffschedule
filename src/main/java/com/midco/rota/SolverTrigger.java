@@ -177,7 +177,8 @@ public class SolverTrigger {
 		// per solve, so a rule can be retuned or demoted without a restart. The
 		// numeric thresholds in SolverTuning are read when the constraint streams
 		// are first built, so a change there needs a restart to take effect.
-		problem.setConstraintConfiguration(solverConfigService.buildConstraintConfiguration());
+		problem.setConstraintConfiguration(solverConfigService.buildConstraintConfiguration(
+				com.midco.rota.opt.SolveProfile.fromString(deferredSolveRequest.getProfile())));
 
 		// Pre-solve: build each employee's unavailable-date map from booked leave /
 		// unavailability over the solve window, so the "Employee unavailable (leave)"

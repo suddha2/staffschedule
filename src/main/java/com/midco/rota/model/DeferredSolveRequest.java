@@ -4,6 +4,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Map;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -23,9 +24,21 @@ public class DeferredSolveRequest {
     private LocalDateTime completedAt;
     private String createdBy;
     private Long rotaId;
-    
-    @Transient 
+
+    /** Solve objective: SPREAD (even hours) or CONTINUITY (stable/matching). Default SPREAD. */
+    @Column(length = 20)
+    private String profile = "SPREAD";
+
+    @Transient
     private Map<String, Map<String, Integer>> scheduleSummary;
+
+    public String getProfile() {
+        return profile;
+    }
+
+    public void setProfile(String profile) {
+        this.profile = profile;
+    }
 
     public LocalDateTime getCompletedAt() {
 		return completedAt;

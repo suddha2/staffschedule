@@ -226,6 +226,9 @@ public class RotaController {
 			request.setEndDate(LocalDate.parse(endDate));
 			request.setRegion(region);
 			request.setCreatedBy(authentication.getName());
+			// Solve objective: SPREAD (even hours) or CONTINUITY (stable/matching); default SPREAD.
+			request.setProfile(com.midco.rota.opt.SolveProfile
+					.fromString((String) payload.get("profile")).name());
 
 		} catch (Exception ex) {
 			return ResponseEntity.badRequest().body("All fields (startDate, endDate, location) are required.");
@@ -646,6 +649,52 @@ public class RotaController {
 			return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "No rota for id " + id));
 		}
 		return ResponseEntity.ok(pinValidationService.validateAssignments(rota.getShiftAssignmentList()));
+	}
+
+	/**
+	 * Side-by-side comparison of two rotas (typically the same period solved SPREAD vs
+	 * CONTINUITY): fill, carers used, weekly stability, and the soft trade-off costs.
+	 * Lets a planner see the concrete effect of each solve profile and pick one.
+	 */
+	@PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER','ROTA_EDITOR')")
+	@GetMapping("/rota/compare")
+	public ResponseEntity<?> compareRotas(@RequestParam Long a, @RequestParam Long b) {
+		return ResponseEntity.ok(Map.of("a", rotaCompareStats(a), "b", rotaCompareStats(b)));
+	}
+
+	private Map<String, Object> rotaCompareStats(Long rid) {
+		Map<String, Object> m = new java.util.LinkedHashMap<>();
+		m.put("rotaId", rid);
+		List<Object[]> rows = shiftAssignmentRepository.compareStats(rid);
+		if (rows.isEmpty() || rows.get(0) == null) {
+			m.put("found", false);
+			return m;
+		}
+		Object[] r = rows.get(0);
+		long slots = num(r[0]), filled = num(r[1]), carers = num(r[2]), distinctPatterns = num(r[3]);
+		m.put("found", true);
+		m.put("slots", slots);
+		m.put("filled", filled);
+		m.put("fillPct", slots > 0 ? Math.round(1000.0 * filled / slots) / 10.0 : 0.0);
+		m.put("carers", carers);
+		m.put("weeksPerPattern", distinctPatterns > 0 ? Math.round(100.0 * filled / distinctPatterns) / 100.0 : 0.0);
+		m.put("genderMismatch", num(r[4]));
+		m.put("restrictedDay", num(r[5]));
+		m.put("restrictedShift", num(r[6]));
+		m.put("restrictedService", num(r[7]));
+		m.put("belowMinHours", num(r[8]));
+		DeferredSolveRequest dsr = deferredSolveRequestRepository.findByRotaId(rid);
+		if (dsr != null) {
+			m.put("profile", dsr.getProfile());
+			m.put("region", dsr.getRegion());
+			m.put("startDate", dsr.getStartDate());
+			m.put("endDate", dsr.getEndDate());
+		}
+		return m;
+	}
+
+	private static long num(Object o) {
+		return o == null ? 0L : ((Number) o).longValue();
 	}
 
 	/**
