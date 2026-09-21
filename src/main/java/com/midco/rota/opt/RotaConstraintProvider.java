@@ -149,8 +149,8 @@ public class RotaConstraintProvider implements ConstraintProvider {
 				limitLocationChangesPerWeek(factory), penalizeDailyLocationSwitches(factory),
 				rewardConsecutiveDaysAtLocation(factory),
 
-				// Continuity of person (seed from prior period)
-				continuityKeepSeededCarer(factory), };
+				// Continuity of person (seed from prior period) + intra-period weekly consistency
+				continuityKeepSeededCarer(factory), weeklyPatternConsistency(factory), };
 	}
 
 	private Constraint penalizeOverloading(ConstraintFactory factory) {
@@ -266,6 +266,29 @@ public class RotaConstraintProvider implements ConstraintProvider {
 						&& !sa.getSeededEmployeeId().equals(sa.getEmployee().getId()))
 				.penalizeConfigurable()
 				.asConstraint("Continuity - keep carer in seeded slot");
+	}
+
+	/**
+	 * Intra-period weekly consistency: reward each pair of shifts the same carer works on
+	 * the SAME template in different weeks (a template is one weekday-slot at one service),
+	 * so the solver keeps a carer in their weekday-slot across the period instead of
+	 * scattering them. Needs no prior-period data, so even a cold solve is internally
+	 * stable — this is the intrinsic-continuity lever, not seeding or pins. The reward
+	 * compounds (a carer in all 4 weeks of a slot earns 6 pairs), so full consistency is
+	 * strongly preferred; tune/disable the weight in Solver Settings.
+	 */
+	private Constraint weeklyPatternConsistency(ConstraintFactory factory) {
+		return factory.forEach(ShiftAssignment.class)
+				.filter(sa -> sa.getEmployee() != null && sa.getShift() != null
+						&& sa.getShift().getShiftTemplate() != null
+						&& sa.getShift().getShiftTemplate().getId() != null
+						&& coverageRequired(sa))
+				.join(ShiftAssignment.class,
+						Joiners.equal(ShiftAssignment::getEmployee),
+						Joiners.equal(sa -> sa.getShift().getShiftTemplate().getId()),
+						Joiners.lessThan(ShiftAssignment::getPlanningId))
+				.rewardConfigurable()
+				.asConstraint("Weekly pattern consistency");
 	}
 
 	private Constraint employeeUnavailableConstraint(ConstraintFactory factory) {

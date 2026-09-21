@@ -268,6 +268,17 @@ public class RotaConstraintConfiguration {
 	@ConstraintWeight("Continuity - keep carer in seeded slot")
 	private HardSoftLongScore continuityKeepSeededCarer = HardSoftLongScore.ofSoft(300_000);
 
+	/**
+	 * Intra-period weekly consistency: reward each pair of shifts the same carer works
+	 * on the same template in different weeks, so a carer keeps the same weekday-slot
+	 * across the period instead of a scattered rota. Needs no prior data, so it makes
+	 * even a cold solve internally stable (fixes the "1.02 weeks per pattern" collapse).
+	 * The reward compounds (a carer in all 4 weeks earns 6 pairs), so full consistency
+	 * is strongly preferred; kept below coverage so it never leaves a shift empty.
+	 */
+	@ConstraintWeight("Weekly pattern consistency")
+	private HardSoftLongScore weeklyPatternConsistency = HardSoftLongScore.ofSoft(50_000);
+
 	// ------------------------------------------------ accessors
 
 	public HardSoftLongScore getDuplicateAssignment() { return duplicateAssignment; }
@@ -363,4 +374,7 @@ public class RotaConstraintConfiguration {
 	public void setConsecutiveDaysSameLocation(HardSoftLongScore v) { this.consecutiveDaysSameLocation = v; }
 	public HardSoftLongScore getContinuityKeepSeededCarer() { return continuityKeepSeededCarer; }
 	public void setContinuityKeepSeededCarer(HardSoftLongScore v) { this.continuityKeepSeededCarer = v; }
+
+	public HardSoftLongScore getWeeklyPatternConsistency() { return weeklyPatternConsistency; }
+	public void setWeeklyPatternConsistency(HardSoftLongScore v) { this.weeklyPatternConsistency = v; }
 }
