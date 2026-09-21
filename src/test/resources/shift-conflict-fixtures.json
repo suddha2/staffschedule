@@ -1,0 +1,12 @@
+{
+  "note": "Canonical same-day conflict scenarios (all shifts one employee, one day). KEEP BYTE-IDENTICAL with the frontend copy at employee-scheduler-vite/src/utils/__fixtures__/shift-conflict-fixtures.json. Verified by SameDayRuleParityTest.java (backend ShiftOverlap.allowedSameDay) and scripts/checkConflictParity.mjs (frontend isAllowedDayShiftTypes). shifts are [startTime, endTime] pairs; an end <= start is an overnight shift.",
+  "cases": [
+    { "name": "single shift", "shifts": [["09:00", "17:00"]], "allowed": true },
+    { "name": "lead day + waking night (no overlap)", "shifts": [["09:00", "17:00"], ["22:00", "07:00"]], "allowed": true },
+    { "name": "long day + sleep-in (contiguous, no overlap)", "shifts": [["08:00", "20:00"], ["20:00", "08:00"]], "allowed": true },
+    { "name": "day overlaps long day", "shifts": [["09:00", "17:00"], ["08:00", "20:00"]], "allowed": false },
+    { "name": "identical double-book", "shifts": [["09:00", "17:00"], ["09:00", "17:00"]], "allowed": false },
+    { "name": "two non-overlapping day shifts", "shifts": [["08:00", "12:00"], ["13:00", "17:00"]], "allowed": true },
+    { "name": "three shifts, last two overlap", "shifts": [["08:00", "12:00"], ["12:00", "16:00"], ["15:00", "18:00"]], "allowed": false }
+  ]
+}

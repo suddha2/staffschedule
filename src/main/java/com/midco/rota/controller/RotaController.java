@@ -632,6 +632,23 @@ public class RotaController {
 	}
 
 	/**
+	 * Authoritative same-day conflicts for a persisted rota: the same
+	 * {@link PinValidationService} rule that blocks a bad save. The frontend uses this
+	 * as the source of truth for the Conflicts drawer, so what it shows cannot diverge
+	 * from what the backend enforces. Returns the (possibly empty) list of conflicts.
+	 */
+	@PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER','ROTA_EDITOR')")
+	@GetMapping("/rota/{id}/conflicts")
+	@Transactional(readOnly = true)
+	public ResponseEntity<?> rotaConflicts(@PathVariable("id") Long id) {
+		Rota rota = rotaRepository.findById(id).orElse(null);
+		if (rota == null || rota.getShiftAssignmentList() == null) {
+			return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "No rota for id " + id));
+		}
+		return ResponseEntity.ok(pinValidationService.validateAssignments(rota.getShiftAssignmentList()));
+	}
+
+	/**
 	 * Rebuild the transient planning state a persisted rota loses on load, so
 	 * {@code explainScore} reproduces the solve-time score. Only {@code @Transient}
 	 * fields are touched, so this is safe inside a read-only transaction. Mirrors the

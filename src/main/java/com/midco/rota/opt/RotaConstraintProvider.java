@@ -496,36 +496,19 @@ public class RotaConstraintProvider implements ConstraintProvider {
 				.asConstraint("Overlapping shifts");
 	}
 
-	/** True if the two assignments' actual date-time windows intersect (handles overnight). */
+	// Time-overlap logic lives in the shared ShiftOverlap util, so the solver and the
+	// save-time validator (PinValidationService) can never disagree. These stay as thin
+	// delegates because several constraints below (overlap, min-rest) call them.
 	private static boolean shiftsOverlap(ShiftAssignment a, ShiftAssignment b) {
-		java.time.LocalDateTime aStart = startOf(a), aEnd = endOf(a);
-		java.time.LocalDateTime bStart = startOf(b), bEnd = endOf(b);
-		if (aStart == null || aEnd == null || bStart == null || bEnd == null) {
-			return false;
-		}
-		return aStart.isBefore(bEnd) && bStart.isBefore(aEnd);
+		return ShiftOverlap.overlaps(a, b);
 	}
 
 	private static java.time.LocalDateTime startOf(ShiftAssignment sa) {
-		if (sa.getShift() == null || sa.getShift().getShiftStart() == null
-				|| sa.getShift().getShiftTemplate() == null || sa.getShift().getShiftTemplate().getStartTime() == null) {
-			return null;
-		}
-		return sa.getShift().getShiftStart().atTime(sa.getShift().getShiftTemplate().getStartTime());
+		return ShiftOverlap.startOf(sa);
 	}
 
 	private static java.time.LocalDateTime endOf(ShiftAssignment sa) {
-		if (sa.getShift() == null || sa.getShift().getShiftTemplate() == null
-				|| sa.getShift().getShiftTemplate().getEndTime() == null) {
-			return null;
-		}
-		// shiftEnd is the (possibly next-day) date for overnight shifts; fall back to start date.
-		java.time.LocalDate endDate = sa.getShift().getShiftEnd() != null
-				? sa.getShift().getShiftEnd() : sa.getShift().getShiftStart();
-		if (endDate == null) {
-			return null;
-		}
-		return endDate.atTime(sa.getShift().getShiftTemplate().getEndTime());
+		return ShiftOverlap.endOf(sa);
 	}
 
 	/**
@@ -774,17 +757,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 	 * so it is effectively subsumed by it and could be retired in a later cleanup.
 	 */
 	private boolean isAllowedDayAssignments(List<ShiftAssignment> dayAssignments) {
-		if (dayAssignments == null || dayAssignments.size() < 2) {
-			return true;
-		}
-		for (int i = 0; i < dayAssignments.size(); i++) {
-			for (int j = i + 1; j < dayAssignments.size(); j++) {
-				if (shiftsOverlap(dayAssignments.get(i), dayAssignments.get(j))) {
-					return false;
-				}
-			}
-		}
-		return true;
+		return ShiftOverlap.allowedSameDay(dayAssignments);
 	}
 
 	

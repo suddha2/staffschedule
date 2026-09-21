@@ -1,8 +1,6 @@
 package com.midco.rota.service;
 
 import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -14,6 +12,7 @@ import com.midco.rota.dto.ConflictError;
 import com.midco.rota.dto.ConflictingShiftDTO;
 import com.midco.rota.model.Employee;
 import com.midco.rota.model.ShiftAssignment;
+import com.midco.rota.opt.ShiftOverlap;
 import com.midco.rota.repository.EmployeeRepository;
 
 @Service
@@ -98,58 +97,11 @@ public class PinValidationService {
 	}
 
 	/**
-	 * Same-day assignment validation. Data-driven: a carer's shifts on one day are
-	 * allowed unless two of them overlap in clock time (overnight-aware). Replaces the
-	 * old enum matrix, which had no concept of new types (e.g. SHIFT_LEAD) and wrongly
-	 * flagged non-overlapping combinations. Returns true if allowed, false if two shifts
-	 * clash in time.
+	 * Same-day assignment validation. Delegates to the shared {@link ShiftOverlap}
+	 * rule so the save-time block, the solver and the frontend all use one definition:
+	 * a carer's shifts on one day are allowed unless two overlap in time.
 	 */
 	private boolean isAllowedDayAssignments(List<ShiftAssignment> dayAssignments) {
-		if (dayAssignments == null || dayAssignments.size() < 2) {
-			return true;
-		}
-		for (int i = 0; i < dayAssignments.size(); i++) {
-			for (int j = i + 1; j < dayAssignments.size(); j++) {
-				if (shiftsOverlap(dayAssignments.get(i), dayAssignments.get(j))) {
-					return false;
-				}
-			}
-		}
-		return true;
-	}
-
-	/** True if the two assignments' time intervals overlap (overnight-aware). */
-	private static boolean shiftsOverlap(ShiftAssignment a, ShiftAssignment b) {
-		LocalDateTime aStart = startOf(a), aEnd = endOf(a), bStart = startOf(b), bEnd = endOf(b);
-		if (aStart == null || aEnd == null || bStart == null || bEnd == null) {
-			return false;
-		}
-		return aStart.isBefore(bEnd) && bStart.isBefore(aEnd);
-	}
-
-	private static LocalDateTime startOf(ShiftAssignment sa) {
-		if (sa.getShift() == null || sa.getShift().getShiftTemplate() == null) {
-			return null;
-		}
-		LocalDate date = sa.getShift().getShiftStart();
-		LocalTime start = sa.getShift().getShiftTemplate().getStartTime();
-		return (date == null || start == null) ? null : date.atTime(start);
-	}
-
-	private static LocalDateTime endOf(ShiftAssignment sa) {
-		if (sa.getShift() == null || sa.getShift().getShiftTemplate() == null) {
-			return null;
-		}
-		LocalDate date = sa.getShift().getShiftStart();
-		LocalTime start = sa.getShift().getShiftTemplate().getStartTime();
-		LocalTime end = sa.getShift().getShiftTemplate().getEndTime();
-		if (date == null || start == null || end == null) {
-			return null;
-		}
-		LocalDateTime endDt = date.atTime(end);
-		if (!end.isAfter(start)) {
-			endDt = endDt.plusDays(1); // overnight shift ends the next day
-		}
-		return endDt;
+		return ShiftOverlap.allowedSameDay(dayAssignments);
 	}
 }
