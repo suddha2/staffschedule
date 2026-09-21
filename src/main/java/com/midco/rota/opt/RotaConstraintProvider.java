@@ -140,7 +140,8 @@ public class RotaConstraintProvider implements ConstraintProvider {
 
 				// Preferences
 				preferedWorkingDaysConstraint(factory), preferedShiftTypeConstraint(factory),
-				prioritizedAllocation(factory), prioritizeHighPriorityLocations(factory),
+				prioritizedAllocation(factory), lastResortAssignmentPenalty(factory),
+				prioritizeHighPriorityLocations(factory),
 				locationPreferences(factory),
 
 				// Continuity of place
@@ -705,6 +706,22 @@ public class RotaConstraintProvider implements ConstraintProvider {
 
 					return shiftWeight * priorityWeight;
 				}).asConstraint("Prioritized allocation");
+	}
+
+	/**
+	 * Makes a shift type flagged {@code last_resort} on shift_type (e.g. FLOATING) the
+	 * least favourable to place a carer on: a soft penalty per assigned last-resort shift,
+	 * so the solver fills everything else first and only uses this type when nothing better
+	 * is available. Data-driven — flag any type in Manage Shift Types; tune/disable the
+	 * weight in Solver Settings. Soft, so it never causes infeasibility.
+	 */
+	private Constraint lastResortAssignmentPenalty(ConstraintFactory factory) {
+		return factory.forEach(ShiftAssignment.class)
+				.filter(sa -> sa.getEmployee() != null && sa.getShift() != null
+						&& sa.getShift().getShiftTemplate() != null
+						&& ShiftTypeMeta.lastResort(sa.getShift().getShiftTemplate().getShiftTypeCode()))
+				.penalizeConfigurable()
+				.asConstraint("Last-resort assignment penalty");
 	}
 
 	private Constraint prioritizeHighPriorityLocations(ConstraintFactory factory) {

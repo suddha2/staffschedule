@@ -68,8 +68,16 @@ public class ShiftTypeDef {
     @Column(name = "max_per_week")
     private Integer maxPerWeek;
 
+    /** Least-favourable to assign: the solver penalises placing a carer on this type
+     *  (e.g. FLOATING), using it only as a last resort. Tunable via the constraint weight. */
+    @Column(name = "last_resort", nullable = false)
+    private boolean lastResort = false;
+
     public ShiftTypeDef() {
     }
+
+    public boolean isLastResort() { return lastResort; }
+    public void setLastResort(boolean lastResort) { this.lastResort = lastResort; }
 
     public Integer getMaxHoursPerDay() { return maxHoursPerDay; }
     public void setMaxHoursPerDay(Integer maxHoursPerDay) { this.maxHoursPerDay = maxHoursPerDay; }

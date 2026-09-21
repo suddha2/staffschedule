@@ -134,6 +134,7 @@ public class ShiftTypeController {
         def.setRequiredSkill(blankToNull(body.getRequiredSkill()));
         def.setMaxHoursPerDay(body.getMaxHoursPerDay());
         def.setMaxPerWeek(body.getMaxPerWeek());
+        def.setLastResort(body.isLastResort());
     }
 
     /** Returns an error message when the body is invalid, or null when it is fine. */

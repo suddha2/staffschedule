@@ -94,6 +94,14 @@ public class RotaConstraintConfiguration {
 	@ConstraintWeight("Minimum rest between shifts")
 	private HardSoftLongScore minRestBetweenShifts = HardSoftLongScore.ofSoft(100_000);
 
+	/** Soft penalty per assigned shift of a type flagged {@code last_resort} on shift_type
+	 *  (e.g. FLOATING): makes that type the least favourable to place a carer on, so the
+	 *  solver uses it only when nothing better is available. Kept below the unassigned
+	 *  penalty so the slot is still filled rather than left empty; raise it toward the
+	 *  unassigned weight to push the type towards being left for the mobile grab flow. */
+	@ConstraintWeight("Last-resort assignment penalty")
+	private HardSoftLongScore lastResortAssignment = HardSoftLongScore.ofSoft(100_000);
+
 	// ------------------------------------------------ hard: eligibility
 
 	@ConstraintWeight("Gender mismatch")
@@ -274,6 +282,9 @@ public class RotaConstraintConfiguration {
 
 	public HardSoftLongScore getMinRestBetweenShifts() { return minRestBetweenShifts; }
 	public void setMinRestBetweenShifts(HardSoftLongScore v) { this.minRestBetweenShifts = v; }
+
+	public HardSoftLongScore getLastResortAssignment() { return lastResortAssignment; }
+	public void setLastResortAssignment(HardSoftLongScore v) { this.lastResortAssignment = v; }
 	public HardSoftLongScore getIncompatibleBackToBack() { return incompatibleBackToBack; }
 	public void setIncompatibleBackToBack(HardSoftLongScore v) { this.incompatibleBackToBack = v; }
 	public HardSoftLongScore getGenderMismatch() { return genderMismatch; }

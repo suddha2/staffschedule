@@ -143,6 +143,12 @@ public class ShiftTypeMeta {
         return d != null ? d.getMaxPerWeek() : Fallback.maxPerWeek(code);
     }
 
+    /** True when this type is least-favourable to assign (last resort, e.g. FLOATING). */
+    public static boolean lastResort(String code) {
+        ShiftTypeDef d = def(code);
+        return d != null ? d.isLastResort() : Fallback.lastResort(code);
+    }
+
     /** Active shift-type codes, ordered by display name — the dynamic column set for reports. */
     public static java.util.List<String> activeCodes() {
         return BY_CODE.values().stream()
@@ -187,5 +193,6 @@ public class ShiftTypeMeta {
             if ("FLOATING".equals(c)) return 4;
             return null;
         }
+        static boolean lastResort(String c) { return "FLOATING".equals(c); }
     }
 }
