@@ -216,7 +216,35 @@ public class SolverTrigger {
 					locked++;
 				}
 			}
-			logger.info("CONTINUITY: locked {} seeded assignments for this solve (not persisted)", locked);
+			// The carried-forward roster can contain same-carer time overlaps in the new
+			// period (e.g. a new/changed template). Two locked overlapping slots are
+			// unfixable (hard-infeasible), so unlock the later one of each overlapping
+			// pair — the solver then reassigns just those while the rest stays put.
+			Map<Integer, List<ShiftAssignment>> lockedByEmp = new HashMap<>();
+			for (ShiftAssignment sa : shiftAssignments) {
+				if (sa.isSeedLocked() && sa.getEmployee() != null) {
+					lockedByEmp.computeIfAbsent(sa.getEmployee().getId(), k -> new ArrayList<>()).add(sa);
+				}
+			}
+			int unlocked = 0;
+			for (List<ShiftAssignment> list : lockedByEmp.values()) {
+				list.sort(java.util.Comparator.comparing(com.midco.rota.opt.ShiftOverlap::startOf,
+						java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder())));
+				for (int i = 0; i < list.size(); i++) {
+					if (!list.get(i).isSeedLocked()) {
+						continue;
+					}
+					for (int j = i + 1; j < list.size(); j++) {
+						if (list.get(j).isSeedLocked()
+								&& com.midco.rota.opt.ShiftOverlap.overlaps(list.get(i), list.get(j))) {
+							list.get(j).setSeedLocked(false); // free the later overlapping slot
+							unlocked++;
+						}
+					}
+				}
+			}
+			logger.info("CONTINUITY: locked {} seeded assignments for this solve ({} unlocked to resolve seed overlaps; not persisted)",
+					locked - unlocked, unlocked);
 		}
 
 		return problem;
