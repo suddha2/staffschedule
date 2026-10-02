@@ -142,7 +142,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 				preferedWorkingDaysConstraint(factory), preferedShiftTypeConstraint(factory),
 				prioritizedAllocation(factory), lastResortAssignmentPenalty(factory),
 				prioritizeHighPriorityLocations(factory),
-				locationPreferences(factory),
+				serviceMixTarget(factory),
 
 				// Continuity of place
 				minDaysPerLocationPerWeek(factory), maxDaysPerLocationPerWeek(factory),
@@ -935,26 +935,81 @@ public class RotaConstraintProvider implements ConstraintProvider {
 				}).asConstraint("Limit locations per employee per week");
 	}
 
-	private Constraint locationPreferences(ConstraintFactory factory) {
-		return factory.forEach(ShiftAssignment.class).filter(sa -> sa.getEmployee() != null)
-				.filter(sa -> {
-					String tc = sa.getShift().getShiftTemplate().getShiftTypeCode();
-					return tc != null && ShiftTypeMeta.countsAsLocationCoverage(tc);
-				})
-				.filter(sa -> sa.getEmployee().hasServicePreferences()).rewardConfigurable(sa -> {
-					Employee emp = sa.getEmployee();
-					String location = sa.getShift().getShiftTemplate().getLocation();
-					int weightage = emp.getServiceWeightage(location);
+	/**
+	 * Service-mix target: each carer's coverage shifts in a week should be distributed
+	 * across services in the proportions of their {@code preferred_service} weights
+	 * (e.g. {@code CLAYDON:50, RIVERDALE:25, GOLDERTON:25} → ~50/25/25% of that week's
+	 * shifts). Weights are normalised per carer at runtime (so they needn't sum to 100;
+	 * all-equal lists become an even split). The penalty is the number of "misplaced"
+	 * shifts per carer-week — the total-variation distance between actual and target
+	 * distributions times the week's shift count.
+	 *
+	 * <p>Replaces the old per-shift "Location preferences (reward only)" reward, which
+	 * rewarded each shift at a preferred service and so (a) scaled with shift count and
+	 * (b) fought nothing — it just pushed more shifts at preferred places. A proportional
+	 * target gives relationship continuity (carers stay at their services week to week)
+	 * WITHOUT concentrating hours, so it is orthogonal to the spread/hours rules and
+	 * stays active under both solve profiles. Kept soft and below coverage.
+	 */
+	private Constraint serviceMixTarget(ConstraintFactory factory) {
+		return factory.forEach(ShiftAssignment.class)
+				.filter(sa -> sa.getEmployee() != null && sa.getShift() != null
+						&& sa.getShift().getShiftStart() != null
+						&& sa.getShift().getShiftTemplate() != null
+						&& sa.getShift().getShiftTemplate().getLocation() != null
+						&& sa.getEmployee().hasServicePreferences()
+						&& coversLocation(sa))
+				.groupBy(ShiftAssignment::getEmployee,
+						sa -> weekStart(sa.getShift().getShiftStart()),
+						ConstraintCollectors.toList())
+				.penalizeConfigurable((emp, week, weekShifts) -> serviceMixDeviation(emp, weekShifts))
+				.asConstraint("Service mix target");
+	}
 
-					if (weightage >= 50) {
-						return weightage;
-					} else if (weightage >= 30) {
-						return weightage / 2;
-					} else if (weightage > 0) {
-						return weightage / 5;
-					}
-					return 0;
-				}).asConstraint("Location preferences (reward only)");
+	/** True when this shift counts toward a service's coverage (so it shapes the mix). */
+	private static boolean coversLocation(ShiftAssignment sa) {
+		String code = sa.getShift().getShiftTemplate().getShiftTypeCode();
+		return code != null && ShiftTypeMeta.countsAsLocationCoverage(code);
+	}
+
+	/** Monday of the shift's week, the grouping key for weekly service shares. */
+	private static LocalDate weekStart(LocalDate d) {
+		return d.minusDays(d.getDayOfWeek().getValue() - 1);
+	}
+
+	/**
+	 * Misplaced shifts for one carer-week: 0.5 × Σ|actual_s − target_s| over services,
+	 * where target_s = normalisedShare_s × totalShiftsThisWeek. 0 when the week matches
+	 * the carer's preferred distribution; grows as shifts land at the wrong services.
+	 */
+	private static int serviceMixDeviation(Employee emp, List<ShiftAssignment> weekShifts) {
+		if (emp == null || weekShifts == null || weekShifts.isEmpty()) {
+			return 0;
+		}
+		Map<String, Integer> weights = emp.getPreferredServiceWeightsMap();
+		if (weights == null || weights.isEmpty()) {
+			return 0;
+		}
+		double sumWeights = 0;
+		for (int w : weights.values()) {
+			sumWeights += Math.max(0, w);
+		}
+		if (sumWeights <= 0) {
+			return 0;
+		}
+		int total = weekShifts.size();
+		Map<String, Integer> actual = new java.util.HashMap<>();
+		for (ShiftAssignment sa : weekShifts) {
+			actual.merge(sa.getShift().getShiftTemplate().getLocation(), 1, Integer::sum);
+		}
+		Set<String> services = new HashSet<>(actual.keySet());
+		services.addAll(weights.keySet());
+		double deviation = 0;
+		for (String s : services) {
+			double target = (Math.max(0, weights.getOrDefault(s, 0)) / sumWeights) * total;
+			deviation += Math.abs(actual.getOrDefault(s, 0) - target);
+		}
+		return (int) Math.round(deviation / 2.0);
 	}
 
 	private Constraint maxLocationsPerEmployeePerPeriod(ConstraintFactory factory) {

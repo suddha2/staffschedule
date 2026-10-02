@@ -235,8 +235,12 @@ public class RotaConstraintConfiguration {
 	 * default so a fresh deploy is good out of the box; still DB-tunable. Only
 	 * bites once employees carry mined {@code preferred_service} weights.
 	 */
-	@ConstraintWeight("Location preferences (reward only)")
-	private HardSoftLongScore locationPreferences = HardSoftLongScore.ofSoft(1_000_000);
+	/** Soft penalty per "misplaced" shift vs each carer's preferred service distribution
+	 *  (normalised weekly shares). Replaces the old per-shift location reward; gives
+	 *  relationship continuity (carers stay at their services) without concentrating
+	 *  hours, so it's compatible with both solve profiles. Kept below coverage. */
+	@ConstraintWeight("Service mix target")
+	private HardSoftLongScore serviceMixTarget = HardSoftLongScore.ofSoft(50_000);
 
 	// ------------------------------------------------ soft: continuity of place
 
@@ -360,8 +364,8 @@ public class RotaConstraintConfiguration {
 	public void setPrioritizedAllocation(HardSoftLongScore v) { this.prioritizedAllocation = v; }
 	public HardSoftLongScore getHighPriorityLocations() { return highPriorityLocations; }
 	public void setHighPriorityLocations(HardSoftLongScore v) { this.highPriorityLocations = v; }
-	public HardSoftLongScore getLocationPreferences() { return locationPreferences; }
-	public void setLocationPreferences(HardSoftLongScore v) { this.locationPreferences = v; }
+	public HardSoftLongScore getServiceMixTarget() { return serviceMixTarget; }
+	public void setServiceMixTarget(HardSoftLongScore v) { this.serviceMixTarget = v; }
 	public HardSoftLongScore getMinDaysPerLocationPerWeek() { return minDaysPerLocationPerWeek; }
 	public void setMinDaysPerLocationPerWeek(HardSoftLongScore v) { this.minDaysPerLocationPerWeek = v; }
 	public HardSoftLongScore getMaxDaysPerLocationPerWeek() { return maxDaysPerLocationPerWeek; }
