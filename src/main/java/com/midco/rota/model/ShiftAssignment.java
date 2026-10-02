@@ -97,6 +97,13 @@ public abstract class ShiftAssignment {
 	@Column(name = "is_pinned")
 	private boolean pinned = false;
 
+	/** Solve-only lock (NOT persisted): for a CONTINUITY solve the seeded prior-period
+	 *  assignments are pinned for the duration of the solve so the roster repeats, then
+	 *  the saved rota carries no pins and stays fully editable. Transient, so it never
+	 *  reaches the is_pinned column and is gone on reload. */
+	@Transient
+	private boolean seedLocked = false;
+
 	@Version
 	@Column(name = "version", nullable = false)
 	private long version;
@@ -114,7 +121,7 @@ public abstract class ShiftAssignment {
 
 	@PlanningPin
 	public boolean isPinned() {
-		if (pinned) return true;
+		if (pinned || seedLocked) return true;
 		if (shift == null || shift.getShiftTemplate() == null) return false;
 		ShiftType type = shift.getShiftTemplate().getShiftType();
 		// FLOATING is reserved for the mobile publish-and-grab flow — solver leaves it null.
@@ -235,6 +242,14 @@ public abstract class ShiftAssignment {
 
 	public void setPinned(boolean pinned) {
 		this.pinned = pinned;
+	}
+
+	public boolean isSeedLocked() {
+		return seedLocked;
+	}
+
+	public void setSeedLocked(boolean seedLocked) {
+		this.seedLocked = seedLocked;
 	}
 
 	public boolean isWithheld() {

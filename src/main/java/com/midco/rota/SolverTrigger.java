@@ -173,12 +173,14 @@ public class SolverTrigger {
 		ShiftAssignmentFactory.linkFollowerPairs(shiftAssignments);
 		Rota problem = new Rota(employees, shiftAssignments);
 
+		com.midco.rota.opt.SolveProfile profile =
+				com.midco.rota.opt.SolveProfile.fromString(deferredSolveRequest.getProfile());
+
 		// Weights and hard/soft severity come from constraint_setting and are read
 		// per solve, so a rule can be retuned or demoted without a restart. The
 		// numeric thresholds in SolverTuning are read when the constraint streams
 		// are first built, so a change there needs a restart to take effect.
-		problem.setConstraintConfiguration(solverConfigService.buildConstraintConfiguration(
-				com.midco.rota.opt.SolveProfile.fromString(deferredSolveRequest.getProfile())));
+		problem.setConstraintConfiguration(solverConfigService.buildConstraintConfiguration(profile));
 
 		// Pre-solve: build each employee's unavailable-date map from booked leave /
 		// unavailability over the solve window, so the "Employee unavailable (leave)"
@@ -197,8 +199,25 @@ public class SolverTrigger {
 		// Continuity: seed each slot from who held it last published period, so the
 		// solver carries the roster forward. Runs after the availability map so a
 		// seed carer on leave is skipped, and after pinning so hard pins win.
-		continuitySeedService.seedFromPriorPeriod(shiftAssignments, employees,
+		int seeded = continuitySeedService.seedFromPriorPeriod(shiftAssignments, employees,
 				deferredSolveRequest.getRegion(), window.start(), window.end());
+
+		// CONTINUITY profile: lock the seeded prior-period assignments FOR THIS SOLVE so
+		// the roster repeats instead of being re-optimised away (soft weights alone can't
+		// hold it). The lock is transient (@Transient seedLocked) — it is never persisted,
+		// so the saved rota carries no pins and stays fully editable. The solver only fills
+		// the gaps and places the unseeded/new slots around the locked roster. SPREAD leaves
+		// the seed as a warm start the solver is free to improve.
+		if (profile == com.midco.rota.opt.SolveProfile.CONTINUITY && seeded > 0) {
+			int locked = 0;
+			for (ShiftAssignment sa : shiftAssignments) {
+				if (sa.getSeededEmployeeId() != null && !sa.isPinned()) {
+					sa.setSeedLocked(true);
+					locked++;
+				}
+			}
+			logger.info("CONTINUITY: locked {} seeded assignments for this solve (not persisted)", locked);
+		}
 
 		return problem;
 	}
