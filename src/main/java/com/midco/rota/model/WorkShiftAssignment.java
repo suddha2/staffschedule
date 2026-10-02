@@ -4,6 +4,7 @@ import org.optaplanner.core.api.domain.entity.PlanningEntity;
 import org.optaplanner.core.api.domain.variable.PlanningVariable;
 
 import com.midco.rota.opt.ShiftAssignmentDifficultyComparator;
+import com.midco.rota.opt.ShiftAssignmentPinningFilter;
 
 import jakarta.persistence.DiscriminatorValue;
 import jakarta.persistence.Entity;
@@ -17,7 +18,8 @@ import jakarta.persistence.Transient;
  */
 @Entity
 @DiscriminatorValue("WORK")
-@PlanningEntity(difficultyComparatorClass = ShiftAssignmentDifficultyComparator.class)
+@PlanningEntity(difficultyComparatorClass = ShiftAssignmentDifficultyComparator.class,
+		pinningFilter = ShiftAssignmentPinningFilter.class)
 public class WorkShiftAssignment extends ShiftAssignment {
 
 	/**

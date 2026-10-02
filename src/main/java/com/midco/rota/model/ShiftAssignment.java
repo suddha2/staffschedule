@@ -5,7 +5,6 @@ import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
-import org.optaplanner.core.api.domain.entity.PlanningPin;
 import org.optaplanner.core.api.domain.lookup.PlanningId;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
@@ -119,7 +118,17 @@ public abstract class ShiftAssignment {
 	@Column(name = "filled_via_request", nullable = false)
 	private boolean filledViaRequest = false;
 
-	@PlanningPin
+	/**
+	 * Solver pin: a genuine (persisted) pin or the transient CONTINUITY seed-lock.
+	 * Honoured via {@code WorkShiftAssignment}'s {@code pinningFilter} — NOT FLOATING,
+	 * which stays solver-assignable (it's filled last, not pinned). Kept separate from
+	 * {@link #isPinned()} (which also reports FLOATING) so display/DTO behaviour is
+	 * unchanged.
+	 */
+	public boolean isSolverPinned() {
+		return pinned || seedLocked;
+	}
+
 	public boolean isPinned() {
 		if (pinned || seedLocked) return true;
 		if (shift == null || shift.getShiftTemplate() == null) return false;
