@@ -327,6 +327,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 		return factory.forEachIncludingNullVars(ShiftAssignment.class).filter(RotaConstraintProvider::countsAsWork).filter(sa -> {
 			Employee emp = sa.getEmployee();
 			return emp != null && emp.getRestrictedDays() != null
+					&& sa.getShift().getShiftTemplate().getDay() != null
 					&& emp.getRestrictedDays().contains(sa.getShift().getShiftTemplate().getDay());
 		}).penalizeConfigurable().asConstraint("Restricted day of week");
 	}
@@ -334,8 +335,12 @@ public class RotaConstraintProvider implements ConstraintProvider {
 	private Constraint restrictedShiftTypeConstraint(ConstraintFactory factory) {
 		return factory.forEachIncludingNullVars(ShiftAssignment.class).filter(RotaConstraintProvider::countsAsWork).filter(sa -> {
 			Employee emp = sa.getEmployee();
-			return emp != null && emp.getRestrictedShifts() != null
-					&& emp.getRestrictedShifts().contains(sa.getShift().getShiftTemplate().getShiftType());
+			// getShiftType() is null for a data-driven type with no enum constant; an immutable
+			// List.of(...).contains(null) throws NPE (killed the live solve), so guard it — an
+			// enum-typed restricted list can never contain null anyway.
+			ShiftType type = sa.getShift().getShiftTemplate().getShiftType();
+			return emp != null && type != null && emp.getRestrictedShifts() != null
+					&& emp.getRestrictedShifts().contains(type);
 		}).penalizeConfigurable().asConstraint("Restricted Shift Type");
 	}
 
@@ -343,6 +348,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 		return factory.forEachIncludingNullVars(ShiftAssignment.class).filter(RotaConstraintProvider::countsAsWork).filter(sa -> {
 			Employee emp = sa.getEmployee();
 			return emp != null && emp.getRestrictedService() != null
+					&& sa.getShift().getShiftTemplate().getLocation() != null
 					&& emp.getRestrictedService().contains(sa.getShift().getShiftTemplate().getLocation());
 		}).penalizeConfigurable().asConstraint("Restricted Service");
 	}
