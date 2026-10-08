@@ -247,6 +247,26 @@ public class SolverTrigger {
 					locked - unlocked, unlocked);
 		}
 
+		// Seed each follower from a leader that already carries an employee before the solve
+		// (a template pin, or a CONTINUITY seed-lock). FollowerEmployeeVariableListener only
+		// mirrors on a leader-employee CHANGE during solving, so a follower paired to a fixed
+		// (pinned/locked) leader would otherwise never be populated — the SLEEP_IN would be
+		// neither scored (its hours/overlap invisible) nor filled in the saved rota. This sets
+		// the initial shadow value; the listener keeps it in sync for leaders the solver moves.
+		int followerSeeded = 0;
+		for (ShiftAssignment sa : shiftAssignments) {
+			if (sa instanceof com.midco.rota.model.WorkShiftAssignment work) {
+				com.midco.rota.model.FollowerShiftAssignment follower = work.getPairedFollower();
+				if (follower != null && work.getEmployee() != null && follower.getEmployee() == null) {
+					follower.setEmployee(work.getEmployee());
+					followerSeeded++;
+				}
+			}
+		}
+		if (followerSeeded > 0) {
+			logger.info("Seeded {} follower assignments (e.g. SLEEP_IN) from their pinned/locked leader", followerSeeded);
+		}
+
 		return problem;
 	}
 
