@@ -119,7 +119,8 @@ public class RotaConstraintProvider implements ConstraintProvider {
 				// Eligibility
 				genderConstraint(factory), restrictedDayOfWeekConstraint(factory),
 				restrictedShiftTypeConstraint(factory), restrictedServiceConstraint(factory),
-				requiredSkillsConstraint(factory), employeeSchedulePatternConstraint(factory),
+				requiredSkillsConstraint(factory), shiftLeadOnCareShift(factory),
+				employeeSchedulePatternConstraint(factory),
 				weekOnWeekOffPattern(factory), employeeUnavailableConstraint(factory),
 
 				// Working-time limits
@@ -243,6 +244,34 @@ public class RotaConstraintProvider implements ConstraintProvider {
 			}
 			return false;
 		}).penalizeConfigurable().asConstraint("Missing required skill");
+	}
+
+	/**
+	 * Supervisor-only: a shift lead marked supervisor for this solve (matched to a service that
+	 * has lead shifts — see SolverTrigger.pinLeadShifts) must not be given a care shift, i.e.
+	 * any shift whose template does not require SHIFT_LEAD. Covers followers too, so a sleep-in
+	 * mirroring a supervisor's long day is caught as well.
+	 */
+	private Constraint shiftLeadOnCareShift(ConstraintFactory factory) {
+		return factory.forEach(ShiftAssignment.class)
+				.filter(sa -> sa.getEmployee() != null && sa.getEmployee().isSupervisor()
+						&& sa.getShift() != null && sa.getShift().getShiftTemplate() != null
+						&& !templateRequiresSkill(sa.getShift().getShiftTemplate(), "SHIFT_LEAD"))
+				.penalizeConfigurable()
+				.asConstraint("Shift lead on care shift");
+	}
+
+	private static boolean templateRequiresSkill(com.midco.rota.model.ShiftTemplate template, String skill) {
+		List<String> required = template.getRequiredSkills();
+		if (required == null) {
+			return false;
+		}
+		for (String r : required) {
+			if (r != null && r.trim().equalsIgnoreCase(skill)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**

@@ -168,6 +168,9 @@ public class SolverTrigger {
 
 		shiftAssignments = this.generateShiftInstances(window.start(), window.end(), shiftTemplates);
 
+		// Decide supervisor-only leads first, so template pinning can refuse to pin them
+		// onto care shifts (a stray standing pin must not break the supervisor rule).
+		markSupervisors(shiftAssignments, employees);
 		applyTemplateBasedPinning(shiftAssignments, employees);
 		// Link LONG_DAY → SLEEP_IN so the shadow-variable listener mirrors employees.
 		ShiftAssignmentFactory.linkFollowerPairs(shiftAssignments);
@@ -247,6 +250,15 @@ public class SolverTrigger {
 					locked - unlocked, unlocked);
 		}
 
+		// Lead shifts are not left to the solver: pin each one to the lead who holds the
+		// required SHIFT_LEAD skill AND has that service in their preferred services.
+		// Runs after continuity seeding so it overrides any seeded non-lead carer.
+		pinLeadShifts(shiftAssignments, employees);
+		// Don't hand the solver a warm start that already breaks the supervisor rule:
+		// continuity seeding puts leads back on last period's care slots.
+		releaseSupervisorsFromCare(shiftAssignments);
+		releaseSeedsClashingWithFixed(shiftAssignments);
+
 		// Seed each follower from a leader that already carries an employee before the solve
 		// (a template pin, or a CONTINUITY seed-lock). FollowerEmployeeVariableListener only
 		// mirrors on a leader-employee CHANGE during solving, so a follower paired to a fixed
@@ -268,6 +280,245 @@ public class SolverTrigger {
 		}
 
 		return problem;
+	}
+
+	private static final String LEAD_SKILL = "SHIFT_LEAD";
+
+	/**
+	 * Supervisor-only scope for this solve: active {@value #LEAD_SKILL} holders whose preferred
+	 * services include a service that has lead shifts in this batch. They take lead shifts
+	 * only (enforced by "Shift lead on care shift", and template pinning won't pin them onto
+	 * care shifts). Leads whose services have no lead shifts here keep working care as normal.
+	 */
+	private void markSupervisors(List<ShiftAssignment> assignments, List<Employee> employees) {
+		employees.forEach(e -> e.setSupervisor(false));
+		Set<String> leadShiftLocations = new HashSet<>();
+		for (ShiftAssignment sa : assignments) {
+			if (requiresSkill(sa, LEAD_SKILL)) {
+				leadShiftLocations.add(sa.getShift().getShiftTemplate().getLocation());
+			}
+		}
+		if (leadShiftLocations.isEmpty()) {
+			return;
+		}
+		int supervisors = 0;
+		for (Employee e : employees) {
+			if (e.isActive() && hasSkill(e, LEAD_SKILL)
+					&& leadShiftLocations.stream().anyMatch(loc -> e.getServiceWeightage(loc) > 0)) {
+				e.setSupervisor(true);
+				supervisors++;
+			}
+		}
+		logger.info("Supervisor-only leads (no care shifts this solve): {}", supervisors);
+	}
+
+	/**
+	 * Pre-solve: pin every lead shift (a template requiring {@value #LEAD_SKILL}) to a
+	 * lead who holds that skill AND lists the shift's service in their preferred
+	 * services. Highest service weight wins; leads on leave that day, or already holding
+	 * a hard-pinned / lead shift that overlaps, are skipped. Uses the transient seed-lock
+	 * (honoured by the pinning filter, never persisted) so the saved rota stays editable.
+	 * Any seeded, non-hard-pinned shift of the chosen lead that overlaps is released back
+	 * to the solver. Slots with no eligible lead are left for the solver (the HARD
+	 * "Missing required skill" rule then keeps non-leads off them).
+	 */
+	private void pinLeadShifts(List<ShiftAssignment> assignments, List<Employee> employees) {
+		List<Employee> leads = employees.stream()
+				.filter(Employee::isActive)
+				.filter(e -> hasSkill(e, LEAD_SKILL))
+				.toList();
+		if (leads.isEmpty()) {
+			return;
+		}
+
+		Map<Integer, List<ShiftAssignment>> byEmp = new HashMap<>();
+		for (ShiftAssignment sa : assignments) {
+			if (sa.getEmployee() != null) {
+				byEmp.computeIfAbsent(sa.getEmployee().getId(), k -> new ArrayList<>()).add(sa);
+			}
+		}
+
+		List<ShiftAssignment> leadSlots = assignments.stream()
+				.filter(sa -> sa instanceof com.midco.rota.model.WorkShiftAssignment)
+				.filter(sa -> sa.getShift() != null && sa.getShift().getShiftTemplate() != null
+						&& sa.getShift().getShiftStart() != null)
+				.filter(sa -> !isHardPinned(sa))
+				.filter(sa -> requiresSkill(sa, LEAD_SKILL))
+				.sorted(java.util.Comparator
+						.comparing((ShiftAssignment sa) -> sa.getShift().getShiftStart())
+						.thenComparing(sa -> sa.getShift().getShiftTemplate().getLocation()))
+				.toList();
+
+		int pinned = 0, noLead = 0;
+		for (ShiftAssignment slot : leadSlots) {
+			String location = slot.getShift().getShiftTemplate().getLocation();
+			LocalDate date = slot.getShift().getShiftStart();
+
+			Employee best = null;
+			int bestWeight = 0;
+			for (Employee lead : leads) {
+				int weight = lead.getServiceWeightage(location);
+				if (weight <= bestWeight) {
+					continue; // not matched to this service, or a better-weighted lead already found
+				}
+				if (lead.isUnavailableOn(date)) {
+					continue;
+				}
+				boolean clash = byEmp.getOrDefault(lead.getId(), List.of()).stream()
+						.anyMatch(o -> o != slot && (isHardPinned(o) || isLeadLock(o))
+								&& com.midco.rota.opt.ShiftOverlap.overlaps(o, slot));
+				if (clash) {
+					continue;
+				}
+				best = lead;
+				bestWeight = weight;
+			}
+			if (best == null) {
+				noLead++;
+				continue;
+			}
+
+			// Detach the slot from whoever was seeded on it.
+			Employee previous = slot.getEmployee();
+			if (previous != null) {
+				List<ShiftAssignment> prevList = byEmp.get(previous.getId());
+				if (prevList != null) {
+					prevList.remove(slot);
+				}
+			}
+			// Release the lead's other seeded (not hard-pinned) shifts that overlap this one.
+			List<ShiftAssignment> leadList = byEmp.computeIfAbsent(best.getId(), k -> new ArrayList<>());
+			for (ShiftAssignment other : new ArrayList<>(leadList)) {
+				if (other != slot && !isHardPinned(other) && !isLeadLock(other)
+						&& com.midco.rota.opt.ShiftOverlap.overlaps(other, slot)) {
+					other.setSeedLocked(false);
+					other.setEmployee(null);
+					leadList.remove(other);
+				}
+			}
+
+			slot.setEmployee(best);
+			slot.setSeedLocked(true);
+			leadList.add(slot);
+			pinned++;
+		}
+		logger.info("Lead shifts: pinned {} of {} to service-matched SHIFT_LEAD staff ({} with no eligible lead, left to the solver)",
+				pinned, leadSlots.size(), noLead);
+	}
+
+	/**
+	 * Clear supervisor leads off every non-lead slot they were seeded onto (continuity warm
+	 * start), unless it's a hard template pin. Leaves the slot for the solver; the HARD
+	 * "Shift lead on care shift" rule keeps them from being put back. Followers whose leader
+	 * is released are cleared too, so the follower seed doesn't mirror a stale supervisor.
+	 */
+	private void releaseSupervisorsFromCare(List<ShiftAssignment> assignments) {
+		int released = 0;
+		for (ShiftAssignment sa : assignments) {
+			Employee e = sa.getEmployee();
+			if (e == null || !e.isSupervisor() || requiresSkill(sa, LEAD_SKILL) || isHardPinned(sa)) {
+				continue;
+			}
+			sa.setSeedLocked(false);
+			sa.setEmployee(null);
+			released++;
+		}
+		if (released > 0) {
+			logger.info("Released {} seeded care shift(s) from supervisor leads before solving", released);
+		}
+	}
+
+	/**
+	 * Continuity seeds are a warm start laid down without looking at pins, so a carer can be
+	 * seeded onto a slot that overlaps their pinned shift (or a sleep-in mirroring a seeded long
+	 * day can overlap it). The solver rarely untangles these within the time limit, so release
+	 * them up front: per carer, keep the fixed shifts (pins, seed-locks, and their followers),
+	 * then keep seeds in start order unless they — or their follower — overlap something kept.
+	 */
+	private void releaseSeedsClashingWithFixed(List<ShiftAssignment> assignments) {
+		Map<Integer, List<ShiftAssignment>> byEmp = new HashMap<>();
+		for (ShiftAssignment sa : assignments) {
+			if (sa instanceof com.midco.rota.model.WorkShiftAssignment && sa.getEmployee() != null) {
+				byEmp.computeIfAbsent(sa.getEmployee().getId(), k -> new ArrayList<>()).add(sa);
+			}
+		}
+		int released = 0;
+		for (List<ShiftAssignment> list : byEmp.values()) {
+			List<ShiftAssignment> kept = new ArrayList<>();
+			List<ShiftAssignment> seeds = new ArrayList<>();
+			for (ShiftAssignment sa : list) {
+				if (sa.isSolverPinned()) {
+					kept.add(sa);
+					addFollower(kept, sa);
+				} else {
+					seeds.add(sa);
+				}
+			}
+			seeds.sort(java.util.Comparator.comparing(com.midco.rota.opt.ShiftOverlap::startOf,
+					java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder())));
+			for (ShiftAssignment seed : seeds) {
+				List<ShiftAssignment> candidate = new ArrayList<>();
+				candidate.add(seed);
+				addFollower(candidate, seed);
+				boolean clash = candidate.stream().anyMatch(c -> kept.stream()
+						.anyMatch(k -> com.midco.rota.opt.ShiftOverlap.overlaps(k, c)));
+				if (clash) {
+					seed.setEmployee(null);
+					candidate.stream().skip(1).forEach(f -> f.setEmployee(null)); // its follower, if any
+					released++;
+				} else {
+					kept.addAll(candidate);
+				}
+			}
+		}
+		if (released > 0) {
+			logger.info("Released {} seeded shift(s) that overlapped a pinned/locked or earlier seeded shift", released);
+		}
+	}
+
+	private static void addFollower(List<ShiftAssignment> into, ShiftAssignment sa) {
+		if (sa instanceof com.midco.rota.model.WorkShiftAssignment work && work.getPairedFollower() != null) {
+			into.add(work.getPairedFollower());
+		}
+	}
+
+	/** A persisted template pin (as opposed to the transient seed-lock). */
+	private static boolean isHardPinned(ShiftAssignment sa) {
+		return sa.isSolverPinned() && !sa.isSeedLocked();
+	}
+
+	/** A seed-locked lead shift placed by {@link #pinLeadShifts}. */
+	private static boolean isLeadLock(ShiftAssignment sa) {
+		return sa.isSeedLocked() && requiresSkill(sa, LEAD_SKILL);
+	}
+
+	private static boolean hasSkill(Employee e, String skill) {
+		List<String> skills = e.getSkills();
+		if (skills == null) {
+			return false;
+		}
+		for (String s : skills) {
+			if (s != null && s.trim().equalsIgnoreCase(skill)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static boolean requiresSkill(ShiftAssignment sa, String skill) {
+		if (sa.getShift() == null || sa.getShift().getShiftTemplate() == null) {
+			return false;
+		}
+		List<String> required = sa.getShift().getShiftTemplate().getRequiredSkills();
+		if (required == null) {
+			return false;
+		}
+		for (String r : required) {
+			if (r != null && r.trim().equalsIgnoreCase(skill)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private List<ShiftAssignment> generateShiftInstances(LocalDate startDate, LocalDate endDate,
@@ -315,6 +566,8 @@ public class SolverTrigger {
 		int pinnedCount = 0;
 		int skippedInactive = 0;
 		int skippedConflict = 0;
+		int skippedSupervisor = 0;
+		int skippedOverlap = 0;
 
 		logger.info("Starting template-based pinning for {} assignments", shiftAssignments.size());
 
@@ -360,6 +613,7 @@ public class SolverTrigger {
 
 		// Track assignments per employee per day (for conflict detection)
 		Map<String, Set<ShiftType>> employeeDayAssignments = new HashMap<>();
+		Map<Integer, List<ShiftAssignment>> pinnedByEmployee = new HashMap<>();
 
 		// Apply pins to matching shift assignments
 		for (ShiftAssignment assignment : shiftAssignments) {
@@ -389,6 +643,15 @@ public class SolverTrigger {
 					continue;
 				}
 
+				// Check 1b: a supervisor lead is never pinned onto a care shift (lead shifts only).
+				if (employee.isSupervisor() && !requiresSkill(assignment, LEAD_SKILL)) {
+					skippedSupervisor++;
+					logger.warn("Skipping pin: supervisor lead {} onto care shift {} {} {} (lead shifts only)",
+							employee.getName(), shift.getShiftTemplate().getLocation(),
+							shift.getShiftStart(), shift.getShiftTemplate().getShiftTypeCode());
+					continue;
+				}
+
 				// Check 2: Same-day conflict detection
 				String conflictKey = empId + "-" + shift.getShiftStart();
 				Set<ShiftType> existingShifts = employeeDayAssignments.get(conflictKey);
@@ -406,6 +669,19 @@ public class SolverTrigger {
 					}
 				}
 
+				// Check 3: time overlap with a pin already applied to this employee (catches
+				// cross-day clashes, e.g. a waking night to 08:00 then a 07:00 long day).
+				// The clashing slot is left for the solver instead of starting with a hard break.
+				List<ShiftAssignment> empPins = pinnedByEmployee.get(empId);
+				if (empPins != null && empPins.stream()
+						.anyMatch(p -> com.midco.rota.opt.ShiftOverlap.overlaps(p, assignment))) {
+					skippedOverlap++;
+					logger.warn("Skipping pin: {} {} {} {} overlaps another pinned shift", employee.getName(),
+							shift.getShiftTemplate().getLocation(), shift.getShiftStart(),
+							shift.getShiftTemplate().getShiftTypeCode());
+					continue;
+				}
+
 				// ✅ All checks passed - apply pin
 				assignment.setEmployee(employee);
 				assignment.setPinned(true);
@@ -415,6 +691,7 @@ public class SolverTrigger {
 				// Track for conflict detection
 				employeeDayAssignments.computeIfAbsent(conflictKey, k -> new HashSet<>())
 						.add(shift.getShiftTemplate().getShiftType());
+				pinnedByEmployee.computeIfAbsent(empId, k -> new ArrayList<>()).add(assignment);
 
 				logger.debug("✅ PINNED: {} to {} {} {}", employee.getName(), shift.getShiftTemplate().getLocation(),
 						shift.getShiftStart(), shift.getShiftTemplate().getShiftType());
@@ -427,6 +704,8 @@ public class SolverTrigger {
 		logger.info("  ✅ Successfully pinned: {}", pinnedCount);
 		logger.info("  ⚠️ Skipped (inactive employee): {}", skippedInactive);
 		logger.info("  ⚠️ Skipped (same-day conflict): {}", skippedConflict);
+		logger.info("  ⚠️ Skipped (supervisor lead on care shift): {}", skippedSupervisor);
+		logger.info("  ⚠️ Skipped (overlaps another pin): {}", skippedOverlap);
 		logger.info("  📋 Unassigned (for solver): {}", shiftAssignments.size() - pinnedCount);
 	}
 

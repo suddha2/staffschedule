@@ -124,6 +124,10 @@ public class RotaConstraintConfiguration {
 	@ConstraintWeight("Missing required skill")
 	private HardSoftLongScore missingRequiredSkill = HardSoftLongScore.ONE_HARD;
 
+	/** Supervisor-only: a shift lead matched to a service with lead shifts takes no care shifts. */
+	@ConstraintWeight("Shift lead on care shift")
+	private HardSoftLongScore shiftLeadOnCareShift = HardSoftLongScore.ofHard(100);
+
 	/** Inactive by default. */
 	@ConstraintWeight("Employee schedule pattern violation")
 	private HardSoftLongScore schedulePatternViolation = HardSoftLongScore.ONE_HARD;
@@ -314,6 +318,8 @@ public class RotaConstraintConfiguration {
 	public void setEmployeeUnavailable(HardSoftLongScore v) { this.employeeUnavailable = v; }
 	public HardSoftLongScore getMissingRequiredSkill() { return missingRequiredSkill; }
 	public void setMissingRequiredSkill(HardSoftLongScore v) { this.missingRequiredSkill = v; }
+	public HardSoftLongScore getShiftLeadOnCareShift() { return shiftLeadOnCareShift; }
+	public void setShiftLeadOnCareShift(HardSoftLongScore v) { this.shiftLeadOnCareShift = v; }
 	public HardSoftLongScore getSchedulePatternViolation() { return schedulePatternViolation; }
 	public void setSchedulePatternViolation(HardSoftLongScore v) { this.schedulePatternViolation = v; }
 	public HardSoftLongScore getWeekOnWeekOffPattern() { return weekOnWeekOffPattern; }

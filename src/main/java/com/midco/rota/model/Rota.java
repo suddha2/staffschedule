@@ -17,6 +17,7 @@ import org.optaplanner.core.api.score.buildin.hardsoft.HardSoftScore;
 import org.optaplanner.core.api.score.buildin.hardsoftlong.HardSoftLongScore;
 
 import com.fasterxml.jackson.annotation.JsonIdentityInfo;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonManagedReference;
 import com.fasterxml.jackson.annotation.ObjectIdGenerators;
 import com.midco.rota.opt.RotaConstraintConfiguration;
@@ -52,7 +53,6 @@ public class Rota {
 	@OneToMany(cascade = CascadeType.MERGE)
 	@JoinTable(name = "rota_employee", // your actual join table
 			joinColumns = @JoinColumn(name = "rota_id"), inverseJoinColumns = @JoinColumn(name = "employee_id"))
-	@ValueRangeProvider(id = "employeeRange")
 	@ProblemFactCollectionProperty
 	private List<Employee> employeeList;
 
@@ -135,6 +135,21 @@ public class Rota {
 
 	public List<Employee> getEmployeeList() {
 		return employeeList;
+	}
+
+	/**
+	 * Employees the solver may pick. Supervisor leads (see SolverTrigger.markSupervisors) are
+	 * left out: their lead shifts are pinned before solving, and they take no care shifts, so
+	 * the solver never needs to move them. They stay in employeeList as problem facts so
+	 * constraints still see their pinned shifts.
+	 */
+	@ValueRangeProvider(id = "employeeRange")
+	@JsonIgnore
+	public List<Employee> getAssignableEmployeeList() {
+		if (employeeList == null) {
+			return null;
+		}
+		return employeeList.stream().filter(e -> !e.isSupervisor()).collect(Collectors.toList());
 	}
 
 	public List<ShiftAssignment> getShiftAssignmentList() {

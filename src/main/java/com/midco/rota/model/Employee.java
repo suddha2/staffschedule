@@ -159,6 +159,23 @@ public class Employee {
 	@JsonIgnore
 	private java.util.Set<LocalDate> unavailableDates;
 
+	/**
+	 * Per solve (never persisted): this employee is a shift lead matched to a service that
+	 * has lead shifts in the current solve, so they take lead shifts only (salaried
+	 * supervisor). Set by SolverTrigger before solving; read by "Shift lead on care shift".
+	 */
+	@Transient
+	@JsonIgnore
+	private boolean supervisor;
+
+	public boolean isSupervisor() {
+		return supervisor;
+	}
+
+	public void setSupervisor(boolean supervisor) {
+		this.supervisor = supervisor;
+	}
+
 	// ============================================================================
 	// CONSTRUCTORS
 	// ============================================================================
