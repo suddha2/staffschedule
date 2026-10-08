@@ -431,8 +431,9 @@ public class SolverTrigger {
 	/**
 	 * Continuity seeds are a warm start laid down without looking at pins, so a carer can be
 	 * seeded onto a slot that overlaps their pinned shift (or a sleep-in mirroring a seeded long
-	 * day can overlap it). The solver rarely untangles these within the time limit, so release
-	 * them up front: per carer, keep the fixed shifts (pins, seed-locks, and their followers),
+	 * day can overlap it). The solver rarely untangles these within the time limit (and can't
+	 * at all when CONTINUITY has seed-locked them), so release them up front: per carer, keep
+	 * the fixed shifts (template pins, lead locks, and their followers),
 	 * then keep seeds in start order unless they — or their follower — overlap something kept.
 	 */
 	private void releaseSeedsClashingWithFixed(List<ShiftAssignment> assignments) {
@@ -447,7 +448,9 @@ public class SolverTrigger {
 			List<ShiftAssignment> kept = new ArrayList<>();
 			List<ShiftAssignment> seeds = new ArrayList<>();
 			for (ShiftAssignment sa : list) {
-				if (sa.isSolverPinned()) {
+				// Only template pins and lead locks are fixed; a CONTINUITY seed-lock is still a
+				// seed and must give way, or a locked seed + a pin is an unfixable overlap.
+				if (isHardPinned(sa) || isLeadLock(sa)) {
 					kept.add(sa);
 					addFollower(kept, sa);
 				} else {
@@ -463,6 +466,7 @@ public class SolverTrigger {
 				boolean clash = candidate.stream().anyMatch(c -> kept.stream()
 						.anyMatch(k -> com.midco.rota.opt.ShiftOverlap.overlaps(k, c)));
 				if (clash) {
+					seed.setSeedLocked(false);
 					seed.setEmployee(null);
 					candidate.stream().skip(1).forEach(f -> f.setEmployee(null)); // its follower, if any
 					released++;
