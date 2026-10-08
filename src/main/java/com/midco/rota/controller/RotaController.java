@@ -141,9 +141,14 @@ public class RotaController {
 		this.liveSolverSessionService = liveSolverSessionService;
 	}
 
+	@org.springframework.beans.factory.annotation.Autowired
+	private com.midco.rota.repository.RegionRepository regionRepository;
+
+	// Regions now come from the region master (V021), i.e. the operating regions
+	// (distinct staffrota_region), replacing the rate-card-derived RateTableProvider list.
 	@GetMapping("/regions")
 	public ResponseEntity<List<Map<String, Object>>> getRegions() {
-		List<String> regions = RateTableProvider.getAllRegions();
+		List<String> regions = regionRepository.findOperatingRegions();
 		List<Map<String, Object>> result = new ArrayList<>();
 		for (int i = 0; i < regions.size(); i++) {
 			Map<String, Object> entry = new HashMap<>();
@@ -155,9 +160,15 @@ public class RotaController {
 		return ResponseEntity.ok(result);
 	}
 
+	@org.springframework.beans.factory.annotation.Autowired
+	private com.midco.rota.repository.ServiceLocationRepository serviceLocationRepository;
+
+	// Service list now comes from the service_location master (V021/V022), filtered by
+	// operating region, replacing distinct ShiftTemplate.location. Values are the bridged
+	// staffrota string where known (so existing data still matches), else the canonical name.
 	@GetMapping("/service-locations/{regionName}")
 	public ResponseEntity<List<String>> getServicesForRegion(@PathVariable String regionName) {
-		List<String> services = shiftTemplateRepository.findAllServiceLocation(regionName);
+		List<String> services = serviceLocationRepository.findServiceNamesByStaffrotaRegion(regionName);
 		return ResponseEntity.ok(services);
 	}
 

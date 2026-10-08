@@ -411,18 +411,26 @@ public class ShiftTemplateController {
 	/**
 	 * GET all distinct regions
 	 */
+	@org.springframework.beans.factory.annotation.Autowired
+	private com.midco.rota.repository.RegionRepository regionRepository;
+
+	// Regions from the region master (V021): operating regions (distinct staffrota_region).
 	@GetMapping("/regions")
 	public ResponseEntity<List<String>> getAllRegions() {
-		List<String> regions = RateTableProvider.getAllRegions();
+		List<String> regions = regionRepository.findOperatingRegions();
 		return ResponseEntity.ok(regions);
 	}
 
 	/**
 	 * GET all locations for a region
 	 */
+	@org.springframework.beans.factory.annotation.Autowired
+	private com.midco.rota.repository.ServiceLocationRepository serviceLocationRepository;
+
+	// Locations from the service_location master (V021/V022), filtered by operating region.
 	@GetMapping("/regions/{region}/locations")
 	public ResponseEntity<List<String>> getLocationsByRegion(@PathVariable String region) {
-		List<String> locations = shiftTemplateRepository.findLocationsByRegion(region);
+		List<String> locations = serviceLocationRepository.findServiceNamesByStaffrotaRegion(region);
 		return ResponseEntity.ok(locations);
 	}
 
