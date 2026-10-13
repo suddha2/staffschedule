@@ -1,6 +1,9 @@
 package staffschedule;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
@@ -17,6 +20,7 @@ import com.midco.rota.model.ShiftAssignmentFactory;
 import com.midco.rota.model.ShiftTemplate;
 import com.midco.rota.model.FollowerShiftAssignment;
 import com.midco.rota.model.WorkShiftAssignment;
+import com.midco.rota.util.PairingMode;
 import com.midco.rota.util.ShiftType;
 
 /**
@@ -93,5 +97,64 @@ class ShiftAssignmentFactoryTest {
         assertInstanceOf(FollowerShiftAssignment.class, f1);
         assertInstanceOf(FollowerShiftAssignment.class, f2);
         org.junit.jupiter.api.Assertions.assertNotSame(f1, f2, "the two long-days pair to different sleep-ins");
+    }
+
+    private static long count(List<ShiftAssignment> list, Class<?> type) {
+        return list.stream().filter(type::isInstance).count();
+    }
+
+    @Test
+    void sleepInBeyondTheLongDaysGetsItsOwnCarer() {
+        // 61 VICTORIA: one long day, a sleep-in template needing two people.
+        ShiftTemplate si = tpl("61 Victoria", ShiftType.SLEEP_IN);
+        si.setEmpCount(2);
+        Shift longDay = new Shift(D, tpl("61 Victoria", ShiftType.LONG_DAY), 1);
+        Shift sleepIn = new Shift(D, si, 1);
+
+        List<ShiftAssignment> all = ShiftAssignmentFactory.createAll(List.of(longDay, sleepIn));
+        ShiftAssignmentFactory.linkFollowerPairs(all);
+
+        List<ShiftAssignment> sleepIns = all.stream().filter(sa -> sa.getShift() == sleepIn).toList();
+        assertEquals(1, count(sleepIns, FollowerShiftAssignment.class), "one sleep-in mirrors the long day");
+        assertEquals(1, count(sleepIns, WorkShiftAssignment.class), "the other gets its own carer");
+        WorkShiftAssignment ld = (WorkShiftAssignment) all.stream().filter(sa -> sa.getShift() == longDay).findFirst().orElseThrow();
+        assertInstanceOf(FollowerShiftAssignment.class, ld.getPairedFollower());
+    }
+
+    @Test
+    void sleepInWithNoLongDayAtAllGetsItsOwnCarer() {
+        Shift sleepIn = new Shift(D, tpl("13 Edinburg", ShiftType.SLEEP_IN), 1);
+        List<ShiftAssignment> all = ShiftAssignmentFactory.createAll(List.of(sleepIn));
+        assertInstanceOf(WorkShiftAssignment.class, all.get(0));
+    }
+
+    @Test
+    void standaloneSleepInHasItsOwnCarerAndNothingPairsOntoIt() {
+        ShiftTemplate own = tpl("Riverdale", ShiftType.SLEEP_IN);
+        own.setPairingMode(PairingMode.STANDALONE);
+        Shift longDay = new Shift(D, tpl("Riverdale", ShiftType.LONG_DAY), 1);
+        Shift standalone = new Shift(D, own, 1);
+        Shift paired = new Shift(D, tpl("Riverdale", ShiftType.SLEEP_IN), 1);
+
+        List<ShiftAssignment> all = ShiftAssignmentFactory.createAll(List.of(longDay, standalone, paired));
+        ShiftAssignmentFactory.linkFollowerPairs(all);
+
+        ShiftAssignment st = all.stream().filter(sa -> sa.getShift() == standalone).findFirst().orElseThrow();
+        ShiftAssignment pa = all.stream().filter(sa -> sa.getShift() == paired).findFirst().orElseThrow();
+        WorkShiftAssignment ld = (WorkShiftAssignment) all.stream().filter(sa -> sa.getShift() == longDay).findFirst().orElseThrow();
+        assertInstanceOf(WorkShiftAssignment.class, st, "STANDALONE sleep-in is a genuine work shift");
+        assertNull(((WorkShiftAssignment) st).getPairedFollower(), "a standalone sleep-in is never a leader");
+        assertSame(pa, ld.getPairedFollower(), "the long day still pairs with the ordinary sleep-in");
+    }
+
+    @Test
+    void pairedModeKeepsTheTypeDefault() {
+        ShiftTemplate t = tpl("Riverdale", ShiftType.SLEEP_IN);
+        t.setPairingMode(PairingMode.PAIRED);
+        assertTrue(t.isEffectiveFollower());
+        t.setPairingMode(null);
+        assertTrue(t.isEffectiveFollower(), "unset = type default (SLEEP_IN follows)");
+        t.setPairingMode(PairingMode.STANDALONE);
+        assertFalse(t.isEffectiveFollower());
     }
 }

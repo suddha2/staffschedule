@@ -833,14 +833,9 @@ public class RotaController {
 			}
 		}
 
-		// Add shift assignments per shift to enable multiple employee assignment for
-		// each shift ( N to 1 scenario)
-		for (Shift shift : instances) {
-			for (int i = 0; i < shift.getShiftTemplate().getEmpCount(); i++) {
-				ShiftAssignment assignment = ShiftAssignmentFactory.create(shift);
-				assignments.add(assignment);
-			}
-		}
+		// One assignment per head (emp_count, e.g. 2:1 support). Sleep-ins with no long day
+		// left to mirror become standalone shifts with their own carer.
+		assignments.addAll(ShiftAssignmentFactory.createAll(instances));
 		return assignments;
 
 	}

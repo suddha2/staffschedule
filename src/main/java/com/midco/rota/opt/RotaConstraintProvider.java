@@ -21,6 +21,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 import com.midco.rota.model.Employee;
 import com.midco.rota.model.ShiftAssignment;
+import com.midco.rota.model.FollowerShiftAssignment;
 import com.midco.rota.model.WorkShiftAssignment;
 import com.midco.rota.service.PeriodService;
 import com.midco.rota.util.ContractType;
@@ -85,10 +86,10 @@ public class RotaConstraintProvider implements ConstraintProvider {
 	 * is the only follower), so it is behaviour-neutral for existing data.
 	 */
 	private static boolean coverageRequired(ShiftAssignment sa) {
-		if (sa.getShift() == null || sa.getShift().getShiftTemplate() == null) {
-			return true;
-		}
-		return !sa.getShift().getShiftTemplate().isEffectiveFollower();
+		// A paired follower (e.g. SLEEP_IN mirroring its LONG_DAY) is covered by its leader.
+		// Decided by the entity, not the template: a standalone sleep-in, or one left without
+		// a long day to pair with, is a genuine work shift that must be covered.
+		return !(sa instanceof FollowerShiftAssignment);
 	}
 
 	/**

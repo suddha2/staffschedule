@@ -7,6 +7,7 @@ import java.util.List;
 
 import com.midco.rota.converter.StringListConverter;
 import com.midco.rota.util.Gender;
+import com.midco.rota.util.PairingMode;
 import com.midco.rota.util.ShiftType;
 
 import jakarta.persistence.Column;
@@ -97,6 +98,11 @@ public class ShiftTemplate {
 	/** The leader template this one follows (its carer is mirrored onto this shift). Null unless {@link #follower}. */
 	@Column(name = "paired_with_template_id")
 	private Integer pairedWithTemplateId;
+
+	/** Per-template override of follower staffing (null = the shift type's default). See {@link PairingMode}. */
+	@Enumerated(EnumType.STRING)
+	@Column(name = "pairing_mode", length = 12)
+	private PairingMode pairingMode;
 
 	public ShiftTemplate() {
 	}
@@ -329,14 +335,26 @@ public class ShiftTemplate {
 		this.pairedWithTemplateId = pairedWithTemplateId;
 	}
 
+	public PairingMode getPairingMode() {
+		return pairingMode;
+	}
+
+	public void setPairingMode(PairingMode pairingMode) {
+		this.pairingMode = pairingMode;
+	}
+
 	/**
 	 * True when this template's shift mirrors a leader's carer (the generalised
-	 * SLEEP_IN shadow): the per-template {@code is_follower} flag if set, otherwise
-	 * the shift type's seeded default. Drives which assignment subtype the factory
-	 * creates and how the linker pairs shifts.
+	 * SLEEP_IN shadow). {@code pairing_mode} decides when set: STANDALONE gives the shift
+	 * its own carer, PAIRED mirrors the leader. Otherwise the legacy {@code is_follower}
+	 * flag, then the shift type's seeded default. Drives which assignment subtype the
+	 * factory creates and how the linker pairs shifts.
 	 */
 	public boolean isEffectiveFollower() {
-		if (follower) {
+		if (pairingMode == PairingMode.STANDALONE) {
+			return false;
+		}
+		if (pairingMode == PairingMode.PAIRED || follower) {
 			return true;
 		}
 		return shiftTypeCode != null && com.midco.rota.opt.ShiftTypeMeta.isFollower(shiftTypeCode);

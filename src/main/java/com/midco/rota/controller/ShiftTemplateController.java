@@ -145,6 +145,7 @@ public class ShiftTemplateController {
 				template.setRate(request.getRate());
 				template.setRateBasis(request.getRateBasis());
 				template.setFollower(request.isFollower());
+				template.setPairingMode(request.getPairingMode());
 				template.setPairedWithTemplateId(request.getPairedWithTemplateId());
 				// total_hours must be > 0 or findAllByRegion won't feed it to the solver;
 				// compute from the times if the caller didn't supply it.
@@ -246,6 +247,11 @@ public class ShiftTemplateController {
 		t.setStartTime(row.getStartTime());
 		t.setEndTime(row.getEndTime());
 		t.setEmpCount(row.getEmpCount() == null ? 1 : row.getEmpCount());
+		// Sleep-in staffing (own carer vs same carer as the long day) only means anything
+		// for follower types; other rows leave the template's setting alone.
+		if (com.midco.rota.opt.ShiftTypeMeta.isFollower(row.getShiftType())) {
+			t.setPairingMode(row.getPairingMode());
+		}
 		t.setTotalHours(computeTotalHours(row.getStartTime(), row.getEndTime(), t.getBreakStart(), t.getBreakEnd()));
 		// Auto-tag the type's eligibility skill (e.g. SHIFT_LEAD) so it's lead-only without
 		// hand-editing. Types with no required_skill leave existing skills untouched.
@@ -320,6 +326,7 @@ public class ShiftTemplateController {
 			template.setTotalHours(shiftTemplateDetails.getTotalHours());
 			template.setRequiredGender(shiftTemplateDetails.getRequiredGender());
 			template.setRequiredSkills(shiftTemplateDetails.getRequiredSkills());
+			template.setPairingMode(shiftTemplateDetails.getPairingMode());
 			template.setEmpCount(shiftTemplateDetails.getEmpCount());
 			template.setPriority(shiftTemplateDetails.getPriority());
 			template.setActive(shiftTemplateDetails.isActive());

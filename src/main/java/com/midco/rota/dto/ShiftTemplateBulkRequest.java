@@ -22,6 +22,8 @@ public class ShiftTemplateBulkRequest {
         private LocalTime startTime;
         private LocalTime endTime;
         private Integer empCount;
+        /** Follower types only (e.g. SLEEP_IN): STANDALONE = own carer, null/PAIRED = same carer as the long day. */
+        private com.midco.rota.util.PairingMode pairingMode;
 
         public String getShiftType() { return shiftType; }
         public void setShiftType(String shiftType) { this.shiftType = shiftType; }
@@ -33,6 +35,8 @@ public class ShiftTemplateBulkRequest {
         public void setEndTime(LocalTime endTime) { this.endTime = endTime; }
         public Integer getEmpCount() { return empCount; }
         public void setEmpCount(Integer empCount) { this.empCount = empCount; }
+        public com.midco.rota.util.PairingMode getPairingMode() { return pairingMode; }
+        public void setPairingMode(com.midco.rota.util.PairingMode pairingMode) { this.pairingMode = pairingMode; }
     }
 
     public String getLocation() { return location; }
