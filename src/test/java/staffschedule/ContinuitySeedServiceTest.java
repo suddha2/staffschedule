@@ -137,6 +137,70 @@ class ContinuitySeedServiceTest {
 		assertEquals(6, a.getSeededEmployeeId());
 	}
 
+	private ShiftAssignment slotAt(String house) {
+		ShiftAssignment a = slot(100, D);
+		a.getShift().getShiftTemplate().setLocation(house);
+		return a;
+	}
+
+	private Employee knows(int id, String... houses) {
+		Employee e = emp(id);
+		e.setPreferredService(List.of(houses));
+		return e;
+	}
+
+	@Test
+	void doesNotLockACarerIntoAHouseTheyNeverWorked() {
+		// Louise Tripp case: only ever worked Alexandra, carried over at Riverdale period after period
+		ShiftAssignment a = slotAt("RIVERDALE");
+		Employee louise = knows(5, "Alexandra Flat A - KC:100");
+		Employee bongiwe = knows(6, "9 CLAYDON:50", "RIVERDALE:25");
+
+		assertEquals(0, svc.applySeed(List.of(a), Map.of("100|" + PRIOR, List.of(5)), Map.of(5, louise, 6, bongiwe)));
+		assertNull(a.getEmployee(), "left open for the solver");
+	}
+
+	@Test
+	void keepsACarerWhoKnowsTheHouse() {
+		ShiftAssignment a = slotAt(" riverdale ");
+		Employee chiamaka = knows(5, "GOLDERS RISE:44", "RIVERDALE:21");
+
+		assertEquals(1, svc.applySeed(List.of(a), Map.of("100|" + PRIOR, List.of(5)), Map.of(5, chiamaka)));
+	}
+
+	@Test
+	void keepsCarriedOverCarersWithNoRecordedHistory() {
+		ShiftAssignment a = slotAt("RIVERDALE");
+		Employee newStarter = emp(5);
+		Employee other = knows(6, "RIVERDALE:100");
+
+		assertEquals(1, svc.applySeed(List.of(a), Map.of("100|" + PRIOR, List.of(5)), Map.of(5, newStarter, 6, other)));
+	}
+
+	@Test
+	void keepsCarryOversAtAHouseNobodyHasHistoryAt() {
+		// e.g. a house not mapped to People Planner: no one can be judged unfamiliar there
+		ShiftAssignment a = slotAt("57 STURGESS");
+		Employee carer = knows(5, "4 AUDLEY:100");
+
+		assertEquals(1, svc.applySeed(List.of(a), Map.of("100|" + PRIOR, List.of(5)), Map.of(5, carer)));
+	}
+
+	@Test
+	void pairedSleepInsAreNotSeededSeparatelyFromTheirLongDay() {
+		// 2:1 sleep-in: seeding its seats on their own could lock one carer into both seats
+		// (or into the seat whose long day is pinned to someone else). They follow the long day.
+		Shift shift = new Shift();
+		ShiftTemplate t = new ShiftTemplate();
+		t.setId(300);
+		shift.setShiftTemplate(t);
+		shift.setShiftStart(D);
+		ShiftAssignment sleepIn = new com.midco.rota.model.FollowerShiftAssignment(shift);
+
+		assertEquals(0, svc.applySeed(List.of(sleepIn), Map.of("300|" + PRIOR, List.of(5)), Map.of(5, emp(5))));
+		assertNull(sleepIn.getEmployee());
+	}
+
 	@Test
 	void doesNotSeedACarerMissingARequiredSkill() {
 		ShiftAssignment a = slot(100, D);
