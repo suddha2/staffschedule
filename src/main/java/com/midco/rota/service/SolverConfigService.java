@@ -310,6 +310,12 @@ public class SolverConfigService {
 		map.put("permanentEarningsFloorPct", new TuningAccessor(SolverTuning::getPermanentEarningsFloorPct,
 				SolverTuning::setPermanentEarningsFloorPct,
 				"Permanent carer's week may not drop below this % of their usual weekly hours; 0 = rule off"));
+		map.put("houseHistoryMinShifts", new TuningAccessor(SolverTuning::getHouseHistoryMinShifts,
+				SolverTuning::setHouseHistoryMinShifts,
+				"People Planner shifts at a house (last 12 months) below which a carer counts as new there"));
+		map.put("houseHistoryFullSharePct", new TuningAccessor(SolverTuning::getHouseHistoryFullSharePct,
+				SolverTuning::setHouseHistoryFullSharePct,
+				"Share of a carer's People Planner shifts at a house that makes it fully one of their own houses"));
 		return map;
 	}
 

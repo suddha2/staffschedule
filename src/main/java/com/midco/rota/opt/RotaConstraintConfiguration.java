@@ -232,6 +232,10 @@ public class RotaConstraintConfiguration {
 	@ConstraintWeight("Max 6 consecutive working days")
 	private HardSoftLongScore maxConsecutiveWorkingDays = HardSoftLongScore.ZERO;
 
+	/** Regulars first (V033). Weight in constraint_setting; ZERO only registers the rule. */
+	@ConstraintWeight("Carer new to this house")
+	private HardSoftLongScore carerNewToHouse = HardSoftLongScore.ZERO;
+
 	@ConstraintWeight("Penalize overloading individual employees")
 	private HardSoftLongScore overloadingEmployees = HardSoftLongScore.ofSoft(100);
 
@@ -387,6 +391,8 @@ public class RotaConstraintConfiguration {
 	public HardSoftLongScore getPermanentAboveUsualHours() { return permanentAboveUsualHours; }
 	public HardSoftLongScore getZeroHoursFairShare() { return zeroHoursFairShare; }
 	public HardSoftLongScore getMaxConsecutiveWorkingDays() { return maxConsecutiveWorkingDays; }
+	public HardSoftLongScore getCarerNewToHouse() { return carerNewToHouse; }
+	public void setCarerNewToHouse(HardSoftLongScore v) { this.carerNewToHouse = v; }
 	public HardSoftLongScore getOverloadingEmployees() { return overloadingEmployees; }
 	public void setOverloadingEmployees(HardSoftLongScore v) { this.overloadingEmployees = v; }
 	public HardSoftLongScore getBalancedHours() { return balancedHours; }

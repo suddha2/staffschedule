@@ -168,6 +168,16 @@ public class Employee {
 	private java.util.Set<LocalDate> unavailableDates;
 
 	/**
+	 * Per solve (never persisted): how much each house is one of this carer's own, 0-100, from
+	 * People Planner history (carer_house_history; see HouseHistoryService), keyed by trimmed
+	 * upper-case location. Missing = 0 (never worked there). Set by SolverTrigger before solving;
+	 * read by continuity seeding and "Carer new to this house".
+	 */
+	@Transient
+	@JsonIgnore
+	private java.util.Map<String, Integer> houseFamiliarity = java.util.Map.of();
+
+	/**
 	 * Per solve (never persisted): this employee is a shift lead matched to a service that
 	 * has lead shifts in the current solve, so they take lead shifts only (salaried
 	 * supervisor). Set by SolverTrigger before solving; read by "Shift lead on care shift".
@@ -482,6 +492,19 @@ public class Employee {
 
 	public void setUnavailableDates(java.util.Set<LocalDate> unavailableDates) {
 		this.unavailableDates = unavailableDates;
+	}
+
+	/** 0-100: how much the location is one of this carer's own houses (100 = fully). */
+	public int familiarityAt(String location) {
+		return location == null ? 0 : houseFamiliarity.getOrDefault(location.trim().toUpperCase(), 0);
+	}
+
+	public java.util.Map<String, Integer> getHouseFamiliarity() {
+		return houseFamiliarity;
+	}
+
+	public void setHouseFamiliarity(java.util.Map<String, Integer> houseFamiliarity) {
+		this.houseFamiliarity = houseFamiliarity == null ? java.util.Map.of() : houseFamiliarity;
 	}
 
 	@Override

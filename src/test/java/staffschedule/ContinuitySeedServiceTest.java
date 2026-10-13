@@ -137,51 +137,65 @@ class ContinuitySeedServiceTest {
 		assertEquals(6, a.getSeededEmployeeId());
 	}
 
-	private ShiftAssignment slotAt(String house) {
+	/** A slot at a house People Planner tracks (somebody is a regular there) unless tracked=false. */
+	private ShiftAssignment slotAt(String house, boolean tracked) {
 		ShiftAssignment a = slot(100, D);
 		a.getShift().getShiftTemplate().setLocation(house);
+		a.getShift().getShiftTemplate().setHistoryTracked(tracked);
 		return a;
 	}
 
-	private Employee knows(int id, String... houses) {
+	/** Carer whose own houses (familiarity 100, carer_house_history) are these. */
+	private Employee regularAt(int id, String... houses) {
 		Employee e = emp(id);
-		e.setPreferredService(List.of(houses));
+		Map<String, Integer> f = new java.util.HashMap<>();
+		for (String x : houses) f.put(x.trim().toUpperCase(), 100);
+		e.setHouseFamiliarity(f);
 		return e;
 	}
 
 	@Test
-	void doesNotLockACarerIntoAHouseTheyNeverWorked() {
-		// Louise Tripp case: only ever worked Alexandra, carried over at Riverdale period after period
-		ShiftAssignment a = slotAt("RIVERDALE");
-		Employee louise = knows(5, "Alexandra Flat A - KC:100");
-		Employee bongiwe = knows(6, "9 CLAYDON:50", "RIVERDALE:25");
+	void aHouseThatIsASmallSidelineForTheCarerIsNotCarriedOver() {
+		// Loveness case: two days at Riverdale in June (1% of her work); her own house is Highfields
+		ShiftAssignment a = slotAt("RIVERDALE", true);
+		Employee loveness = emp(5);
+		loveness.setHouseFamiliarity(Map.of("3 HIGHFIELDS", 100, "RIVERDALE", 4));
 
-		assertEquals(0, svc.applySeed(List.of(a), Map.of("100|" + PRIOR, List.of(5)), Map.of(5, louise, 6, bongiwe)));
+		assertEquals(0, svc.applySeed(List.of(a), Map.of("100|" + PRIOR, List.of(5)), Map.of(5, loveness)));
+	}
+
+	@Test
+	void doesNotCarryACarerIntoAHouseTheyAreNotARegularAt() {
+		// Louise Tripp case: only ever worked Alexandra, carried over at Riverdale from one
+		// system-generated rota to the next
+		ShiftAssignment a = slotAt("RIVERDALE", true);
+		Employee louise = regularAt(5, "Alexandra Flat A - KC");
+
+		assertEquals(0, svc.applySeed(List.of(a), Map.of("100|" + PRIOR, List.of(5)), Map.of(5, louise)));
 		assertNull(a.getEmployee(), "left open for the solver");
 	}
 
 	@Test
-	void keepsACarerWhoKnowsTheHouse() {
-		ShiftAssignment a = slotAt(" riverdale ");
-		Employee chiamaka = knows(5, "GOLDERS RISE:44", "RIVERDALE:21");
+	void keepsARegular() {
+		ShiftAssignment a = slotAt(" Riverdale ", true);
+		Employee bongiwe = regularAt(5, "9 CLAYDON", "RIVERDALE");
 
-		assertEquals(1, svc.applySeed(List.of(a), Map.of("100|" + PRIOR, List.of(5)), Map.of(5, chiamaka)));
+		assertEquals(1, svc.applySeed(List.of(a), Map.of("100|" + PRIOR, List.of(5)), Map.of(5, bongiwe)));
 	}
 
 	@Test
-	void keepsCarriedOverCarersWithNoRecordedHistory() {
-		ShiftAssignment a = slotAt("RIVERDALE");
-		Employee newStarter = emp(5);
-		Employee other = knows(6, "RIVERDALE:100");
+	void aCarerWithNoPeoplePlannerHistoryIsNotCarriedIntoATrackedHouse() {
+		// the prior rota is a solver output, so it isn't evidence on its own
+		ShiftAssignment a = slotAt("RIVERDALE", true);
 
-		assertEquals(1, svc.applySeed(List.of(a), Map.of("100|" + PRIOR, List.of(5)), Map.of(5, newStarter, 6, other)));
+		assertEquals(0, svc.applySeed(List.of(a), Map.of("100|" + PRIOR, List.of(5)), Map.of(5, emp(5))));
 	}
 
 	@Test
-	void keepsCarryOversAtAHouseNobodyHasHistoryAt() {
-		// e.g. a house not mapped to People Planner: no one can be judged unfamiliar there
-		ShiftAssignment a = slotAt("57 STURGESS");
-		Employee carer = knows(5, "4 AUDLEY:100");
+	void keepsCarryOversAtAnUntrackedHouse() {
+		// e.g. a house People Planner can't see: nobody can be judged there
+		ShiftAssignment a = slotAt("57 STURGESS", false);
+		Employee carer = regularAt(5, "4 AUDLEY");
 
 		assertEquals(1, svc.applySeed(List.of(a), Map.of("100|" + PRIOR, List.of(5)), Map.of(5, carer)));
 	}

@@ -73,6 +73,15 @@ public class ShiftTemplate {
 	@Column(name = "emp_count")
 	private int empCount;
 
+	/**
+	 * Per solve (never persisted): someone has People Planner history at this location, so
+	 * "regular or new to the house" can be judged here. False for houses People Planner can't
+	 * see (not mapped), which are never judged. Set by SolverTrigger before solving.
+	 */
+	@jakarta.persistence.Transient
+	@com.fasterxml.jackson.annotation.JsonIgnore
+	private boolean historyTracked;
+
 	@Column(name = "allocation_priority")
 	private int priority;
 
@@ -168,6 +177,14 @@ public class ShiftTemplate {
 
 	public void setGender(Gender gender) {
 		this.requiredGender = orAny(gender);
+	}
+
+	public boolean isHistoryTracked() {
+		return historyTracked;
+	}
+
+	public void setHistoryTracked(boolean historyTracked) {
+		this.historyTracked = historyTracked;
 	}
 
 	public String getLocation() {

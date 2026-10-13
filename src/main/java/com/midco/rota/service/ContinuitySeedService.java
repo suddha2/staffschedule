@@ -3,10 +3,8 @@ package com.midco.rota.service;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -94,8 +92,9 @@ public class ContinuitySeedService {
 	 * DB) so it is unit-testable. The seed key for a new assignment on date D from
 	 * template T is (T, D-28). Pinned assignments are skipped; a seed carer that
 	 * is not in the pool, is unavailable that day, or would break a hard eligibility
-	 * rule (gender, required skill), or whose recorded house history doesn't include
-	 * this house, is skipped (leaving the slot for construction). Handles 2:1 by consuming the prior slot's carer list.
+	 * rule (gender, required skill), or for whom People Planner doesn't back this house
+	 * (carer_house_history, when the house is tracked), is skipped (leaving the slot for
+	 * construction). Handles 2:1 by consuming the prior slot's carer list.
 	 */
 	public int applySeed(List<ShiftAssignment> assignments, Map<String, List<Integer>> seedByKey,
 			Map<Integer, Employee> pool) {
@@ -121,14 +120,6 @@ public class ContinuitySeedService {
 			byKey.computeIfAbsent(key(templateId, priorDate), k -> new ArrayList<>()).add(sa);
 		}
 
-		// Houses anyone in the pool has a recorded history at (preferred_service, mined from
-		// People Planner). Only these can be judged "unfamiliar"; a house nobody has history
-		// at (not mapped to People Planner) keeps its carry-overs.
-		Set<String> knownHouses = new HashSet<>();
-		for (Employee e : pool.values()) {
-			knownHouses.addAll(housesOf(e));
-		}
-
 		int seeded = 0;
 		for (Map.Entry<String, List<ShiftAssignment>> entry : byKey.entrySet()) {
 			List<Integer> priorCarers = seedByKey.get(entry.getKey());
@@ -150,8 +141,11 @@ public class ContinuitySeedService {
 					if (breaksHardEligibility(carer, sa)) {
 						continue; // e.g. wrong gender: don't carry a past rule break forward (and lock it)
 					}
-					if (isUnfamiliar(carer, sa, knownHouses)) {
-						continue; // never worked this house: don't lock a past guess in, let the solver choose
+					if (!HouseHistoryService.backsCarryOver(carer, sa.getShift().getShiftTemplate())) {
+						// Not one of this carer's own houses per People Planner. The prior rota is itself
+						// a solver output, so carrying this forward would copy its own guess; let the
+						// solver choose.
+						continue;
 					}
 					sa.setSeededEmployeeId(carer.getId());
 					sa.setEmployee(carer); // warm start; construction skips initialised entities
@@ -173,39 +167,6 @@ public class ContinuitySeedService {
 		com.midco.rota.model.ShiftTemplate t = sa.getShift().getShiftTemplate();
 		return com.midco.rota.opt.RotaConstraintProvider.isGenderMismatch(carer, t.getGender())
 				|| com.midco.rota.opt.RotaConstraintProvider.isMissingRequiredSkill(carer, t.getRequiredSkills());
-	}
-
-	/**
-	 * Carer has a recorded house history, the house is one people have history at, and this
-	 * carer's history doesn't include it. A carry-over is locked under CONTINUITY, so without
-	 * this a one-off placement at a house the carer never worked gets copied every period.
-	 * Carers with no recorded history (new starters) are not judged.
-	 */
-	static boolean isUnfamiliar(Employee carer, ShiftAssignment sa, Set<String> knownHouses) {
-		String house = normalise(sa.getShift().getShiftTemplate().getLocation());
-		if (house.isEmpty() || !knownHouses.contains(house)) {
-			return false;
-		}
-		Set<String> mine = housesOf(carer);
-		return !mine.isEmpty() && !mine.contains(house);
-	}
-
-	private static Set<String> housesOf(Employee e) {
-		Set<String> houses = new HashSet<>();
-		Map<String, Integer> weights = e.getPreferredServiceWeightsMap();
-		if (weights != null) {
-			for (String loc : weights.keySet()) {
-				String h = normalise(loc);
-				if (!h.isEmpty()) {
-					houses.add(h);
-				}
-			}
-		}
-		return houses;
-	}
-
-	private static String normalise(String location) {
-		return location == null ? "" : location.trim().toUpperCase();
 	}
 
 	private static String key(Integer templateId, LocalDate date) {

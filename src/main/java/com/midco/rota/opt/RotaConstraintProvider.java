@@ -147,7 +147,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 				preferedWorkingDaysConstraint(factory), preferedShiftTypeConstraint(factory),
 				prioritizedAllocation(factory), lastResortAssignmentPenalty(factory),
 				prioritizeHighPriorityLocations(factory),
-				serviceMixTarget(factory),
+				serviceMixTarget(factory), carerNewToHouse(factory),
 
 				// Continuity of place
 				minDaysPerLocationPerWeek(factory), maxDaysPerLocationPerWeek(factory),
@@ -863,6 +863,24 @@ public class RotaConstraintProvider implements ConstraintProvider {
 				.filter((emp, days) -> sevenDayRuns(days) > 0)
 				.penalizeConfigurable((emp, days) -> sevenDayRuns(days))
 				.asConstraint("Max 6 consecutive working days");
+	}
+
+	/**
+	 * Regulars first: per shift, 100 - the carer's familiarity with the house (People Planner
+	 * share of their work there, see HouseHistoryService): 0 for one of their own houses, 100
+	 * for a stranger, in between for a house that is a small sideline for them. Only tracked
+	 * houses are judged. Weight in constraint_setting (V033): a stranger costs more than the
+	 * hours-fairness and house-mix rules, far less than an unfilled slot, so the house's own
+	 * regulars get its shifts first. A paired follower (sleep-in) mirrors its leader and isn't
+	 * counted again.
+	 */
+	private Constraint carerNewToHouse(ConstraintFactory factory) {
+		return factory.forEach(ShiftAssignment.class)
+				.filter(sa -> sa.getEmployee() != null && sa.getShift() != null
+						&& !(sa instanceof com.midco.rota.model.FollowerShiftAssignment)
+						&& com.midco.rota.service.HouseHistoryService.newcomerPenalty(sa.getEmployee(), sa.getShift().getShiftTemplate()) > 0)
+				.penalizeConfigurable(sa -> com.midco.rota.service.HouseHistoryService.newcomerPenalty(sa.getEmployee(), sa.getShift().getShiftTemplate()))
+				.asConstraint("Carer new to this house");
 	}
 
 	/** 6:1 applies to permanent carers only (agreed 2026-10-13); zero-hours staff are not covered. */

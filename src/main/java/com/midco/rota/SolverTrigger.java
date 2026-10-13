@@ -54,13 +54,15 @@ public class SolverTrigger {
 	private final SolverConfigService solverConfigService;
 	private final EmployeeAvailabilityRepository employeeAvailabilityRepository;
 	private final ContinuitySeedService continuitySeedService;
+	private final com.midco.rota.service.HouseHistoryService houseHistoryService;
 
 	public SolverTrigger(SolverService solverService, DeferredSolveRequestRepository deferredSolveRequestRepository,
 			EmployeeRepository employeeRepository, ShiftTemplateRepository shiftTemplateRepository,
 			PeriodService periodService, PinnedTemplateAssignmentRepository pinnedTemplateAssignmentRepository,
 			SolverConfigService solverConfigService,
 			EmployeeAvailabilityRepository employeeAvailabilityRepository,
-			ContinuitySeedService continuitySeedService) {
+			ContinuitySeedService continuitySeedService,
+			com.midco.rota.service.HouseHistoryService houseHistoryService) {
 		this.solverService = solverService;
 		this.deferredSolveRequestRepository = deferredSolveRequestRepository;
 		this.employeeRepository = employeeRepository;
@@ -70,6 +72,7 @@ public class SolverTrigger {
 		this.solverConfigService = solverConfigService;
 		this.employeeAvailabilityRepository = employeeAvailabilityRepository;
 		this.continuitySeedService = continuitySeedService;
+		this.houseHistoryService = houseHistoryService;
 	}
 
 	// Serialises solve scheduling. Without it, two near-simultaneous enqueues
@@ -199,6 +202,11 @@ public class SolverTrigger {
 				e.setUnavailableDates(unavailable.get(e.getId()));
 			}
 		}
+
+		// People Planner house history: who is a regular where, and which houses can be
+		// judged. Before seeding, which only carries a carer forward at a house they're a
+		// regular at (the prior rota is itself a solver output, so it isn't evidence).
+		houseHistoryService.apply(employees, shiftTemplates);
 
 		// Continuity: seed each slot from who held it last published period, so the
 		// solver carries the roster forward. Runs after the availability map so a

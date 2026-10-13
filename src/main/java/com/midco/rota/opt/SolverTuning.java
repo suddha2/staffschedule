@@ -56,6 +56,18 @@ public final class SolverTuning {
 	 */
 	private int permanentEarningsFloorPct = 0;
 
+	/**
+	 * People Planner shifts at a house (carer_house_history, last 12 months) that make a carer a
+	 * regular there; below it they count as new to the house. Set in solver_tuning (V033).
+	 */
+	private int houseHistoryMinShifts = 4;
+
+	/**
+	 * Share of a carer's People Planner shifts at a house (%) that makes it fully one of their
+	 * own houses (familiarity 100); smaller shares scale down. Set in solver_tuning (V033).
+	 */
+	private int houseHistoryFullSharePct = 20;
+
 	/** The tuning currently in force. Never null. */
 	public static SolverTuning current() {
 		return current;
@@ -151,5 +163,21 @@ public final class SolverTuning {
 
 	public void setPermanentEarningsFloorPct(int permanentEarningsFloorPct) {
 		this.permanentEarningsFloorPct = permanentEarningsFloorPct;
+	}
+
+	public int getHouseHistoryMinShifts() {
+		return houseHistoryMinShifts;
+	}
+
+	public void setHouseHistoryMinShifts(int houseHistoryMinShifts) {
+		this.houseHistoryMinShifts = houseHistoryMinShifts;
+	}
+
+	public int getHouseHistoryFullSharePct() {
+		return houseHistoryFullSharePct;
+	}
+
+	public void setHouseHistoryFullSharePct(int houseHistoryFullSharePct) {
+		this.houseHistoryFullSharePct = houseHistoryFullSharePct;
 	}
 }
