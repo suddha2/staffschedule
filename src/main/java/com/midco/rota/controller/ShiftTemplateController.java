@@ -255,8 +255,23 @@ public class ShiftTemplateController {
 		t.setTotalHours(computeTotalHours(row.getStartTime(), row.getEndTime(), t.getBreakStart(), t.getBreakEnd()));
 		// Auto-tag the type's eligibility skill (e.g. SHIFT_LEAD) so it's lead-only without
 		// hand-editing. Types with no required_skill leave existing skills untouched.
+		if (row.getRequiredGender() != null) {
+			t.setRequiredGender(row.getRequiredGender());
+		}
 		String reqSkill = com.midco.rota.opt.ShiftTypeMeta.requiredSkill(row.getShiftType());
-		if (reqSkill != null && !reqSkill.isBlank()) {
+		if (row.getRequiredSkills() != null) {
+			// Skills chosen in the grid, plus the type's own eligibility skill (e.g. SHIFT_LEAD).
+			java.util.List<String> skills = new java.util.ArrayList<>();
+			for (String s : row.getRequiredSkills()) {
+				if (s != null && !s.isBlank() && skills.stream().noneMatch(x -> x.equalsIgnoreCase(s.trim()))) {
+					skills.add(s.trim());
+				}
+			}
+			if (reqSkill != null && !reqSkill.isBlank() && skills.stream().noneMatch(x -> x.equalsIgnoreCase(reqSkill))) {
+				skills.add(reqSkill);
+			}
+			t.setRequiredSkills(skills);
+		} else if (reqSkill != null && !reqSkill.isBlank()) {
 			t.setRequiredSkills(java.util.List.of(reqSkill));
 		}
 	}

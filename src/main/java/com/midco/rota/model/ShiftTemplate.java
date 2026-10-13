@@ -64,7 +64,7 @@ public class ShiftTemplate {
 
 	@Enumerated(EnumType.STRING)
 	@Column(name = "required_gender", length = 10)
-	private Gender requiredGender;
+	private Gender requiredGender = Gender.ANY; // a new template means "any carer" until a gender is chosen
 
 	@Convert(converter = StringListConverter.class)
 	@Column(name = "required_skills", columnDefinition = "TEXT")

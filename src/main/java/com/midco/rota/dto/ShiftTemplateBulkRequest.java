@@ -24,6 +24,10 @@ public class ShiftTemplateBulkRequest {
         private Integer empCount;
         /** Follower types only (e.g. SLEEP_IN): STANDALONE = own carer, null/PAIRED = same carer as the long day. */
         private com.midco.rota.util.PairingMode pairingMode;
+        /** Gender requirement for this type's templates (null = leave as is; the template stores ANY when unset). */
+        private com.midco.rota.util.Gender requiredGender;
+        /** Required skills (null = leave as is). The shift type's own required skill is always kept. */
+        private List<String> requiredSkills;
 
         public String getShiftType() { return shiftType; }
         public void setShiftType(String shiftType) { this.shiftType = shiftType; }
@@ -37,6 +41,10 @@ public class ShiftTemplateBulkRequest {
         public void setEmpCount(Integer empCount) { this.empCount = empCount; }
         public com.midco.rota.util.PairingMode getPairingMode() { return pairingMode; }
         public void setPairingMode(com.midco.rota.util.PairingMode pairingMode) { this.pairingMode = pairingMode; }
+        public com.midco.rota.util.Gender getRequiredGender() { return requiredGender; }
+        public void setRequiredGender(com.midco.rota.util.Gender requiredGender) { this.requiredGender = requiredGender; }
+        public List<String> getRequiredSkills() { return requiredSkills; }
+        public void setRequiredSkills(List<String> requiredSkills) { this.requiredSkills = requiredSkills; }
     }
 
     public String getLocation() { return location; }
