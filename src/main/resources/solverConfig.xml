@@ -27,59 +27,13 @@
     <bestScoreFeasible>0</bestScoreFeasible>
     <moveThreadCount>AUTO</moveThreadCount>
 
-    <!-- PHASE 1: Permanent employees -->
-    <phase>
-        <constructionHeuristic>
-            <constructionHeuristicType>FIRST_FIT_DECREASING</constructionHeuristicType>
-            <entitySorterManner>DECREASING_DIFFICULTY</entitySorterManner>
-            <valueSorterManner>DECREASING_STRENGTH</valueSorterManner>
-            <valueSelector>
-                <variableName>employee</variableName>
-                <filterClass>com.midco.rota.opt.PermanentEmployeeFilter</filterClass>
-            </valueSelector>
-        </constructionHeuristic>
-    </phase>
-
-    <!-- PHASE 2: Zero-hours employees -->
-    <phase>
-        <constructionHeuristic>
-            <constructionHeuristicType>FIRST_FIT_DECREASING</constructionHeuristicType>
-            <entitySorterManner>DECREASING_DIFFICULTY</entitySorterManner>
-            <valueSorterManner>DECREASING_STRENGTH</valueSorterManner>
-            <valueSelector>
-                <variableName>employee</variableName>
-                <filterClass>com.midco.rota.opt.ZeroHoursEmployeeFilter</filterClass>
-            </valueSelector>
-        </constructionHeuristic>
-    </phase>
-
-    <!-- PHASE 3: local search over ALL assignments (permanents included).
-         Previously this only re-decided zero-hours assignments
-         (ZeroHoursAssignmentFilter), which froze permanent placements from the
-         construction heuristic. Backtest analysis showed ~90% of "not the usual
-         carer" cases were a permanent regular sitting idle that local search
-         could not move. Change moves (now unfiltered) let an idle regular take a
-         slot a non-regular holds; swap moves rebalance two assignments. Both are
-         scoped to the employee variable, so SLEEP_IN shadow entities are
-         untouched (their employee is a shadow, not a genuine variable). -->
-    <phase>
-        <localSearch>
-            <acceptor>
-                <entityTabuSize>7</entityTabuSize>
-                <lateAcceptanceSize>400</lateAcceptanceSize>
-            </acceptor>
-            <unionMoveSelector>
-                <changeMoveSelector>
-                    <valueSelector>
-                        <variableName>employee</variableName>
-                        <cacheType>PHASE</cacheType>
-                        <selectionOrder>SHUFFLED</selectionOrder>
-                    </valueSelector>
-                </changeMoveSelector>
-                <swapMoveSelector>
-                    <variableNameInclude>employee</variableNameInclude>
-                </swapMoveSelector>
-            </unionMoveSelector>
-        </localSearch>
-    </phase>
+    <!-- PHASES: none configured, so OptaPlanner runs its default construction heuristic
+         + local search. Earlier phase blocks here were wrapped in <phase>, which OptaPlanner
+         does not read, so they never took effect. On 2026-10-13 the intended phases
+         (permanents first, then zero-hours, then change+swap with tabu/late acceptance) were
+         fixed and benchmarked against the defaults on Barnet (req 248) and Hertfordshire
+         (req 242), 120 s each: not consistently better (lower score on Barnet; higher score
+         but 17 more unfilled shifts on Hertfordshire), so the defaults stay. To try custom
+         phases, declare <constructionHeuristic>/<localSearch> directly under <solver> and
+         re-run that comparison before switching. -->
 </solver>
