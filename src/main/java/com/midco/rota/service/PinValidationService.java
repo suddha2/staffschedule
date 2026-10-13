@@ -14,7 +14,6 @@ import com.midco.rota.model.Employee;
 import com.midco.rota.model.ShiftAssignment;
 import com.midco.rota.opt.RotaConstraintProvider;
 import com.midco.rota.opt.ShiftOverlap;
-import com.midco.rota.opt.ShiftTypeMeta;
 import com.midco.rota.repository.EmployeeRepository;
 
 @Service
@@ -64,14 +63,13 @@ public class PinValidationService {
 				if (!isAllowedDayAssignments(dayAssignments)) {
 					conflicts.add(conflict(empId, empName, date, dayAssignments, "Overlapping shifts on the same day"));
 				}
-				// 2. Eligibility: gender (worked shifts, as the solver scores it) and required skills
+				// 2. Eligibility: gender and required skills, on every shift (sleep-ins included, as the solver scores it)
 				for (ShiftAssignment sa : dayAssignments) {
 					var t = sa.getShift().getShiftTemplate();
 					if (t == null) {
 						continue;
 					}
-					if (ShiftTypeMeta.countsAsWork(t.getShiftTypeCode())
-							&& RotaConstraintProvider.isGenderMismatch(sa.getEmployee(), t.getGender())) {
+					if (RotaConstraintProvider.isGenderMismatch(sa.getEmployee(), t.getGender())) {
 						conflicts.add(conflict(empId, empName, date, List.of(sa),
 								"Wrong gender for this shift (needs " + t.getGender() + ")"));
 					}

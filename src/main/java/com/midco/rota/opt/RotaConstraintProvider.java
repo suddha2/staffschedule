@@ -347,8 +347,15 @@ public class RotaConstraintProvider implements ConstraintProvider {
 				.asConstraint("Duplicate assignment of employee to same shift");
 	}
 
+	/*
+	 * Eligibility rules (gender, restricted day / shift type / service) apply to EVERY shift a
+	 * carer is on, sleep-ins included. They used to skip types that don't count as worked hours
+	 * (SLEEP_IN), which was harmless while every sleep-in copied its long-day carer - but an
+	 * own-carer sleep-in is chosen by the solver, so women were put on male-only sleep-ins.
+	 * Hours/workload rules still skip sleep-ins (their hours aren't worked hours).
+	 */
 	private Constraint genderConstraint(ConstraintFactory factory) {
-		return factory.forEachIncludingNullVars(ShiftAssignment.class).filter(RotaConstraintProvider::countsAsWork)
+		return factory.forEachIncludingNullVars(ShiftAssignment.class)
 				.filter(sa -> isGenderMismatch(sa.getEmployee(), sa.getShift().getShiftTemplate().getGender()))
 				.penalizeConfigurable().asConstraint("Gender mismatch");
 	}
@@ -366,7 +373,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 	}
 
 	private Constraint restrictedDayOfWeekConstraint(ConstraintFactory factory) {
-		return factory.forEachIncludingNullVars(ShiftAssignment.class).filter(RotaConstraintProvider::countsAsWork).filter(sa -> {
+		return factory.forEachIncludingNullVars(ShiftAssignment.class).filter(sa -> {
 			Employee emp = sa.getEmployee();
 			return emp != null && emp.getRestrictedDays() != null
 					&& sa.getShift().getShiftTemplate().getDay() != null
@@ -375,7 +382,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 	}
 
 	private Constraint restrictedShiftTypeConstraint(ConstraintFactory factory) {
-		return factory.forEachIncludingNullVars(ShiftAssignment.class).filter(RotaConstraintProvider::countsAsWork).filter(sa -> {
+		return factory.forEachIncludingNullVars(ShiftAssignment.class).filter(sa -> {
 			Employee emp = sa.getEmployee();
 			// getShiftType() is null for a data-driven type with no enum constant; an immutable
 			// List.of(...).contains(null) throws NPE (killed the live solve), so guard it — an
@@ -387,7 +394,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 	}
 
 	private Constraint restrictedServiceConstraint(ConstraintFactory factory) {
-		return factory.forEachIncludingNullVars(ShiftAssignment.class).filter(RotaConstraintProvider::countsAsWork).filter(sa -> {
+		return factory.forEachIncludingNullVars(ShiftAssignment.class).filter(sa -> {
 			Employee emp = sa.getEmployee();
 			return emp != null && emp.getRestrictedService() != null
 					&& sa.getShift().getShiftTemplate().getLocation() != null

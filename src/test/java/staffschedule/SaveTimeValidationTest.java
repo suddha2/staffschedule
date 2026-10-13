@@ -102,4 +102,14 @@ class SaveTimeValidationTest {
 		assertEquals(1, c.size());
 		assertTrue(c.get(0).getReason().startsWith("Overlapping"));
 	}
+
+	@Test
+	void womanOnAMaleOnlyOwnCarerSleepInIsRejected() {
+		// An own-carer sleep-in is a work shift the solver fills itself; SLEEP_IN doesn't count as
+		// worked hours, which used to make the gender check skip it.
+		ShiftAssignment sa = shift(carer(6, Gender.FEMALE, ContractType.ZERO_HOURS), MON, "SLEEP_IN", 22, 7, Gender.MALE);
+		List<ConflictError> c = svc.validateAssignments(List.of(sa));
+		assertEquals(1, c.size());
+		assertTrue(c.get(0).getReason().startsWith("Wrong gender"), c.get(0).getReason());
+	}
 }
