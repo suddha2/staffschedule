@@ -342,14 +342,21 @@ public class RotaConstraintProvider implements ConstraintProvider {
 	}
 
 	private Constraint genderConstraint(ConstraintFactory factory) {
-		return factory.forEachIncludingNullVars(ShiftAssignment.class).filter(RotaConstraintProvider::countsAsWork).filter(sa -> {
-			Employee employee = sa.getEmployee();
-			Gender required = sa.getShift().getShiftTemplate().getGender();
-			if (required == Gender.ANY || employee == null) {
-				return false;
-			}
-			return employee.getGender() != required;
-		}).penalizeConfigurable().asConstraint("Gender mismatch");
+		return factory.forEachIncludingNullVars(ShiftAssignment.class).filter(RotaConstraintProvider::countsAsWork)
+				.filter(sa -> isGenderMismatch(sa.getEmployee(), sa.getShift().getShiftTemplate().getGender()))
+				.penalizeConfigurable().asConstraint("Gender mismatch");
+	}
+
+	/**
+	 * True when the carer can't work a shift because of its gender requirement. A template
+	 * with no gender set (NULL) means ANY: treating NULL as a requirement made every carer a
+	 * HARD mismatch, so the solver left those slots empty.
+	 */
+	public static boolean isGenderMismatch(Employee employee, Gender required) {
+		if (required == null || required == Gender.ANY || employee == null) {
+			return false;
+		}
+		return employee.getGender() != required;
 	}
 
 	private Constraint restrictedDayOfWeekConstraint(ConstraintFactory factory) {

@@ -2,6 +2,7 @@ package com.midco.rota.opt;
 
 import com.midco.rota.model.ShiftAssignment;
 import com.midco.rota.model.ShiftTemplate;
+import com.midco.rota.util.Gender;
 import java.util.Comparator;
 
 /**
@@ -24,8 +25,8 @@ public class ShiftAssignmentDifficultyComparator implements Comparator<ShiftAssi
         
         // Secondary: If same priority, solve shifts with gender requirements first
         // (they're more constrained, so harder to assign)
-        boolean aHasGender = a.getShift().getShiftTemplate().getRequiredGender() != null;
-        boolean bHasGender = b.getShift().getShiftTemplate().getRequiredGender() != null;
+        boolean aHasGender = hasGenderRequirement(a);
+        boolean bHasGender = hasGenderRequirement(b);
         
         if (aHasGender && !bHasGender) return -1;  // a is harder
         if (!aHasGender && bHasGender) return 1;   // b is harder
@@ -40,6 +41,11 @@ public class ShiftAssignmentDifficultyComparator implements Comparator<ShiftAssi
         return Long.compare(a.getShift().getId(), b.getShift().getId());
     }
     
+    private static boolean hasGenderRequirement(ShiftAssignment sa) {
+        Gender g = sa.getShift().getShiftTemplate().getRequiredGender();
+        return g != null && g != Gender.ANY;
+    }
+
     private Integer getPriority(ShiftAssignment sa) {
         ShiftTemplate st = sa.getShift().getShiftTemplate();
         Integer priority = st.getPriority();

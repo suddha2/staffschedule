@@ -109,7 +109,7 @@ public class ShiftTemplate {
 		this.dayOfWeek = day_of_week;
 		this.startTime = start_time;
 		this.endTime = end_time;
-		this.requiredGender = required_gender;
+		this.requiredGender = orAny(required_gender);
 		this.requiredSkills = required_skills;
 		this.empCount = empCount;
 		this.priority = priority;
@@ -161,7 +161,7 @@ public class ShiftTemplate {
 	}
 
 	public void setGender(Gender gender) {
-		this.requiredGender = gender;
+		this.requiredGender = orAny(gender);
 	}
 
 	public String getLocation() {
@@ -246,7 +246,23 @@ public class ShiftTemplate {
 	}
 
 	public void setRequiredGender(Gender requiredGender) {
-		this.requiredGender = requiredGender;
+		this.requiredGender = orAny(requiredGender);
+	}
+
+	/**
+	 * A template never stores a blank gender: "not set" means ANY. A NULL used to be
+	 * scored by the gender rule as a mismatch for every carer (HARD), so the solver left
+	 * those slots empty. The template screens send null for "no preference", hence the
+	 * normalisation here and on every save.
+	 */
+	private static Gender orAny(Gender gender) {
+		return gender == null ? Gender.ANY : gender;
+	}
+
+	@jakarta.persistence.PrePersist
+	@jakarta.persistence.PreUpdate
+	void defaultGenderToAny() {
+		this.requiredGender = orAny(this.requiredGender);
 	}
 
 	public List<String> getRequiredSkills() {
