@@ -397,6 +397,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 
 	private Constraint maxWeeklyHoursConstraint(ConstraintFactory factory) {
 		return factory.forEachIncludingNullVars(ShiftAssignment.class).filter(sa -> sa.getEmployee() != null)
+				.filter(sa -> sa.getEmployee().getMaxHrs() != null) // no maximum set = nothing to exceed
 				.filter(RotaConstraintProvider::countsAsWork)
 				.groupBy(ShiftAssignment::getEmployee, sa -> YearWeek.from(sa.getShift().getShiftStart()),
 						ConstraintCollectors.sumLong(sa -> sa.getShift().getDurationInMins()))
@@ -893,6 +894,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 
 	private Constraint minWeeklyHoursConstraint(ConstraintFactory factory) {
 		return factory.forEachIncludingNullVars(ShiftAssignment.class).filter(sa -> sa.getEmployee() != null)
+				.filter(sa -> sa.getEmployee().getMinHrs() != null) // no minimum set = nothing to miss (was an NPE)
 				.filter(RotaConstraintProvider::countsAsWork)
 				.groupBy(ShiftAssignment::getEmployee, sa -> YearWeek.from(sa.getShift().getShiftStart()),
 						ConstraintCollectors.sumLong(sa -> sa.getShift().getDurationInMins()))
