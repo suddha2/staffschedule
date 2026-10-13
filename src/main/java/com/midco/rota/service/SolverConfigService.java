@@ -116,6 +116,9 @@ public class SolverConfigService {
 			try {
 				field.setAccessible(true);
 				HardSoftLongScore current = (HardSoftLongScore) field.get(configuration);
+				if (current.equals(HardSoftLongScore.ZERO)) {
+					continue; // disabled/zero in constraint_setting: a profile retunes, it never switches a rule on
+				}
 				// Preserve hard/soft nature; profiles only retune the magnitude.
 				HardSoftLongScore replacement = current.hardScore() != 0L
 						? HardSoftLongScore.ofHard(newWeight)
@@ -304,6 +307,9 @@ public class SolverConfigService {
 		map.put("minRestHours", new TuningAccessor(SolverTuning::getMinRestHours,
 				SolverTuning::setMinRestHours,
 				"Minimum hours' rest between a carer's consecutive shifts; 0 = rule off"));
+		map.put("permanentEarningsFloorPct", new TuningAccessor(SolverTuning::getPermanentEarningsFloorPct,
+				SolverTuning::setPermanentEarningsFloorPct,
+				"Permanent carer's week may not drop below this % of their usual weekly hours; 0 = rule off"));
 		return map;
 	}
 

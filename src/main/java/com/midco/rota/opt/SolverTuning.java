@@ -50,6 +50,12 @@ public final class SolverTuning {
 	/** Minimum hours' rest between a carer's consecutive shifts. 0 = rule off (not enforced). */
 	private int minRestHours = 0;
 
+	/**
+	 * A permanent carer's week may not fall below this % of their usual (People Planner)
+	 * weekly hours without penalty. 0 = rule off; the value is set in solver_tuning (V030).
+	 */
+	private int permanentEarningsFloorPct = 0;
+
 	/** The tuning currently in force. Never null. */
 	public static SolverTuning current() {
 		return current;
@@ -137,5 +143,13 @@ public final class SolverTuning {
 
 	public void setMinRestHours(int minRestHours) {
 		this.minRestHours = minRestHours;
+	}
+
+	public int getPermanentEarningsFloorPct() {
+		return permanentEarningsFloorPct;
+	}
+
+	public void setPermanentEarningsFloorPct(int permanentEarningsFloorPct) {
+		this.permanentEarningsFloorPct = permanentEarningsFloorPct;
 	}
 }

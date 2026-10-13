@@ -92,6 +92,9 @@ public class RotaController {
 
 	private final PeriodService periodService;
 
+	@Autowired
+	private com.midco.rota.repository.SkippedPinRepository skippedPinRepository;
+
 	private final ShiftRepository shiftRepository;
 
 	private final AuthController authController;
@@ -660,6 +663,17 @@ public class RotaController {
 	 * as the source of truth for the Conflicts drawer, so what it shows cannot diverge
 	 * from what the backend enforces. Returns the (possibly empty) list of conflicts.
 	 */
+	/**
+	 * Standing pins the solver did not apply when this rota was generated, and why (carer has
+	 * left, wrong gender, 7th consecutive day, clash). Shown on the schedule page so planners
+	 * can fix or remove stale pins.
+	 */
+	@PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER','ROTA_EDITOR')")
+	@GetMapping("/rota/{id}/skipped-pins")
+	public ResponseEntity<List<com.midco.rota.model.SkippedPin>> skippedPins(@PathVariable("id") Long id) {
+		return ResponseEntity.ok(skippedPinRepository.findByRotaIdOrderByShiftDateAscEmployeeNameAsc(id));
+	}
+
 	@PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER','ROTA_EDITOR')")
 	@GetMapping("/rota/{id}/conflicts")
 	@Transactional(readOnly = true)

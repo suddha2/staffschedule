@@ -137,7 +137,10 @@ public class RotaConstraintProvider implements ConstraintProvider {
 
 				// Coverage and hours
 				unassignedShiftConstraint(factory), rewardAssignedShift(factory),
-				minWeeklyHoursConstraint(factory), penalizeOverloading(factory),
+				minWeeklyHoursConstraint(factory), permanentIdleWeek(factory), penalizeOverloading(factory),
+				permanentBelowWeeklyMinimum(factory), permanentBelowUsualEarnings(factory),
+				permanentAboveUsualHours(factory), zeroHoursFairShare(factory),
+				maxConsecutiveWorkingDays(factory),
 				encourageBalancedHours(factory), rewardZeroHoursAssignments(factory),
 
 				// Preferences
@@ -225,26 +228,28 @@ public class RotaConstraintProvider implements ConstraintProvider {
 		// Hard constraint: an assigned employee must possess every skill the shift template requires.
 		// Skill matching is case-insensitive and trim-tolerant. Templates with no required skills are
 		// ignored (the common case), so this does not degrade allocation for the bulk of the data.
-		return factory.forEachIncludingNullVars(ShiftAssignment.class).filter(sa -> {
-			Employee emp = sa.getEmployee();
-			if (emp == null) return false;
-			List<String> required = sa.getShift().getShiftTemplate().getRequiredSkills();
-			if (required == null || required.isEmpty()) return false;
-			List<String> empSkills = emp.getSkills();
-			Set<String> have = new HashSet<>();
-			if (empSkills != null) {
-				for (String s : empSkills) {
-					if (s != null) have.add(s.trim().toLowerCase());
-				}
+		return factory.forEachIncludingNullVars(ShiftAssignment.class)
+				.filter(sa -> isMissingRequiredSkill(sa.getEmployee(), sa.getShift().getShiftTemplate().getRequiredSkills()))
+				.penalizeConfigurable().asConstraint("Missing required skill");
+	}
+
+	/** True when the carer lacks at least one of the shift's required skills (case-insensitive, trimmed). */
+	public static boolean isMissingRequiredSkill(Employee emp, List<String> required) {
+		if (emp == null || required == null || required.isEmpty()) return false;
+		List<String> empSkills = emp.getSkills();
+		Set<String> have = new HashSet<>();
+		if (empSkills != null) {
+			for (String s : empSkills) {
+				if (s != null) have.add(s.trim().toLowerCase());
 			}
-			for (String r : required) {
-				if (r == null) continue;
-				if (!have.contains(r.trim().toLowerCase())) {
-					return true; // missing at least one required skill
-				}
+		}
+		for (String r : required) {
+			if (r == null) continue;
+			if (!have.contains(r.trim().toLowerCase())) {
+				return true; // missing at least one required skill
 			}
-			return false;
-		}).penalizeConfigurable().asConstraint("Missing required skill");
+		}
+		return false;
 	}
 
 	/**
@@ -710,6 +715,180 @@ public class RotaConstraintProvider implements ConstraintProvider {
 	private Constraint rewardAssignedShift(ConstraintFactory factory) {
 		return factory.forEachIncludingNullVars(ShiftAssignment.class).filter(sa -> sa.getEmployee() != null)
 				.rewardConfigurable().asConstraint("Assigned shift");
+	}
+
+	/**
+	 * A permanent carer's week with no shifts at all. The two minimum rules ("Min weekly
+	 * hours not met", "Permanent weekly shift minimum") only see weeks where the carer
+	 * already has a shift, so an empty week used to cost nothing: a first shift of the week
+	 * cost ~0.8-1.2M in minimum-rule penalties, so the solver piled hours onto people
+	 * already working and left others (e.g. new joiners) on zero. This prices the empty
+	 * week like a 0-hour week: penalty = minutes of the carer's weekly minimum, times the
+	 * weight in constraint_setting (V030 sets 722, so a 37.5h contract costs ~1.6M, the
+	 * SPREAD price of a 0-hour, 0-shift week). Tune it in the database, not here.
+	 *
+	 * <p>Not applied to: supervisors (lead shifts only), carers blocked on all 7 days, or
+	 * days on recorded leave (the minimum is pro-rated by available days; a full week of
+	 * leave costs nothing). Unrecorded leave can't be seen, so keep employee_availability
+	 * up to date, or switch the rule off in constraint_setting.
+	 */
+	private Constraint permanentIdleWeek(ConstraintFactory factory) {
+		return factory.forEachIncludingNullVars(ShiftAssignment.class)
+				.filter(sa -> sa.getShift() != null && sa.getShift().getShiftStart() != null)
+				.groupBy(sa -> weekStart(sa.getShift().getShiftStart()))
+				.join(Employee.class, Joiners.filtering((week, emp) -> idleWeekMinutes(emp, week) > 0))
+				.ifNotExists(ShiftAssignment.class,
+						Joiners.equal((week, emp) -> emp, ShiftAssignment::getEmployee),
+						Joiners.equal((week, emp) -> week, sa -> weekStart(sa.getShift().getShiftStart())),
+						Joiners.filtering((week, emp, sa) -> countsAsWork(sa))) // sleep-ins alone don't count
+				.penalizeConfigurable((week, emp) -> idleWeekMinutes(emp, week))
+				.asConstraint("Permanent idle week");
+	}
+
+	/**
+	 * Minutes of weekly minimum a permanent carer would miss by having no shifts in the
+	 * week starting {@code weekMonday}, pro-rated for days on recorded leave. 0 when the
+	 * rule doesn't apply to this carer.
+	 */
+	public static int idleWeekMinutes(Employee emp, LocalDate weekMonday) {
+		return weeklyMinimumMinutes(emp, weekMonday);
+	}
+
+	// ---------- Hours fairness (V030). Weights and the earnings floor % live in the database. ----------
+
+	/** Permanent, active, not a supervisor lead, and not restricted on every day. */
+	private static boolean fairnessPermanent(Employee emp) {
+		if (emp == null || !emp.isActive() || emp.isSupervisor() || emp.getContractType() != ContractType.PERMANENT) {
+			return false;
+		}
+		java.util.List<DayOfWeek> blocked = emp.getRestrictedDays();
+		return blocked == null || new java.util.HashSet<>(blocked).size() < 7; // blocked every day: respect the data
+	}
+
+	/** Days of the week starting {@code weekMonday} not on recorded leave. */
+	private static int availableDays(Employee emp, LocalDate weekMonday) {
+		int available = 0;
+		for (int i = 0; i < 7; i++) {
+			if (!emp.isUnavailableOn(weekMonday.plusDays(i))) {
+				available++;
+			}
+		}
+		return available;
+	}
+
+	/** Contracted weekly minimum in minutes, pro-rated for leave. 0 when not applicable. */
+	public static int weeklyMinimumMinutes(Employee emp, LocalDate weekMonday) {
+		if (!fairnessPermanent(emp) || emp.getMinHrs() == null || emp.getMinHrs().signum() <= 0) {
+			return 0;
+		}
+		return (int) Math.round(emp.getMinHrs().doubleValue() * 60 * availableDays(emp, weekMonday) / 7.0);
+	}
+
+	/** {@code floorPct}% of usual (People Planner) weekly hours in minutes, pro-rated for leave. 0 when not applicable. */
+	public static int earningsFloorMinutes(Employee emp, LocalDate weekMonday, int floorPct) {
+		if (floorPct <= 0 || !fairnessPermanent(emp) || emp.getBaselineWeeklyHours() == null) {
+			return 0;
+		}
+		return (int) Math.round(emp.getBaselineWeeklyHours().doubleValue() * 60 * floorPct / 100.0
+				* availableDays(emp, weekMonday) / 7.0);
+	}
+
+	/** Usual weekly hours in minutes: the People Planner baseline, never below the contracted minimum. 0 when not applicable. */
+	public static int usualCapMinutes(Employee emp) {
+		if (!fairnessPermanent(emp)) {
+			return 0;
+		}
+		double base = emp.getBaselineWeeklyHours() == null ? 0 : emp.getBaselineWeeklyHours().doubleValue();
+		double min = emp.getMinHrs() == null ? 0 : emp.getMinHrs().doubleValue();
+		return (int) Math.round(Math.max(base, min) * 60);
+	}
+
+	/** Weeks with shifts but under the contracted minimum (the empty-week half is "Permanent idle week"). */
+	private Constraint permanentBelowWeeklyMinimum(ConstraintFactory factory) {
+		return weeklyWorkMinutes(factory)
+				.filter((emp, week, mins) -> mins < weeklyMinimumMinutes(emp, week))
+				.penalizeConfigurable((emp, week, mins) -> (int) (weeklyMinimumMinutes(emp, week) - mins))
+				.asConstraint("Permanent below weekly minimum");
+	}
+
+	/** Keep earnings: a week below the floor % of the carer's usual hours (solver_tuning permanentEarningsFloorPct). */
+	private Constraint permanentBelowUsualEarnings(ConstraintFactory factory) {
+		return weeklyWorkMinutes(factory)
+				.filter((emp, week, mins) -> mins < earningsFloorMinutes(emp, week,
+						SolverTuning.current().getPermanentEarningsFloorPct()))
+				.penalizeConfigurable((emp, week, mins) -> (int) (earningsFloorMinutes(emp, week,
+						SolverTuning.current().getPermanentEarningsFloorPct()) - mins))
+				.asConstraint("Permanent below usual earnings");
+	}
+
+	/** Beyond their usual hours, extra work should go to zero-hours staff rather than pile onto one permanent. */
+	private Constraint permanentAboveUsualHours(ConstraintFactory factory) {
+		return weeklyWorkMinutes(factory)
+				.filter((emp, week, mins) -> usualCapMinutes(emp) > 0 && mins > usualCapMinutes(emp))
+				.penalizeConfigurable((emp, week, mins) -> (int) (mins - usualCapMinutes(emp)))
+				.asConstraint("Permanent above usual hours");
+	}
+
+	/** Spread zero-hours work evenly: penalise each zero-hours carer's weekly hours squared. */
+	private Constraint zeroHoursFairShare(ConstraintFactory factory) {
+		return weeklyWorkMinutes(factory)
+				.filter((emp, week, mins) -> emp.isActive() && !emp.isSupervisor()
+						&& emp.getContractType() == ContractType.ZERO_HOURS)
+				.penalizeConfigurable((emp, week, mins) -> zeroHoursShareCost(mins))
+				.asConstraint("Zero-hours fair share");
+	}
+
+	/**
+	 * Compliance 6:1 - no PERMANENT carer works 7 days in a row (zero-hours staff are not
+	 * covered: see {@link #sixOneApplies}). Counts every shift's start date
+	 * (sleep-ins included) across week boundaries, so two weeks can't chain into 12 days.
+	 * One match per 7-day run (8 days in a row = 2). Weight/severity in constraint_setting
+	 * (V031, HARD): a slot with no compliant carer is left empty rather than break it.
+	 * Days worked before the solve window aren't visible.
+	 */
+	private Constraint maxConsecutiveWorkingDays(ConstraintFactory factory) {
+		return factory.forEach(ShiftAssignment.class)
+				.filter(sa -> sa.getEmployee() != null && sa.getShift() != null && sa.getShift().getShiftStart() != null)
+				.filter(sa -> sixOneApplies(sa.getEmployee()))
+				.groupBy(ShiftAssignment::getEmployee,
+						ConstraintCollectors.toSortedSet(sa -> sa.getShift().getShiftStart()))
+				.filter((emp, days) -> sevenDayRuns(days) > 0)
+				.penalizeConfigurable((emp, days) -> sevenDayRuns(days))
+				.asConstraint("Max 6 consecutive working days");
+	}
+
+	/** 6:1 applies to permanent carers only (agreed 2026-10-13); zero-hours staff are not covered. */
+	public static boolean sixOneApplies(Employee emp) {
+		return emp != null && emp.getContractType() == ContractType.PERMANENT;
+	}
+
+	/** Number of 7-consecutive-day windows in the worked dates (0 when every run is 6 days or fewer). */
+	public static int sevenDayRuns(java.util.SortedSet<LocalDate> days) {
+		int runs = 0, streak = 0;
+		LocalDate prev = null;
+		for (LocalDate d : days) {
+			streak = (prev != null && prev.plusDays(1).equals(d)) ? streak + 1 : 1;
+			if (streak >= 7) {
+				runs++;
+			}
+			prev = d;
+		}
+		return runs;
+	}
+
+	/** Hours squared: convex, so two carers on 30h cost less than one on 60h and one on 0h. */
+	public static int zeroHoursShareCost(long workedMinutes) {
+		double h = workedMinutes / 60.0;
+		return (int) Math.round(h * h);
+	}
+
+	private static org.optaplanner.core.api.score.stream.tri.TriConstraintStream<Employee, LocalDate, Long> weeklyWorkMinutes(
+			ConstraintFactory factory) {
+		return factory.forEach(ShiftAssignment.class)
+				.filter(sa -> sa.getEmployee() != null && sa.getShift() != null && sa.getShift().getShiftStart() != null)
+				.filter(RotaConstraintProvider::countsAsWork)
+				.groupBy(ShiftAssignment::getEmployee, sa -> weekStart(sa.getShift().getShiftStart()),
+						ConstraintCollectors.sumLong(sa -> sa.getShift().getDurationInMins()));
 	}
 
 	private Constraint minWeeklyHoursConstraint(ConstraintFactory factory) {

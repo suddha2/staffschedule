@@ -27,6 +27,9 @@ public class RosterUpdateService {
 
 	@Autowired
 	private SimpMessagingTemplate messagingTemplate;
+
+	@Autowired
+	private com.midco.rota.repository.SkippedPinRepository skippedPinRepository;
 	@Autowired
 	private RotaRepository rotaRepository;
 	@Autowired
@@ -87,6 +90,12 @@ public class RosterUpdateService {
 		deferredSolveRequest.setCompletedAt(LocalDateTime.now());
 		deferredSolveRequest.setRotaId(managedRota.getId());
 		deferredSolveRequestRepository.save(deferredSolveRequest);
+
+		// Pins the solver could not apply (left, wrong gender, 6:1, clashes): keep them with the rota
+		if (bestSolution.getSkippedPins() != null && !bestSolution.getSkippedPins().isEmpty()) {
+			bestSolution.getSkippedPins().forEach(p -> p.setRotaId(managedRota.getId()));
+			skippedPinRepository.saveAll(bestSolution.getSkippedPins());
+		}
 
 		// ✅ Create Version 1 immediately after generation
 		SaveScheduleRequest versionRequest = new SaveScheduleRequest();

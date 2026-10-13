@@ -8,6 +8,10 @@ public class ConflictError {
     private String employeeName;
     private LocalDate date;
     private List<ConflictingShiftDTO> conflictingShifts;
+    /** Why this is a conflict, shown to the planner (e.g. "Wrong gender for this shift (needs MALE)"). */
+    private String reason;
+    /** A shift to highlight on the grid (the first conflicting shift). */
+    private Long shiftId;
 
     public ConflictError() {
     }
@@ -52,6 +56,22 @@ public class ConflictError {
         this.conflictingShifts = conflictingShifts;
     }
 
+    public String getReason() {
+        return reason;
+    }
+
+    public void setReason(String reason) {
+        this.reason = reason;
+    }
+
+    public Long getShiftId() {
+        return shiftId;
+    }
+
+    public void setShiftId(Long shiftId) {
+        this.shiftId = shiftId;
+    }
+
     // Builder
     public static Builder builder() {
         return new Builder();
@@ -62,6 +82,18 @@ public class ConflictError {
         private String employeeName;
         private LocalDate date;
         private List<ConflictingShiftDTO> conflictingShifts;
+        private String reason;
+        private Long shiftId;
+
+        public Builder reason(String reason) {
+            this.reason = reason;
+            return this;
+        }
+
+        public Builder shiftId(Long shiftId) {
+            this.shiftId = shiftId;
+            return this;
+        }
 
         public Builder employeeId(Long employeeId) {
             this.employeeId = employeeId;
@@ -84,7 +116,10 @@ public class ConflictError {
         }
 
         public ConflictError build() {
-            return new ConflictError(employeeId, employeeName, date, conflictingShifts);
+            ConflictError e = new ConflictError(employeeId, employeeName, date, conflictingShifts);
+            e.setReason(reason);
+            e.setShiftId(shiftId);
+            return e;
         }
     }
 }

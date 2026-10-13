@@ -65,6 +65,14 @@ public class Employee {
 	@Column(name = "max_hours", precision = 5, scale = 2)
 	private BigDecimal maxHrs;
 
+	/**
+	 * Usual weekly worked hours ("normal earnings"), from People Planner history. Used to
+	 * keep a permanent carer's hours from dropping sharply or growing past their norm.
+	 * Null = no history: their contracted minimum is used instead. Not edited in the UI.
+	 */
+	@Column(name = "baseline_weekly_hours", precision = 5, scale = 1)
+	private BigDecimal baselineWeeklyHours;
+
 	@Enumerated(EnumType.STRING)
 	@Column(name = "rate_code", length = 10)
 	private RateCode rateCode;
@@ -529,6 +537,14 @@ public class Employee {
 
 	public void setContractType(ContractType contractType) {
 		this.contractType = contractType;
+	}
+
+	public BigDecimal getBaselineWeeklyHours() {
+		return baselineWeeklyHours;
+	}
+
+	public void setBaselineWeeklyHours(BigDecimal baselineWeeklyHours) {
+		this.baselineWeeklyHours = baselineWeeklyHours;
 	}
 
 	public BigDecimal getMinHrs() {

@@ -90,7 +90,8 @@ public class ContinuitySeedService {
 	 * Apply a prebuilt seed map to the assignments. Package-visible and pure (no
 	 * DB) so it is unit-testable. The seed key for a new assignment on date D from
 	 * template T is (T, D-28). Pinned assignments are skipped; a seed carer that
-	 * is not in the pool or is unavailable that day is skipped (leaving the slot
+	 * is not in the pool, is unavailable that day, or would break a hard eligibility
+	 * rule (gender, required skill) is skipped (leaving the slot
 	 * for construction). Handles 2:1 by consuming the prior slot's carer list.
 	 */
 	public int applySeed(List<ShiftAssignment> assignments, Map<String, List<Integer>> seedByKey,
@@ -128,6 +129,9 @@ public class ContinuitySeedService {
 					if (carer.isUnavailableOn(sa.getShift().getShiftStart())) {
 						continue; // on leave that day — don't seed, let construction fill
 					}
+					if (breaksHardEligibility(carer, sa)) {
+						continue; // e.g. wrong gender: don't carry a past rule break forward (and lock it)
+					}
 					sa.setSeededEmployeeId(carer.getId());
 					sa.setEmployee(carer); // warm start; construction skips initialised entities
 					seeded++;
@@ -136,6 +140,18 @@ public class ContinuitySeedService {
 			}
 		}
 		return seeded;
+	}
+
+	/**
+	 * Would this carer break a HARD eligibility rule on this shift? Same checks the solver
+	 * scores (gender, required skills). A carry-over must never lock in a rule break: once
+	 * seed-locked under CONTINUITY the solver can't move it, so it stays a hard violation
+	 * period after period. Template pin application uses the same check.
+	 */
+	public static boolean breaksHardEligibility(Employee carer, ShiftAssignment sa) {
+		com.midco.rota.model.ShiftTemplate t = sa.getShift().getShiftTemplate();
+		return com.midco.rota.opt.RotaConstraintProvider.isGenderMismatch(carer, t.getGender())
+				|| com.midco.rota.opt.RotaConstraintProvider.isMissingRequiredSkill(carer, t.getRequiredSkills());
 	}
 
 	private static String key(Integer templateId, LocalDate date) {

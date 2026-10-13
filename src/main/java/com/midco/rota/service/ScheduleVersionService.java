@@ -104,35 +104,54 @@ public class ScheduleVersionService {
 	 * Create a new version from current rota state
 	 */
 
+	/**
+	 * Dry run of {@link #createVersion}: apply the request's changes, validate the rota as it
+	 * would be saved, then roll everything back. Lets the UI check a pin-all save before
+	 * committing it. Returns the conflicts (empty = safe to save).
+	 */
+	@Transactional
+	public List<ConflictError> validateVersion(SaveScheduleRequest request) {
+		try {
+			if (request.getChanges() != null && !request.getChanges().isEmpty()) {
+				applyChangesToDatabase(request.getRotaId(), request.getChanges());
+			}
+			return validatedConflicts(request.getRotaId());
+		} finally {
+			org.springframework.transaction.interceptor.TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
+		}
+	}
+
+	private List<ConflictError> validatedConflicts(Long rotaId) {
+		List<ShiftAssignment> allAssignments = rotaShiftAssignmentRepository.findByRotaId(rotaId);
+		List<ConflictError> conflicts = pinValidationService.validateAssignments(allAssignments);
+		if (conflicts.isEmpty()) {
+			log.info("Pin validation passed - no conflicts in {} assignments", allAssignments.size());
+		} else {
+			log.warn("Pin validation: {} conflicts", conflicts.size());
+			conflicts.forEach(c -> log.warn("  - {} ({}) on {}: {}", c.getEmployeeName(), c.getEmployeeId(), c.getDate(),
+					c.getReason()));
+		}
+		return conflicts;
+	}
+
 	@Transactional
 	public VersionDetailDTO createVersion(SaveScheduleRequest request) {
 		log.info("Creating version for rota {} by {}", request.getRotaId(), request.getUsername());
-
-		// ✅ UPDATED: Validate ALL assignments if pinning
-		if (request.isPinAllChanges()) {
-			log.info("Validating all assignments for pin conflicts");
-
-			List<ShiftAssignment> allAssignments = rotaShiftAssignmentRepository.findByRotaId(request.getRotaId());
-			List<ConflictError> conflicts = pinValidationService.validateAssignments(allAssignments);
-
-			if (!conflicts.isEmpty()) {
-				log.error("Pin validation failed: {} conflicts found", conflicts.size());
-				conflicts.forEach(c -> log.error("  - Employee {} ({}) on {}: {}",
-			            c.getEmployeeName(), c.getEmployeeId(), c.getDate(),
-			            c.getConflictingShifts().stream()
-			                    .map(s -> s.getShiftType() + "@" + s.getLocation()
-			                            + " " + s.getStartTime() + "-" + s.getEndTime())
-			                    .toList()));
-				throw new PinConflictException("Cannot pin assignments with conflicts", conflicts);
-			}
-
-			log.info("Pin validation passed - no conflicts in {} assignments", allAssignments.size());
-		}
 
 		// Apply changes to database FIRST
 		if (request.getChanges() != null && !request.getChanges().isEmpty()) {
 			applyChangesToDatabase(request.getRotaId(), request.getChanges());
 			log.info("Applied {} changes to database", request.getChanges().size());
+		}
+
+		// Pin-all turns the whole rota into standing pins, so validate the rota AS IT WILL BE
+		// (after this save's changes). Previously this ran before the changes were applied,
+		// so the edits being saved were never checked. A conflict rolls the whole save back.
+		if (request.isPinAllChanges()) {
+			List<ConflictError> conflicts = validatedConflicts(request.getRotaId());
+			if (!conflicts.isEmpty()) {
+				throw new PinConflictException("Cannot pin assignments with conflicts", conflicts);
+			}
 		}
 
 		// Get previous current version

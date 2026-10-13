@@ -111,4 +111,39 @@ class ContinuitySeedServiceTest {
 		assertEquals(0, svc.applySeed(List.of(a), seed, Map.of(5, emp(5))));
 		assertNull(a.getSeededEmployeeId());
 	}
+
+	@Test
+	void doesNotCarryAGenderMismatchForward() {
+		ShiftAssignment a = slot(100, D);
+		a.getShift().getShiftTemplate().setRequiredGender(com.midco.rota.util.Gender.MALE);
+		Employee woman = emp(5);
+		woman.setGender(com.midco.rota.util.Gender.FEMALE);
+		Map<String, List<Integer>> seed = Map.of("100|" + PRIOR, List.of(5));
+
+		assertEquals(0, svc.applySeed(List.of(a), seed, Map.of(5, woman)), "a past rule break must not be re-locked");
+		assertNull(a.getEmployee());
+	}
+
+	@Test
+	void fallsThroughToTheNextEligiblePriorCarer() {
+		ShiftAssignment a = slot(100, D);
+		a.getShift().getShiftTemplate().setRequiredGender(com.midco.rota.util.Gender.MALE);
+		Employee woman = emp(5), man = emp(6);
+		woman.setGender(com.midco.rota.util.Gender.FEMALE);
+		man.setGender(com.midco.rota.util.Gender.MALE);
+		Map<String, List<Integer>> seed = Map.of("100|" + PRIOR, List.of(5, 6));
+
+		assertEquals(1, svc.applySeed(List.of(a), seed, Map.of(5, woman, 6, man)));
+		assertEquals(6, a.getSeededEmployeeId());
+	}
+
+	@Test
+	void doesNotSeedACarerMissingARequiredSkill() {
+		ShiftAssignment a = slot(100, D);
+		a.getShift().getShiftTemplate().setRequiredSkills(List.of("SHIFT_LEAD"));
+		Employee carer = emp(5);
+		carer.setSkills(List.of("Carer"));
+
+		assertEquals(0, svc.applySeed(List.of(a), Map.of("100|" + PRIOR, List.of(5)), Map.of(5, carer)));
+	}
 }

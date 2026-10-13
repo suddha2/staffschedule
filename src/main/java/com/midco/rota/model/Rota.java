@@ -133,6 +133,19 @@ public class Rota {
 		this.shiftAssignmentList = shiftAssignmentList;
 	}
 
+	/** Standing pins not applied for this solve, and why. Transient: saved separately (rota_skipped_pin). */
+	@Transient
+	@JsonIgnore
+	private List<SkippedPin> skippedPins = new java.util.ArrayList<>();
+
+	public List<SkippedPin> getSkippedPins() {
+		return skippedPins;
+	}
+
+	public void setSkippedPins(List<SkippedPin> skippedPins) {
+		this.skippedPins = skippedPins == null ? new java.util.ArrayList<>() : skippedPins;
+	}
+
 	public List<Employee> getEmployeeList() {
 		return employeeList;
 	}

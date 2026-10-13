@@ -91,6 +91,20 @@ public class ScheduleVersionController {
 	}
 
 	/**
+	 * Check a save before making it: POST /api/schedules/{rotaId}/versions/validate with the
+	 * same body as a save. Applies the changes in a rolled-back transaction and returns
+	 * {@code {ok, conflicts}} - same rules the save enforces (overlaps, gender/skills, 6:1).
+	 */
+	@PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER','ROTA_EDITOR')")
+	@PostMapping("/{rotaId}/versions/validate")
+	public ResponseEntity<java.util.Map<String, Object>> validateVersion(@PathVariable Long rotaId,
+			@RequestBody SaveScheduleRequest request) {
+		request.setRotaId(rotaId);
+		java.util.List<com.midco.rota.dto.ConflictError> conflicts = versionService.validateVersion(request);
+		return ResponseEntity.ok(java.util.Map.of("ok", conflicts.isEmpty(), "conflicts", conflicts));
+	}
+
+	/**
 	 * Create new version (save current state) POST /api/schedules/{rotaId}/versions
 	 */
 	@PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER','ROTA_EDITOR')")
@@ -109,6 +123,8 @@ public class ScheduleVersionController {
 		try {
 			VersionDetailDTO version = versionService.createVersion(request);
 			return ResponseEntity.status(HttpStatus.CREATED).body(version);
+		} catch (com.midco.rota.PinConflictException e) {
+			throw e; // GlobalExceptionHandler -> 409 with the conflict list (was swallowed into a bare 500)
 		} catch (Exception e) {
 			e.printStackTrace();
 			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();

@@ -171,10 +171,11 @@ public class SolverTrigger {
 		// Decide supervisor-only leads first, so template pinning can refuse to pin them
 		// onto care shifts (a stray standing pin must not break the supervisor rule).
 		markSupervisors(shiftAssignments, employees);
-		applyTemplateBasedPinning(shiftAssignments, employees);
+		List<com.midco.rota.model.SkippedPin> skippedPins = applyTemplateBasedPinning(shiftAssignments, employees);
 		// Link LONG_DAY → SLEEP_IN so the shadow-variable listener mirrors employees.
 		ShiftAssignmentFactory.linkFollowerPairs(shiftAssignments);
 		Rota problem = new Rota(employees, shiftAssignments);
+		problem.setSkippedPins(skippedPins); // saved with the solved rota for planners to review
 
 		com.midco.rota.opt.SolveProfile profile =
 				com.midco.rota.opt.SolveProfile.fromString(deferredSolveRequest.getProfile());
@@ -444,6 +445,7 @@ public class SolverTrigger {
 			}
 		}
 		int released = 0;
+		int releasedSixOne = 0;
 		for (List<ShiftAssignment> list : byEmp.values()) {
 			List<ShiftAssignment> kept = new ArrayList<>();
 			List<ShiftAssignment> seeds = new ArrayList<>();
@@ -465,11 +467,30 @@ public class SolverTrigger {
 				addFollower(candidate, seed);
 				boolean clash = candidate.stream().anyMatch(c -> kept.stream()
 						.anyMatch(k -> com.midco.rota.opt.ShiftOverlap.overlaps(k, c)));
-				if (clash) {
+				// Compliance 6:1: a carried-over shift must not give the carer a 7th day in a row on
+				// top of their pins and earlier carry-overs. Under CONTINUITY it would be locked and
+				// unfixable; under SPREAD the solver would spend the solve undoing it.
+				boolean sixOne = false;
+				if (!clash && seed.getShift() != null && seed.getShift().getShiftStart() != null
+						&& com.midco.rota.opt.RotaConstraintProvider.sixOneApplies(seed.getEmployee())) {
+					java.util.TreeSet<java.time.LocalDate> days = new java.util.TreeSet<>();
+					for (ShiftAssignment k : kept) {
+						if (k.getShift() != null && k.getShift().getShiftStart() != null) {
+							days.add(k.getShift().getShiftStart());
+						}
+					}
+					days.add(seed.getShift().getShiftStart());
+					sixOne = com.midco.rota.opt.RotaConstraintProvider.sevenDayRuns(days) > 0;
+				}
+				if (clash || sixOne) {
 					seed.setSeedLocked(false);
 					seed.setEmployee(null);
 					candidate.stream().skip(1).forEach(f -> f.setEmployee(null)); // its follower, if any
-					released++;
+					if (clash) {
+						released++;
+					} else {
+						releasedSixOne++;
+					}
 				} else {
 					kept.addAll(candidate);
 				}
@@ -477,6 +498,9 @@ public class SolverTrigger {
 		}
 		if (released > 0) {
 			logger.info("Released {} seeded shift(s) that overlapped a pinned/locked or earlier seeded shift", released);
+		}
+		if (releasedSixOne > 0) {
+			logger.info("Released {} seeded shift(s) that would have been a 7th consecutive day (6:1)", releasedSixOne);
 		}
 	}
 
@@ -561,11 +585,15 @@ public class SolverTrigger {
 	 * batch being solved; week numbers are derived per shift by integer division
 	 * of (days since periodStart) by 7.
 	 */
-	private void applyTemplateBasedPinning(List<ShiftAssignment> shiftAssignments, List<Employee> employees) {
+	private List<com.midco.rota.model.SkippedPin> applyTemplateBasedPinning(List<ShiftAssignment> shiftAssignments,
+			List<Employee> employees) {
+		List<com.midco.rota.model.SkippedPin> skipped = new ArrayList<>();
 		int pinnedCount = 0;
 		int skippedInactive = 0;
 		int skippedConflict = 0;
 		int skippedSupervisor = 0;
+		int skippedIneligible = 0;
+		int skippedSixOne = 0;
 		int skippedOverlap = 0;
 
 		logger.info("Starting template-based pinning for {} assignments", shiftAssignments.size());
@@ -583,7 +611,7 @@ public class SolverTrigger {
 
 		if (periodStart == null) {
 			logger.warn("No dated shifts in batch - skipping template-based pinning");
-			return;
+			return skipped;
 		}
 		logger.info("Period anchor for pinning: {} (week 1 Monday)", periodStart);
 
@@ -613,9 +641,15 @@ public class SolverTrigger {
 		// Track assignments per employee per day (for conflict detection)
 		Map<String, Set<String>> employeeDayAssignments = new HashMap<>(); // shift-type codes
 		Map<Integer, List<ShiftAssignment>> pinnedByEmployee = new HashMap<>();
+		Map<Integer, java.util.TreeSet<java.time.LocalDate>> pinnedDays = new HashMap<>();
 
-		// Apply pins to matching shift assignments
-		for (ShiftAssignment assignment : shiftAssignments) {
+		// Apply pins in date order, so when a run of pins would break 6:1 it is the 7th
+		// consecutive day that gets left for the solver, not an arbitrary earlier one.
+		List<ShiftAssignment> inDateOrder = new ArrayList<>(shiftAssignments);
+		inDateOrder.sort(java.util.Comparator.comparing(
+				sa -> sa.getShift() == null || sa.getShift().getShiftStart() == null ? java.time.LocalDate.MIN
+						: sa.getShift().getShiftStart()));
+		for (ShiftAssignment assignment : inDateOrder) {
 			Shift shift = assignment.getShift();
 			if (shift == null || shift.getShiftTemplate() == null || shift.getShiftStart() == null) {
 				continue;
@@ -639,15 +673,48 @@ public class SolverTrigger {
 				// Check 1: Employee exists and is active
 				if (employee == null || !employee.isActive()) {
 					skippedInactive++;
+					skipped.add(skippedPin(shift, pin, employee, employee == null ? "Carer has left or isn't in this region's pool" : "Carer has left (inactive)"));
 					continue;
 				}
 
 				// Check 1b: a supervisor lead is never pinned onto a care shift (lead shifts only).
 				if (employee.isSupervisor() && !requiresSkill(assignment, LEAD_SKILL)) {
 					skippedSupervisor++;
+					skipped.add(skippedPin(shift, pin, employee, "Shift lead pinned onto a care shift (leads take lead shifts only)"));
 					logger.warn("Skipping pin: supervisor lead {} onto care shift {} {} {} (lead shifts only)",
 							employee.getName(), shift.getShiftTemplate().getLocation(),
 							shift.getShiftStart(), shift.getShiftTemplate().getShiftTypeCode());
+					continue;
+				}
+
+				// Check 1c: a pin must not break a hard eligibility rule (gender, required skill).
+				// Such pins are stale exceptions; skipping leaves the slot for an eligible carer
+				// instead of starting the solve with a hard violation it can never fix.
+				if (com.midco.rota.service.ContinuitySeedService.breaksHardEligibility(employee, assignment)) {
+					skippedIneligible++;
+					skipped.add(skippedPin(shift, pin, employee,
+							com.midco.rota.opt.RotaConstraintProvider.isGenderMismatch(employee, shift.getShiftTemplate().getGender())
+									? "Wrong gender for this shift (needs " + shift.getShiftTemplate().getGender() + ")"
+									: "Missing a required skill"));
+					logger.warn("Skipping pin: {} onto {} {} {} breaks gender/skill rules (required gender {}) - review this pin",
+							employee.getName(), shift.getShiftTemplate().getLocation(), shift.getShiftStart(),
+							shift.getShiftTemplate().getShiftTypeCode(), shift.getShiftTemplate().getRequiredGender());
+					continue;
+				}
+
+				// Check 1d: compliance 6:1 - a pin must not give this carer a 7th day in a row.
+				// Standing pins set 6 days a week can still chain across a week boundary
+				// (off Monday of week 1, off Sunday of week 2 = 12 days on).
+				java.util.TreeSet<java.time.LocalDate> days = new java.util.TreeSet<>(
+						pinnedDays.getOrDefault(empId, new java.util.TreeSet<>()));
+				days.add(shift.getShiftStart());
+				if (com.midco.rota.opt.RotaConstraintProvider.sixOneApplies(employee)
+						&& com.midco.rota.opt.RotaConstraintProvider.sevenDayRuns(days) > 0) {
+					skippedSixOne++;
+					skipped.add(skippedPin(shift, pin, employee, "Would be a 7th day in a row (6:1, permanent carers)"));
+					logger.warn("Skipping pin: {} onto {} {} {} would be a 7th consecutive day (6:1) - review this pin",
+							employee.getName(), shift.getShiftTemplate().getLocation(), shift.getShiftStart(),
+							shift.getShiftTemplate().getShiftTypeCode());
 					continue;
 				}
 
@@ -664,6 +731,7 @@ public class SolverTrigger {
 						logger.debug("⚠️ Skipping pin: {} already assigned conflicting shift on {}", employee.getName(),
 								shift.getShiftStart());
 						skippedConflict++;
+						skipped.add(skippedPin(shift, pin, employee, "Carer already pinned to another shift that day"));
 						continue;
 					}
 				}
@@ -675,6 +743,7 @@ public class SolverTrigger {
 				if (empPins != null && empPins.stream()
 						.anyMatch(p -> com.midco.rota.opt.ShiftOverlap.overlaps(p, assignment))) {
 					skippedOverlap++;
+					skipped.add(skippedPin(shift, pin, employee, "Overlaps another pinned shift"));
 					logger.warn("Skipping pin: {} {} {} {} overlaps another pinned shift", employee.getName(),
 							shift.getShiftTemplate().getLocation(), shift.getShiftStart(),
 							shift.getShiftTemplate().getShiftTypeCode());
@@ -691,6 +760,7 @@ public class SolverTrigger {
 				employeeDayAssignments.computeIfAbsent(conflictKey, k -> new HashSet<>())
 						.add(shift.getShiftTemplate().getShiftTypeCode());
 				pinnedByEmployee.computeIfAbsent(empId, k -> new ArrayList<>()).add(assignment);
+				pinnedDays.computeIfAbsent(empId, k -> new java.util.TreeSet<>()).add(shift.getShiftStart());
 
 				logger.debug("✅ PINNED: {} to {} {} {}", employee.getName(), shift.getShiftTemplate().getLocation(),
 						shift.getShiftStart(), shift.getShiftTemplate().getShiftType());
@@ -704,8 +774,18 @@ public class SolverTrigger {
 		logger.info("  ⚠️ Skipped (inactive employee): {}", skippedInactive);
 		logger.info("  ⚠️ Skipped (same-day conflict): {}", skippedConflict);
 		logger.info("  ⚠️ Skipped (supervisor lead on care shift): {}", skippedSupervisor);
+		logger.info("  ⚠️ Skipped (breaks gender/skill rules): {}", skippedIneligible);
+		logger.info("  ⚠️ Skipped (7th consecutive day, 6:1): {}", skippedSixOne);
 		logger.info("  ⚠️ Skipped (overlaps another pin): {}", skippedOverlap);
 		logger.info("  📋 Unassigned (for solver): {}", shiftAssignments.size() - pinnedCount);
+		return skipped;
+	}
+
+	private static com.midco.rota.model.SkippedPin skippedPin(Shift shift, PinnedTemplateAssignment pin, Employee employee,
+			String reason) {
+		return new com.midco.rota.model.SkippedPin(shift.getShiftStart(), shift.getShiftTemplate().getLocation(),
+				shift.getShiftTemplate().getShiftTypeCode(), pin.getShiftTemplateId(), pin.getWeekOfPeriod(),
+				pin.getEmployeeId(), employee == null ? null : employee.getName(), reason);
 	}
 
 	/**

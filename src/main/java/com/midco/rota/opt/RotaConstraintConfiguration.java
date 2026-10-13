@@ -208,6 +208,30 @@ public class RotaConstraintConfiguration {
 	@ConstraintWeight("Min weekly hours not met")
 	private HardSoftLongScore minWeeklyHoursNotMet = HardSoftLongScore.ofSoft(500);
 
+	/**
+	 * Weight lives in constraint_setting (V030), not here: ZERO only registers the rule,
+	 * so a database without the row runs with it switched off.
+	 */
+	@ConstraintWeight("Permanent idle week")
+	private HardSoftLongScore permanentIdleWeek = HardSoftLongScore.ZERO;
+
+	// Hours fairness (V030). Weights live in constraint_setting; ZERO only registers each rule.
+	@ConstraintWeight("Permanent below weekly minimum")
+	private HardSoftLongScore permanentBelowWeeklyMinimum = HardSoftLongScore.ZERO;
+
+	@ConstraintWeight("Permanent below usual earnings")
+	private HardSoftLongScore permanentBelowUsualEarnings = HardSoftLongScore.ZERO;
+
+	@ConstraintWeight("Permanent above usual hours")
+	private HardSoftLongScore permanentAboveUsualHours = HardSoftLongScore.ZERO;
+
+	@ConstraintWeight("Zero-hours fair share")
+	private HardSoftLongScore zeroHoursFairShare = HardSoftLongScore.ZERO;
+
+	/** Compliance 6:1. Weight/severity in constraint_setting (V031); ZERO only registers the rule. */
+	@ConstraintWeight("Max 6 consecutive working days")
+	private HardSoftLongScore maxConsecutiveWorkingDays = HardSoftLongScore.ZERO;
+
 	@ConstraintWeight("Penalize overloading individual employees")
 	private HardSoftLongScore overloadingEmployees = HardSoftLongScore.ofSoft(100);
 
@@ -356,6 +380,13 @@ public class RotaConstraintConfiguration {
 	public void setMaxWeeklyHoursExceeded(HardSoftLongScore v) { this.maxWeeklyHoursExceeded = v; }
 	public HardSoftLongScore getMinWeeklyHoursNotMet() { return minWeeklyHoursNotMet; }
 	public void setMinWeeklyHoursNotMet(HardSoftLongScore v) { this.minWeeklyHoursNotMet = v; }
+	public HardSoftLongScore getPermanentIdleWeek() { return permanentIdleWeek; }
+	public void setPermanentIdleWeek(HardSoftLongScore v) { this.permanentIdleWeek = v; }
+	public HardSoftLongScore getPermanentBelowWeeklyMinimum() { return permanentBelowWeeklyMinimum; }
+	public HardSoftLongScore getPermanentBelowUsualEarnings() { return permanentBelowUsualEarnings; }
+	public HardSoftLongScore getPermanentAboveUsualHours() { return permanentAboveUsualHours; }
+	public HardSoftLongScore getZeroHoursFairShare() { return zeroHoursFairShare; }
+	public HardSoftLongScore getMaxConsecutiveWorkingDays() { return maxConsecutiveWorkingDays; }
 	public HardSoftLongScore getOverloadingEmployees() { return overloadingEmployees; }
 	public void setOverloadingEmployees(HardSoftLongScore v) { this.overloadingEmployees = v; }
 	public HardSoftLongScore getBalancedHours() { return balancedHours; }
