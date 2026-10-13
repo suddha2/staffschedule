@@ -611,7 +611,7 @@ public class SolverTrigger {
 		}
 
 		// Track assignments per employee per day (for conflict detection)
-		Map<String, Set<ShiftType>> employeeDayAssignments = new HashMap<>();
+		Map<String, Set<String>> employeeDayAssignments = new HashMap<>(); // shift-type codes
 		Map<Integer, List<ShiftAssignment>> pinnedByEmployee = new HashMap<>();
 
 		// Apply pins to matching shift assignments
@@ -653,14 +653,14 @@ public class SolverTrigger {
 
 				// Check 2: Same-day conflict detection
 				String conflictKey = empId + "-" + shift.getShiftStart();
-				Set<ShiftType> existingShifts = employeeDayAssignments.get(conflictKey);
+				Set<String> existingShifts = employeeDayAssignments.get(conflictKey);
 
 				if (existingShifts != null && !existingShifts.isEmpty()) {
 					// Employee already has a shift this day - check if allowed
-					List<ShiftType> todaysShifts = new ArrayList<>(existingShifts);
-					todaysShifts.add(shift.getShiftTemplate().getShiftType());
+					List<String> todaysShifts = new ArrayList<>(existingShifts);
+					todaysShifts.add(shift.getShiftTemplate().getShiftTypeCode());
 
-					if (!isAllowedDayShiftTypes(todaysShifts)) {
+					if (!isAllowedDayShiftCodes(todaysShifts)) {
 						logger.debug("⚠️ Skipping pin: {} already assigned conflicting shift on {}", employee.getName(),
 								shift.getShiftStart());
 						skippedConflict++;
@@ -689,7 +689,7 @@ public class SolverTrigger {
 
 				// Track for conflict detection
 				employeeDayAssignments.computeIfAbsent(conflictKey, k -> new HashSet<>())
-						.add(shift.getShiftTemplate().getShiftType());
+						.add(shift.getShiftTemplate().getShiftTypeCode());
 				pinnedByEmployee.computeIfAbsent(empId, k -> new ArrayList<>()).add(assignment);
 
 				logger.debug("✅ PINNED: {} to {} {} {}", employee.getName(), shift.getShiftTemplate().getLocation(),
@@ -723,39 +723,23 @@ public class SolverTrigger {
 	}
 
 	/**
-	 * Check if shift types are allowed on same day Uses same business rules as
-	 * PinValidationService
+	 * Whether one carer may be pinned to all these shift types (codes) on the same day.
+	 * FLOATING may only be combined with FLOATING; otherwise two shifts are allowed only
+	 * when they are a configured leader/follower pair (e.g. LONG_DAY + SLEEP_IN, or any pair
+	 * set up in Manage Shift Types). Time overlaps are checked separately.
 	 */
-	private boolean isAllowedDayShiftTypes(List<ShiftType> types) {
-		if (types == null || types.isEmpty())
+	public static boolean isAllowedDayShiftCodes(List<String> codes) {
+		if (codes == null || codes.size() < 2) {
 			return true;
-		if (types.size() == 1)
-			return true;
-
-		// All FLOATING - check would need location info (skip for now, assume valid)
-		boolean allFloating = types.stream().allMatch(t -> t == ShiftType.FLOATING);
+		}
+		boolean allFloating = codes.stream().allMatch("FLOATING"::equals);
 		if (allFloating) {
 			return true; // Can't check locations here
 		}
-
-		// No mixing FLOATING with non-FLOATING
-		boolean hasFloating = types.stream().anyMatch(t -> t == ShiftType.FLOATING);
-		boolean hasNonFloating = types.stream().anyMatch(t -> t == ShiftType.DAY || t == ShiftType.LONG_DAY
-				|| t == ShiftType.WAKING_NIGHT || t == ShiftType.SLEEP_IN);
-
-		if (hasFloating && hasNonFloating) {
-			return false;
+		if (codes.contains("FLOATING")) {
+			return false; // no mixing FLOATING with other shift types
 		}
-
-		// Exactly 2: LONG_DAY + SLEEP_IN allowed
-		if (types.size() == 2) {
-			boolean hasLongDay = types.contains(ShiftType.LONG_DAY);
-			boolean hasSleepIn = types.contains(ShiftType.SLEEP_IN);
-			return hasLongDay && hasSleepIn;
-		}
-
-		// Any other 2+ non-floating combo is invalid
-		return false;
+		return codes.size() == 2 && com.midco.rota.opt.ShiftTypeMeta.isLeaderFollowerPair(codes.get(0), codes.get(1));
 	}
 
 	private record YearWeek(int year, int week) {

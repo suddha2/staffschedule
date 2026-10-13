@@ -5,6 +5,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.midco.rota.opt.ShiftTypeMeta;
+
 
 /**
  * Creates the right {@link ShiftAssignment} subtype for a shift and wires the
@@ -30,17 +32,18 @@ public final class ShiftAssignmentFactory {
 
 	/**
 	 * Build the assignments for a batch of shifts ({@code emp_count} per shift), the way
-	 * period generation does. Followers (e.g. SLEEP_IN) are created as shadows only while
-	 * there is a leader slot (e.g. LONG_DAY) at the same house and date to mirror; any
-	 * follower beyond that has no carer to copy, so it becomes a standalone work shift the
-	 * solver fills (and coverage counts). Two sleep-ins against one long day therefore give
-	 * one paired sleep-in and one with its own carer, instead of a silently empty one.
+	 * period generation does. A follower (any type set as a follower in Manage Shift Types,
+	 * e.g. SLEEP_IN following LONG_DAY) is created as a shadow only while there is a slot of
+	 * ITS leader type at the same house and date to mirror. A follower beyond that, or one
+	 * whose leader type isn't configured, has no carer to copy, so it becomes a standalone
+	 * work shift the solver fills (and coverage counts) instead of a silently empty one.
 	 */
 	public static List<ShiftAssignment> createAll(List<Shift> shifts) {
 		Map<String, Integer> leaderSlots = new HashMap<>();
 		for (Shift shift : shifts) {
-			if (isLeader(shift)) {
-				leaderSlots.merge(shift.getPairId(), shift.getShiftTemplate().getEmpCount(), Integer::sum);
+			String key = leaderKey(shift);
+			if (key != null) {
+				leaderSlots.merge(key, shift.getShiftTemplate().getEmpCount(), Integer::sum);
 			}
 		}
 		Map<String, Integer> followersCreated = new HashMap<>();
@@ -48,10 +51,11 @@ public final class ShiftAssignmentFactory {
 		for (Shift shift : shifts) {
 			for (int i = 0; i < shift.getShiftTemplate().getEmpCount(); i++) {
 				ShiftAssignment sa = create(shift);
-				if (sa instanceof FollowerShiftAssignment && shift.getPairId() != null) {
-					int n = followersCreated.merge(shift.getPairId(), 1, Integer::sum);
-					if (n > leaderSlots.getOrDefault(shift.getPairId(), 0)) {
-						sa = new WorkShiftAssignment(shift); // no leader left to mirror
+				if (sa instanceof FollowerShiftAssignment) {
+					String key = followerKey(shift);
+					int n = key == null ? 1 : followersCreated.merge(key, 1, Integer::sum);
+					if (key == null || n > leaderSlots.getOrDefault(key, 0)) {
+						sa = new WorkShiftAssignment(shift); // no leader of its type left to mirror
 					}
 				}
 				assignments.add(sa);
@@ -60,52 +64,64 @@ public final class ShiftAssignmentFactory {
 		return assignments;
 	}
 
-	/** A shift whose carer a follower can mirror: a leader type (e.g. LONG_DAY), not itself a follower. */
-	private static boolean isLeader(Shift shift) {
-		ShiftTemplate t = shift.getShiftTemplate();
-		return t != null && shift.getPairId() != null && !t.isEffectiveFollower()
-				&& com.midco.rota.opt.ShiftTypeMeta.isLeader(t.getShiftTypeCode());
-	}
-
 	/**
-	 * Link each leader {@link WorkShiftAssignment} to a
-	 * {@link FollowerShiftAssignment} sharing its {@code pairId}, zipping by
-	 * position (leader[i] ↔ follower[i]) exactly as the old pairing did (the
-	 * canonical case being LONG_DAY ↔ SLEEP_IN). Must be called after the full
-	 * assignment list is built (batch load / live load) and before solving, so the
-	 * listener can mirror employees.
+	 * Link each leader {@link WorkShiftAssignment} to a {@link FollowerShiftAssignment} of a
+	 * type that follows it, at the same house and date, zipping by position (leader[i] ↔
+	 * follower[i]). Pairs are type-level and data-driven: a follower only ever links to its
+	 * own configured leader type, so several pairs can share a house/day without crossing.
+	 * Must be called after the full assignment list is built (batch load / live load) and
+	 * before solving, so the listener can mirror employees.
 	 */
 	public static void linkFollowerPairs(List<? extends ShiftAssignment> assignments) {
-		// Data-driven (was: type == LONG_DAY / SLEEP_IN). Within a pairId group
-		// (location + date), zip each leader (non-follower work shift) to a follower
-		// (shadow shift) by position, exactly as before.
-		Map<String, List<WorkShiftAssignment>> leadersByPair = new HashMap<>();
-		Map<String, List<FollowerShiftAssignment>> followersByPair = new HashMap<>();
+		Map<String, List<WorkShiftAssignment>> leadersByKey = new HashMap<>();
+		Map<String, List<FollowerShiftAssignment>> followersByKey = new HashMap<>();
 
 		for (ShiftAssignment sa : assignments) {
-			if (sa.getShift() == null || sa.getShift().getShiftTemplate() == null) {
-				continue;
-			}
-			String pairId = sa.getShift().getPairId();
-			if (pairId == null) {
-				continue;
-			}
-			// Leaders are leader-type work shifts only: a standalone sleep-in (or one left
-			// without a long day) is a work shift too, but nothing may pair onto it.
 			if (sa instanceof FollowerShiftAssignment s) {
-				followersByPair.computeIfAbsent(pairId, k -> new ArrayList<>()).add(s);
-			} else if (sa instanceof WorkShiftAssignment w && isLeader(sa.getShift())) {
-				leadersByPair.computeIfAbsent(pairId, k -> new ArrayList<>()).add(w);
+				String key = followerKey(sa.getShift());
+				if (key != null) {
+					followersByKey.computeIfAbsent(key, k -> new ArrayList<>()).add(s);
+				}
+			} else if (sa instanceof WorkShiftAssignment w) {
+				// A standalone follower-type shift is a work shift too, but not a leader.
+				String key = leaderKey(sa.getShift());
+				if (key != null) {
+					leadersByKey.computeIfAbsent(key, k -> new ArrayList<>()).add(w);
+				}
 			}
 		}
 
-		for (Map.Entry<String, List<WorkShiftAssignment>> entry : leadersByPair.entrySet()) {
+		for (Map.Entry<String, List<WorkShiftAssignment>> entry : leadersByKey.entrySet()) {
 			List<WorkShiftAssignment> leaders = entry.getValue();
-			List<FollowerShiftAssignment> followers = followersByPair.getOrDefault(entry.getKey(), List.of());
+			List<FollowerShiftAssignment> followers = followersByKey.getOrDefault(entry.getKey(), List.of());
 			int n = Math.min(leaders.size(), followers.size());
 			for (int i = 0; i < n; i++) {
 				leaders.get(i).setPairedFollower(followers.get(i));
 			}
 		}
+	}
+
+	/** Pairing key a leader offers: house|date|its own type. Null unless some type follows it. */
+	private static String leaderKey(Shift shift) {
+		ShiftTemplate t = shift == null ? null : shift.getShiftTemplate();
+		if (t == null || shift.getShiftStart() == null || t.isEffectiveFollower()
+				|| !ShiftTypeMeta.isLeader(t.getShiftTypeCode())) {
+			return null;
+		}
+		return key(t.getLocation(), shift, t.getShiftTypeCode());
+	}
+
+	/** Pairing key a follower looks for: house|date|the leader type it follows. Null if none configured. */
+	private static String followerKey(Shift shift) {
+		ShiftTemplate t = shift == null ? null : shift.getShiftTemplate();
+		if (t == null || shift.getShiftStart() == null) {
+			return null;
+		}
+		String leader = ShiftTypeMeta.pairsWith(t.getShiftTypeCode());
+		return leader == null ? null : key(t.getLocation(), shift, leader);
+	}
+
+	private static String key(String location, Shift shift, String leaderCode) {
+		return location + "|" + shift.getShiftStart() + "|" + leaderCode;
 	}
 }

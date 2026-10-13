@@ -44,7 +44,11 @@ public class ShiftTypeMeta {
      * is picked up by the next solve/report without a restart.
      */
     public void reload() {
-        List<ShiftTypeDef> all = repo.findAll();
+        load(repo.findAll());
+    }
+
+    /** Replace the static view with these types (startup/admin reload; tests set up custom pairs). */
+    public static void load(java.util.Collection<ShiftTypeDef> all) {
         Map<String, ShiftTypeDef> map = new HashMap<>();
         for (ShiftTypeDef d : all) {
             map.put(d.getCode(), d);
@@ -82,6 +86,18 @@ public class ShiftTypeMeta {
             return false;
         }
         return Fallback.isLeader(code);
+    }
+
+    /**
+     * True when two shift types are a configured leader/follower pair (either order), e.g.
+     * LONG_DAY + SLEEP_IN, or any new pair set up in Manage Shift Types. One carer may work
+     * both on the same day.
+     */
+    public static boolean isLeaderFollowerPair(String a, String b) {
+        if (a == null || b == null) {
+            return false;
+        }
+        return (isFollower(a) && b.equals(pairsWith(a))) || (isFollower(b) && a.equals(pairsWith(b)));
     }
 
     /** Leaders and followers both need a pairId so the linker can zip them. */
