@@ -159,14 +159,32 @@ public class ContinuitySeedService {
 
 	/**
 	 * Would this carer break a HARD eligibility rule on this shift? Same checks the solver
-	 * scores (gender, required skills). A carry-over must never lock in a rule break: once
-	 * seed-locked under CONTINUITY the solver can't move it, so it stays a hard violation
-	 * period after period. Template pin application uses the same check.
+	 * scores (gender, required skills, restricted day / shift type / service, never worked at
+	 * the house). A carry-over must never lock in a rule break: once seed-locked under
+	 * CONTINUITY the solver can't move it, so it stays a hard violation period after period.
+	 * Template pin application uses the same check.
 	 */
 	public static boolean breaksHardEligibility(Employee carer, ShiftAssignment sa) {
+		return hardEligibilityReason(carer, sa) != null;
+	}
+
+	/** Why this carer can't take this shift under a HARD eligibility rule, or null if they can. */
+	public static String hardEligibilityReason(Employee carer, ShiftAssignment sa) {
 		com.midco.rota.model.ShiftTemplate t = sa.getShift().getShiftTemplate();
-		return com.midco.rota.opt.RotaConstraintProvider.isGenderMismatch(carer, t.getGender())
-				|| com.midco.rota.opt.RotaConstraintProvider.isMissingRequiredSkill(carer, t.getRequiredSkills());
+		if (com.midco.rota.opt.RotaConstraintProvider.isGenderMismatch(carer, t.getGender())) {
+			return "Wrong gender for this shift (needs " + t.getGender() + ")";
+		}
+		if (com.midco.rota.opt.RotaConstraintProvider.isMissingRequiredSkill(carer, t.getRequiredSkills())) {
+			return "Missing a required skill";
+		}
+		String restriction = com.midco.rota.opt.RotaConstraintProvider.restrictionBroken(carer, sa);
+		if (restriction != null) {
+			return "Carer is restricted from this " + restriction;
+		}
+		if (HouseHistoryService.neverWorkedAt(carer, t)) {
+			return "Carer has never worked at this house (needs a shadow shift first)";
+		}
+		return null;
 	}
 
 	private static String key(Integer templateId, LocalDate date) {

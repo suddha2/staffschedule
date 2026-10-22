@@ -174,9 +174,17 @@ public class SolverTrigger {
 		// Decide supervisor-only leads first, so template pinning can refuse to pin them
 		// onto care shifts (a stray standing pin must not break the supervisor rule).
 		markSupervisors(shiftAssignments, employees);
-		List<com.midco.rota.model.SkippedPin> skippedPins = applyTemplateBasedPinning(shiftAssignments, employees);
-		// Link LONG_DAY → SLEEP_IN so the shadow-variable listener mirrors employees.
+		// Leave and People Planner house history before pinning, so a pin onto booked leave, or
+		// onto a house the carer has never worked, is skipped rather than locked in.
+		applyAvailability(employees, window);
+		// People Planner house history: who is a regular where, and which houses can be
+		// judged. Before seeding, which only carries a carer forward at a house they're a
+		// regular at (the prior rota is itself a solver output, so it isn't evidence).
+		houseHistoryService.apply(employees, shiftTemplates);
+		// Link LONG_DAY → SLEEP_IN so the shadow-variable listener mirrors employees. Pairing is
+		// structural (house, date, type), so it's done first: pin checks look at the sleep-in too.
 		ShiftAssignmentFactory.linkFollowerPairs(shiftAssignments);
+		List<com.midco.rota.model.SkippedPin> skippedPins = applyTemplateBasedPinning(shiftAssignments, employees);
 		Rota problem = new Rota(employees, shiftAssignments);
 		problem.setSkippedPins(skippedPins); // saved with the solved rota for planners to review
 
@@ -188,25 +196,6 @@ public class SolverTrigger {
 		// numeric thresholds in SolverTuning are read when the constraint streams
 		// are first built, so a change there needs a restart to take effect.
 		problem.setConstraintConfiguration(solverConfigService.buildConstraintConfiguration(profile));
-
-		// Pre-solve: build each employee's unavailable-date map from booked leave /
-		// unavailability over the solve window, so the "Employee unavailable (leave)"
-		// hard constraint is an O(1) lookup. Source: daily People Planner sync
-		// (PP_API) plus manual entry.
-		if (!employees.isEmpty()) {
-			List<Integer> empIds = employees.stream().map(Employee::getId).toList();
-			Map<Integer, java.util.Set<java.time.LocalDate>> unavailable = AvailabilityCalendar.build(
-					employeeAvailabilityRepository.findOverlapping(empIds, window.start(), window.end()),
-					window.start(), window.end());
-			for (Employee e : employees) {
-				e.setUnavailableDates(unavailable.get(e.getId()));
-			}
-		}
-
-		// People Planner house history: who is a regular where, and which houses can be
-		// judged. Before seeding, which only carries a carer forward at a house they're a
-		// regular at (the prior rota is itself a solver output, so it isn't evidence).
-		houseHistoryService.apply(employees, shiftTemplates);
 
 		// Continuity: seed each slot from who held it last published period, so the
 		// solver carries the roster forward. Runs after the availability map so a
@@ -248,7 +237,8 @@ public class SolverTrigger {
 					}
 					for (int j = i + 1; j < list.size(); j++) {
 						if (list.get(j).isSeedLocked()
-								&& com.midco.rota.opt.ShiftOverlap.overlaps(list.get(i), list.get(j))) {
+								&& (com.midco.rota.opt.ShiftOverlap.overlaps(list.get(i), list.get(j))
+										|| com.midco.rota.opt.RotaConstraintProvider.restClash(list.get(i), list.get(j)))) {
 							list.get(j).setSeedLocked(false); // free the later overlapping slot
 							unlocked++;
 						}
@@ -289,6 +279,24 @@ public class SolverTrigger {
 		}
 
 		return problem;
+	}
+
+	/**
+	 * Build each employee's unavailable-date map from booked leave / unavailability over the
+	 * solve window, so the "Employee unavailable (leave)" hard constraint is an O(1) lookup.
+	 * Source: daily People Planner sync (PP_API) plus manual entry.
+	 */
+	private void applyAvailability(List<Employee> employees, SolveWindow window) {
+		if (employees.isEmpty()) {
+			return;
+		}
+		List<Integer> empIds = employees.stream().map(Employee::getId).toList();
+		Map<Integer, java.util.Set<java.time.LocalDate>> unavailable = AvailabilityCalendar.build(
+				employeeAvailabilityRepository.findOverlapping(empIds, window.start(), window.end()),
+				window.start(), window.end());
+		for (Employee e : employees) {
+			e.setUnavailableDates(unavailable.get(e.getId()));
+		}
 	}
 
 	private static final String LEAD_SKILL = "SHIFT_LEAD";
@@ -373,9 +381,13 @@ public class SolverTrigger {
 				if (lead.isUnavailableOn(date)) {
 					continue;
 				}
+				if (com.midco.rota.opt.RotaConstraintProvider.restrictionBroken(lead, slot) != null) {
+					continue; // restrictions are HARD: a locked lead slot must not break one
+				}
 				boolean clash = byEmp.getOrDefault(lead.getId(), List.of()).stream()
 						.anyMatch(o -> o != slot && (isHardPinned(o) || isLeadLock(o))
-								&& com.midco.rota.opt.ShiftOverlap.overlaps(o, slot));
+								&& (com.midco.rota.opt.ShiftOverlap.overlaps(o, slot)
+										|| com.midco.rota.opt.RotaConstraintProvider.restClash(o, slot)));
 				if (clash) {
 					continue;
 				}
@@ -399,7 +411,8 @@ public class SolverTrigger {
 			List<ShiftAssignment> leadList = byEmp.computeIfAbsent(best.getId(), k -> new ArrayList<>());
 			for (ShiftAssignment other : new ArrayList<>(leadList)) {
 				if (other != slot && !isHardPinned(other) && !isLeadLock(other)
-						&& com.midco.rota.opt.ShiftOverlap.overlaps(other, slot)) {
+						&& (com.midco.rota.opt.ShiftOverlap.overlaps(other, slot)
+								|| com.midco.rota.opt.RotaConstraintProvider.restClash(other, slot))) {
 					other.setSeedLocked(false);
 					other.setEmployee(null);
 					leadList.remove(other);
@@ -474,7 +487,8 @@ public class SolverTrigger {
 				candidate.add(seed);
 				addFollower(candidate, seed);
 				boolean clash = candidate.stream().anyMatch(c -> kept.stream()
-						.anyMatch(k -> com.midco.rota.opt.ShiftOverlap.overlaps(k, c)));
+						.anyMatch(k -> com.midco.rota.opt.ShiftOverlap.overlaps(k, c)
+								|| com.midco.rota.opt.RotaConstraintProvider.restClash(k, c)));
 				// Compliance 6:1: a carried-over shift must not give the carer a 7th day in a row on
 				// top of their pins and earlier carry-overs. Under CONTINUITY it would be locked and
 				// unfixable; under SPREAD the solver would spend the solve undoing it.
@@ -601,6 +615,8 @@ public class SolverTrigger {
 		int skippedConflict = 0;
 		int skippedSupervisor = 0;
 		int skippedIneligible = 0;
+		int skippedOnLeave = 0;
+		int skippedRest = 0;
 		int skippedSixOne = 0;
 		int skippedOverlap = 0;
 
@@ -695,18 +711,27 @@ public class SolverTrigger {
 					continue;
 				}
 
-				// Check 1c: a pin must not break a hard eligibility rule (gender, required skill).
-				// Such pins are stale exceptions; skipping leaves the slot for an eligible carer
-				// instead of starting the solve with a hard violation it can never fix.
-				if (com.midco.rota.service.ContinuitySeedService.breaksHardEligibility(employee, assignment)) {
+				// Check 1c: a pin must not break a hard eligibility rule (gender, required skill,
+				// restricted day / shift type / service, never worked at the house). Such pins are
+				// stale exceptions; skipping leaves the slot for an eligible carer instead of
+				// starting the solve with a hard violation it can never fix.
+				String ineligible = com.midco.rota.service.ContinuitySeedService.hardEligibilityReason(employee, assignment);
+				if (ineligible != null) {
 					skippedIneligible++;
-					skipped.add(skippedPin(shift, pin, employee,
-							com.midco.rota.opt.RotaConstraintProvider.isGenderMismatch(employee, shift.getShiftTemplate().getGender())
-									? "Wrong gender for this shift (needs " + shift.getShiftTemplate().getGender() + ")"
-									: "Missing a required skill"));
-					logger.warn("Skipping pin: {} onto {} {} {} breaks gender/skill rules (required gender {}) - review this pin",
+					skipped.add(skippedPin(shift, pin, employee, ineligible));
+					logger.warn("Skipping pin: {} onto {} {} {}: {} - review this pin",
 							employee.getName(), shift.getShiftTemplate().getLocation(), shift.getShiftStart(),
-							shift.getShiftTemplate().getShiftTypeCode(), shift.getShiftTemplate().getRequiredGender());
+							shift.getShiftTemplate().getShiftTypeCode(), ineligible);
+					continue;
+				}
+
+				// Check 1e: booked leave / unavailability is HARD, so a pin on a day off can't stand.
+				if (employee.isUnavailableOn(shift.getShiftStart())) {
+					skippedOnLeave++;
+					skipped.add(skippedPin(shift, pin, employee, "Carer is on leave or unavailable that day"));
+					logger.warn("Skipping pin: {} onto {} {} {}: on leave / unavailable",
+							employee.getName(), shift.getShiftTemplate().getLocation(), shift.getShiftStart(),
+							shift.getShiftTemplate().getShiftTypeCode());
 					continue;
 				}
 
@@ -758,6 +783,18 @@ public class SolverTrigger {
 					continue;
 				}
 
+				// Check 4: no shift straight after a pinned waking night (pins are applied in date
+				// order, so the night stands and the next-day shift is left for the solver).
+				if (empPins != null && empPins.stream()
+						.anyMatch(p -> com.midco.rota.opt.RotaConstraintProvider.wakingNightClash(p, assignment))) {
+					skippedRest++;
+					skipped.add(skippedPin(shift, pin, employee, "Straight after a waking night (only another waking night may follow)"));
+					logger.warn("Skipping pin: {} {} {} {} is straight after a pinned waking night", employee.getName(),
+							shift.getShiftTemplate().getLocation(), shift.getShiftStart(),
+							shift.getShiftTemplate().getShiftTypeCode());
+					continue;
+				}
+
 				// ✅ All checks passed - apply pin
 				assignment.setEmployee(employee);
 				assignment.setPinned(true);
@@ -782,7 +819,9 @@ public class SolverTrigger {
 		logger.info("  ⚠️ Skipped (inactive employee): {}", skippedInactive);
 		logger.info("  ⚠️ Skipped (same-day conflict): {}", skippedConflict);
 		logger.info("  ⚠️ Skipped (supervisor lead on care shift): {}", skippedSupervisor);
-		logger.info("  ⚠️ Skipped (breaks gender/skill rules): {}", skippedIneligible);
+		logger.info("  ⚠️ Skipped (gender/skill/restriction/never worked there): {}", skippedIneligible);
+		logger.info("  ⚠️ Skipped (on leave / unavailable): {}", skippedOnLeave);
+		logger.info("  ⚠️ Skipped (straight after a waking night): {}", skippedRest);
 		logger.info("  ⚠️ Skipped (7th consecutive day, 6:1): {}", skippedSixOne);
 		logger.info("  ⚠️ Skipped (overlaps another pin): {}", skippedOverlap);
 		logger.info("  📋 Unassigned (for solver): {}", shiftAssignments.size() - pinnedCount);

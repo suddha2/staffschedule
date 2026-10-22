@@ -79,6 +79,14 @@ public class RotaConstraintConfiguration {
 	@ConstraintWeight("No invalid same-day shift combinations")
 	private HardSoftLongScore invalidSameDayCombination = HardSoftLongScore.ofHard(1000);
 
+	/** Only a sleep-in may follow a day or long day that date (V035). Weight in constraint_setting; ZERO only registers the rule. */
+	@ConstraintWeight("Day or long day followed by another shift")
+	private HardSoftLongScore dayShiftOnlyFollowedBySleepIn = HardSoftLongScore.ZERO;
+
+	/** After a waking night only another waking night the next date (V036). Weight in constraint_setting; ZERO only registers the rule. */
+	@ConstraintWeight("Shift straight after a waking night")
+	private HardSoftLongScore wakingNightThenNextDayShift = HardSoftLongScore.ZERO;
+
 	@ConstraintWeight("No incompatible back-to-back shifts")
 	private HardSoftLongScore incompatibleBackToBack = HardSoftLongScore.ofHard(1);
 
@@ -235,6 +243,10 @@ public class RotaConstraintConfiguration {
 	/** Regulars first (V033). Weight in constraint_setting; ZERO only registers the rule. */
 	@ConstraintWeight("Carer new to this house")
 	private HardSoftLongScore carerNewToHouse = HardSoftLongScore.ZERO;
+
+	/** No People Planner shift at the house at all (V034). Weight in constraint_setting; ZERO only registers the rule. */
+	@ConstraintWeight("Carer never worked at this house")
+	private HardSoftLongScore carerNeverWorkedAtHouse = HardSoftLongScore.ZERO;
 
 	@ConstraintWeight("Penalize overloading individual employees")
 	private HardSoftLongScore overloadingEmployees = HardSoftLongScore.ofSoft(100);
@@ -393,6 +405,8 @@ public class RotaConstraintConfiguration {
 	public HardSoftLongScore getMaxConsecutiveWorkingDays() { return maxConsecutiveWorkingDays; }
 	public HardSoftLongScore getCarerNewToHouse() { return carerNewToHouse; }
 	public void setCarerNewToHouse(HardSoftLongScore v) { this.carerNewToHouse = v; }
+	public HardSoftLongScore getCarerNeverWorkedAtHouse() { return carerNeverWorkedAtHouse; }
+	public void setCarerNeverWorkedAtHouse(HardSoftLongScore v) { this.carerNeverWorkedAtHouse = v; }
 	public HardSoftLongScore getOverloadingEmployees() { return overloadingEmployees; }
 	public void setOverloadingEmployees(HardSoftLongScore v) { this.overloadingEmployees = v; }
 	public HardSoftLongScore getBalancedHours() { return balancedHours; }

@@ -178,6 +178,15 @@ public class Employee {
 	private java.util.Map<String, Integer> houseFamiliarity = java.util.Map.of();
 
 	/**
+	 * Per solve (never persisted): every house this carer has worked at least one People Planner
+	 * shift at (any share), keyed like {@link #houseFamiliarity}. Read by "Carer never worked at
+	 * this house": a first visit has to be a shadow shift, not a solo one.
+	 */
+	@Transient
+	@JsonIgnore
+	private java.util.Set<String> workedHouses = java.util.Set.of();
+
+	/**
 	 * Per solve (never persisted): this employee is a shift lead matched to a service that
 	 * has lead shifts in the current solve, so they take lead shifts only (salaried
 	 * supervisor). Set by SolverTrigger before solving; read by "Shift lead on care shift".
@@ -505,6 +514,19 @@ public class Employee {
 
 	public void setHouseFamiliarity(java.util.Map<String, Integer> houseFamiliarity) {
 		this.houseFamiliarity = houseFamiliarity == null ? java.util.Map.of() : houseFamiliarity;
+	}
+
+	/** True when People Planner has this carer on at least one shift at the location. */
+	public boolean hasWorkedAt(String location) {
+		return location != null && workedHouses.contains(location.trim().toUpperCase());
+	}
+
+	public java.util.Set<String> getWorkedHouses() {
+		return workedHouses;
+	}
+
+	public void setWorkedHouses(java.util.Set<String> workedHouses) {
+		this.workedHouses = workedHouses == null ? java.util.Set.of() : workedHouses;
 	}
 
 	@Override

@@ -49,27 +49,34 @@ public class HouseHistoryService {
 		List<Map<String, Object>> rows;
 		try {
 			rows = jdbc.queryForList(
-					"SELECT employee_id, upper(trim(location)) AS house, share_pct FROM carer_house_history WHERE shifts >= ?",
-					minShifts);
+					"SELECT employee_id, upper(trim(location)) AS house, shifts, share_pct FROM carer_house_history WHERE shifts > 0");
 		} catch (Exception e) {
 			logger.warn("House history unavailable ({}); regulars-first and history-backed carry-over are off", e.toString());
 			return;
 		}
 		Set<String> tracked = new HashSet<>();
 		Map<Integer, Map<String, Integer>> byEmployee = new HashMap<>();
+		Map<Integer, Set<String>> workedByEmployee = new HashMap<>();
 		for (Map<String, Object> row : rows) {
 			String house = (String) row.get("house");
+			int employeeId = ((Number) row.get("employee_id")).intValue();
+			// Any shift there counts as having worked the house; familiarity needs minShifts.
+			workedByEmployee.computeIfAbsent(employeeId, k -> new HashSet<>()).add(house);
+			if (((Number) row.get("shifts")).intValue() < minShifts) {
+				continue;
+			}
 			int familiarity = familiarity(((Number) row.get("share_pct")).doubleValue(), fullShare);
 			if (familiarity <= 0) {
 				continue;
 			}
 			tracked.add(house);
-			byEmployee.computeIfAbsent(((Number) row.get("employee_id")).intValue(), k -> new HashMap<>()).put(house, familiarity);
+			byEmployee.computeIfAbsent(employeeId, k -> new HashMap<>()).put(house, familiarity);
 		}
 		int withHistory = 0;
 		for (Employee e : employees) {
 			Map<String, Integer> f = byEmployee.getOrDefault(e.getId(), Map.of());
 			e.setHouseFamiliarity(f);
+			e.setWorkedHouses(workedByEmployee.getOrDefault(e.getId(), Set.of()));
 			if (!f.isEmpty()) {
 				withHistory++;
 			}
@@ -100,6 +107,24 @@ public class HouseHistoryService {
 			return 0;
 		}
 		return 100 - carer.familiarityAt(template.getLocation());
+	}
+
+	/**
+	 * The carer has never worked a People Planner shift at this tracked house, so they can't
+	 * work it solo (a first visit is a shadow shift). Untracked houses are never judged. Lead
+	 * shifts are exempt: they go to the service's own leads by preferred service, and People
+	 * Planner doesn't record supervisory work by house.
+	 */
+	public static boolean neverWorkedAt(Employee carer, ShiftTemplate template) {
+		if (carer == null || template == null || !template.isHistoryTracked() || isLeadShift(template)) {
+			return false;
+		}
+		return !carer.hasWorkedAt(template.getLocation());
+	}
+
+	private static boolean isLeadShift(ShiftTemplate template) {
+		List<String> required = template.getRequiredSkills();
+		return required != null && required.stream().anyMatch(s -> s != null && s.trim().equalsIgnoreCase("SHIFT_LEAD"));
 	}
 
 	/** People Planner backs carrying this carer forward here (or the house isn't tracked). */

@@ -4,6 +4,7 @@ import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.time.temporal.WeekFields;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
@@ -21,6 +22,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 import com.midco.rota.model.Employee;
 import com.midco.rota.model.ShiftAssignment;
+import com.midco.rota.model.ShiftTemplate;
 import com.midco.rota.model.FollowerShiftAssignment;
 import com.midco.rota.model.WorkShiftAssignment;
 import com.midco.rota.service.PeriodService;
@@ -115,6 +117,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 				// Physical impossibilities
 				preventDuplicateAssignments(factory), tooManyEmployeesPerShift(factory),
 				noInvalidSameDayShifts(factory), // MOVED: Before noBackToBack
+				dayShiftOnlyFollowedBySleepIn(factory), wakingNightThenNextDayShift(factory),
 				noBackToBack(factory), noOverlappingShifts(factory), minRestBetweenShifts(factory),
 
 				// Eligibility
@@ -147,7 +150,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 				preferedWorkingDaysConstraint(factory), preferedShiftTypeConstraint(factory),
 				prioritizedAllocation(factory), lastResortAssignmentPenalty(factory),
 				prioritizeHighPriorityLocations(factory),
-				serviceMixTarget(factory), carerNewToHouse(factory),
+				serviceMixTarget(factory), carerNewToHouse(factory), carerNeverWorkedAtHouse(factory),
 
 				// Continuity of place
 				minDaysPerLocationPerWeek(factory), maxDaysPerLocationPerWeek(factory),
@@ -373,33 +376,64 @@ public class RotaConstraintProvider implements ConstraintProvider {
 	}
 
 	private Constraint restrictedDayOfWeekConstraint(ConstraintFactory factory) {
-		return factory.forEachIncludingNullVars(ShiftAssignment.class).filter(sa -> {
-			Employee emp = sa.getEmployee();
-			return emp != null && emp.getRestrictedDays() != null
-					&& sa.getShift().getShiftTemplate().getDay() != null
-					&& emp.getRestrictedDays().contains(sa.getShift().getShiftTemplate().getDay());
-		}).penalizeConfigurable().asConstraint("Restricted day of week");
+		return factory.forEachIncludingNullVars(ShiftAssignment.class)
+				.filter(sa -> isRestrictedDay(sa.getEmployee(), sa.getShift().getShiftTemplate()))
+				.penalizeConfigurable().asConstraint("Restricted day of week");
 	}
 
 	private Constraint restrictedShiftTypeConstraint(ConstraintFactory factory) {
-		return factory.forEachIncludingNullVars(ShiftAssignment.class).filter(sa -> {
-			Employee emp = sa.getEmployee();
-			// getShiftType() is null for a data-driven type with no enum constant; an immutable
-			// List.of(...).contains(null) throws NPE (killed the live solve), so guard it — an
-			// enum-typed restricted list can never contain null anyway.
-			ShiftType type = sa.getShift().getShiftTemplate().getShiftType();
-			return emp != null && type != null && emp.getRestrictedShifts() != null
-					&& emp.getRestrictedShifts().contains(type);
-		}).penalizeConfigurable().asConstraint("Restricted Shift Type");
+		return factory.forEachIncludingNullVars(ShiftAssignment.class)
+				.filter(sa -> isRestrictedShiftType(sa.getEmployee(), sa.getShift().getShiftTemplate()))
+				.penalizeConfigurable().asConstraint("Restricted Shift Type");
 	}
 
 	private Constraint restrictedServiceConstraint(ConstraintFactory factory) {
-		return factory.forEachIncludingNullVars(ShiftAssignment.class).filter(sa -> {
-			Employee emp = sa.getEmployee();
-			return emp != null && emp.getRestrictedService() != null
-					&& sa.getShift().getShiftTemplate().getLocation() != null
-					&& emp.getRestrictedService().contains(sa.getShift().getShiftTemplate().getLocation());
-		}).penalizeConfigurable().asConstraint("Restricted Service");
+		return factory.forEachIncludingNullVars(ShiftAssignment.class)
+				.filter(sa -> isRestrictedService(sa.getEmployee(), sa.getShift().getShiftTemplate()))
+				.penalizeConfigurable().asConstraint("Restricted Service");
+	}
+
+	public static boolean isRestrictedDay(Employee emp, ShiftTemplate t) {
+		return emp != null && emp.getRestrictedDays() != null && t.getDay() != null
+				&& emp.getRestrictedDays().contains(t.getDay());
+	}
+
+	public static boolean isRestrictedShiftType(Employee emp, ShiftTemplate t) {
+		// getShiftType() is null for a data-driven type with no enum constant; an immutable
+		// List.of(...).contains(null) throws NPE (killed the live solve), so guard it — an
+		// enum-typed restricted list can never contain null anyway.
+		ShiftType type = t.getShiftType();
+		return emp != null && type != null && emp.getRestrictedShifts() != null
+				&& emp.getRestrictedShifts().contains(type);
+	}
+
+	public static boolean isRestrictedService(Employee emp, ShiftTemplate t) {
+		return emp != null && emp.getRestrictedService() != null && t.getLocation() != null
+				&& emp.getRestrictedService().contains(t.getLocation());
+	}
+
+	/**
+	 * Which of the carer's restrictions this shift breaks ("day", "shift type", "service"), or
+	 * null. A long day's paired sleep-in is checked too, since it mirrors the long day's carer.
+	 */
+	public static String restrictionBroken(Employee emp, ShiftAssignment sa) {
+		List<ShiftTemplate> templates = new ArrayList<>();
+		templates.add(sa.getShift().getShiftTemplate());
+		if (sa instanceof WorkShiftAssignment work && work.getPairedFollower() != null) {
+			templates.add(work.getPairedFollower().getShift().getShiftTemplate());
+		}
+		for (ShiftTemplate t : templates) {
+			if (isRestrictedDay(emp, t)) {
+				return "day";
+			}
+			if (isRestrictedShiftType(emp, t)) {
+				return "shift type";
+			}
+			if (isRestrictedService(emp, t)) {
+				return "service";
+			}
+		}
+		return null;
 	}
 
 	private Constraint maxWeeklyHoursConstraint(ConstraintFactory factory) {
@@ -574,6 +608,85 @@ public class RotaConstraintProvider implements ConstraintProvider {
 				.filter((a, b) -> shiftsOverlap(a, b))
 				.penalizeConfigurable()
 				.asConstraint("Overlapping shifts");
+	}
+
+	/**
+	 * A day or long day is the carer's only worked shift that date: the one thing that may
+	 * follow it is its sleep-in. Stops non-overlapping stacks such as Day 08:00-18:00 then a
+	 * waking night 20:00-08:00, which the time-overlap rules allow. Sleep-ins (not counted as
+	 * work) are never matched. Weight in constraint_setting (V035).
+	 */
+	private Constraint dayShiftOnlyFollowedBySleepIn(ConstraintFactory factory) {
+		return factory.forEach(ShiftAssignment.class)
+				.filter(sa -> sa.getEmployee() != null && sa.getShift() != null && countsAsWork(sa))
+				.join(ShiftAssignment.class,
+						Joiners.equal(ShiftAssignment::getEmployee),
+						Joiners.equal(sa -> sa.getShift().getShiftStart()),
+						Joiners.lessThan(ShiftAssignment::getPlanningId))
+				.filter(RotaConstraintProvider::dayShiftClash)
+				.penalizeConfigurable()
+				.asConstraint("Day or long day followed by another shift");
+	}
+
+	private static final Set<String> DAY_SHIFT_CODES = Set.of("DAY", "LONG_DAY");
+
+	/**
+	 * Two shifts of one carer starting the same date, both worked, at least one a day or long
+	 * day: not allowed (only a sleep-in may follow a day or long day). Also used before the
+	 * solve so pins, carry-overs and seed locks can't hand the solver this clash fixed.
+	 */
+	public static boolean dayShiftClash(ShiftAssignment a, ShiftAssignment b) {
+		if (a == b || a.getShift() == null || b.getShift() == null || a.getShift().getShiftStart() == null
+				|| !a.getShift().getShiftStart().equals(b.getShift().getShiftStart())
+				|| !countsAsWork(a) || !countsAsWork(b)) {
+			return false;
+		}
+		return DAY_SHIFT_CODES.contains(a.getShift().getShiftTemplate().getShiftTypeCode())
+				|| DAY_SHIFT_CODES.contains(b.getShift().getShiftTemplate().getShiftTypeCode());
+	}
+
+	/**
+	 * After a waking night the carer's only worked shift the next date may be another waking
+	 * night: never a day, long day, floating or lead shift straight off a night. A sleep-in
+	 * (not counted as work) is fine. Real-life exceptions are added by hand, not planned.
+	 * Weight in constraint_setting (V036).
+	 */
+	private Constraint wakingNightThenNextDayShift(ConstraintFactory factory) {
+		return factory.forEach(ShiftAssignment.class)
+				.filter(sa -> sa.getEmployee() != null && sa.getShift() != null && countsAsWork(sa))
+				.join(ShiftAssignment.class,
+						Joiners.equal(ShiftAssignment::getEmployee),
+						Joiners.lessThan(ShiftAssignment::getPlanningId))
+				.filter(RotaConstraintProvider::wakingNightClash)
+				.penalizeConfigurable()
+				.asConstraint("Shift straight after a waking night");
+	}
+
+	private static final String WAKING_NIGHT = "WAKING_NIGHT";
+
+	/** One of the pair is a waking night and the other a worked, non-waking-night shift the next date. */
+	public static boolean wakingNightClash(ShiftAssignment a, ShiftAssignment b) {
+		return wakingNightThen(a, b) || wakingNightThen(b, a);
+	}
+
+	private static boolean wakingNightThen(ShiftAssignment night, ShiftAssignment next) {
+		if (night == next || night.getShift() == null || next.getShift() == null
+				|| night.getShift().getShiftStart() == null || next.getShift().getShiftStart() == null
+				|| !WAKING_NIGHT.equals(night.getShift().getShiftTemplate().getShiftTypeCode())
+				|| WAKING_NIGHT.equals(next.getShift().getShiftTemplate().getShiftTypeCode())
+				|| !countsAsWork(night) || !countsAsWork(next)) {
+			return false;
+		}
+		return night.getShift().getShiftStart().plusDays(1).equals(next.getShift().getShiftStart());
+	}
+
+	/**
+	 * Pairs that must never be fixed together before the solve (pins, carry-overs, seed and
+	 * lead locks): a day shift with another worked shift that date, or a shift straight after
+	 * a waking night. Time overlaps are checked separately.
+	 */
+	public static boolean restClash(ShiftAssignment a, ShiftAssignment b) {
+		return dayShiftClash(a, b) || wakingNightClash(a, b);
 	}
 
 	// Time-overlap logic lives in the shared ShiftOverlap util, so the solver and the
@@ -881,6 +994,21 @@ public class RotaConstraintProvider implements ConstraintProvider {
 						&& com.midco.rota.service.HouseHistoryService.newcomerPenalty(sa.getEmployee(), sa.getShift().getShiftTemplate()) > 0)
 				.penalizeConfigurable(sa -> com.midco.rota.service.HouseHistoryService.newcomerPenalty(sa.getEmployee(), sa.getShift().getShiftTemplate()))
 				.asConstraint("Carer new to this house");
+	}
+
+	/**
+	 * A carer with no People Planner shift at all at a tracked house is never placed there: the
+	 * slot stays open for the team to cover, with a shadow shift first. Weight and hard/soft in
+	 * constraint_setting (V034). Lead shifts and untracked houses are exempt (see
+	 * HouseHistoryService.neverWorkedAt); a paired follower mirrors its leader.
+	 */
+	private Constraint carerNeverWorkedAtHouse(ConstraintFactory factory) {
+		return factory.forEach(ShiftAssignment.class)
+				.filter(sa -> sa.getEmployee() != null && sa.getShift() != null
+						&& !(sa instanceof com.midco.rota.model.FollowerShiftAssignment)
+						&& com.midco.rota.service.HouseHistoryService.neverWorkedAt(sa.getEmployee(), sa.getShift().getShiftTemplate()))
+				.penalizeConfigurable()
+				.asConstraint("Carer never worked at this house");
 	}
 
 	/** 6:1 applies to permanent carers only (agreed 2026-10-13); zero-hours staff are not covered. */

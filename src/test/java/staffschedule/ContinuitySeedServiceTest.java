@@ -151,6 +151,7 @@ class ContinuitySeedServiceTest {
 		Map<String, Integer> f = new java.util.HashMap<>();
 		for (String x : houses) f.put(x.trim().toUpperCase(), 100);
 		e.setHouseFamiliarity(f);
+		e.setWorkedHouses(f.keySet()); // a regular has worked there
 		return e;
 	}
 

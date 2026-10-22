@@ -90,6 +90,9 @@ public class RotaController {
 	@org.springframework.beans.factory.annotation.Autowired
 	private com.midco.rota.repository.EmployeeAvailabilityRepository employeeAvailabilityRepository;
 
+	@Autowired
+	private com.midco.rota.service.HouseHistoryService houseHistoryService;
+
 	private final PeriodService periodService;
 
 	@Autowired
@@ -786,6 +789,13 @@ public class RotaController {
 				e.setUnavailableDates(unavailable.get(e.getId()));
 			}
 		}
+
+		// People Planner house history, so "Carer new to this house" / "never worked at this
+		// house" score here as they did in the solve (without it they always showed 0).
+		List<ShiftTemplate> templates = assignments.stream().map(ShiftAssignment::getShift)
+				.filter(java.util.Objects::nonNull).map(Shift::getShiftTemplate).filter(java.util.Objects::nonNull)
+				.distinct().toList();
+		houseHistoryService.apply(emps, templates);
 
 		ShiftAssignmentFactory.linkFollowerPairs(assignments);
 	}
