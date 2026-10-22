@@ -69,7 +69,7 @@ public class PayCycleDataService {
 	}
 
 	public List<PayCycleRow> fetchRows(String location) {
-		String sql = "SELECT id, name, start_date, end_date FROM pay_cycle_periods where active is true";
+		String sql = "SELECT id, name, start_date, end_date FROM pay_cycle_periods where active is true ORDER BY start_date";
 
 		List<PayCycleRow> result = jdbcTemplate
 				.query(sql,

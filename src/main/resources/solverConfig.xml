@@ -19,9 +19,13 @@
         <indictmentEnabled>false</indictmentEnabled>
     </scoreDirectorFactory>
 
+    <!-- 5 min / 2 min unimproved (2026-10-23). With the hard rest and history rules
+         (V034-V036) 120 s stopped short: Barnet Period 9 (req 258) had 43 open shifts at
+         2 min, 37 at 3 min and reached its best (33) at 4 min 7 s, unchanged to 9 min. The
+         longest gap between improvements was 36 s. -->
     <termination>
-        <secondsSpentLimit>120</secondsSpentLimit>
-        <unimprovedSecondsSpentLimit>60</unimprovedSecondsSpentLimit>
+        <secondsSpentLimit>300</secondsSpentLimit>
+        <unimprovedSecondsSpentLimit>120</unimprovedSecondsSpentLimit>
     </termination>
 
     <bestScoreFeasible>0</bestScoreFeasible>
