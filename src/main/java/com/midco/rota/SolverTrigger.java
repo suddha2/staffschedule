@@ -54,15 +54,13 @@ public class SolverTrigger {
 	private final SolverConfigService solverConfigService;
 	private final EmployeeAvailabilityRepository employeeAvailabilityRepository;
 	private final ContinuitySeedService continuitySeedService;
-	private final com.midco.rota.service.HouseHistoryService houseHistoryService;
 
 	public SolverTrigger(SolverService solverService, DeferredSolveRequestRepository deferredSolveRequestRepository,
 			EmployeeRepository employeeRepository, ShiftTemplateRepository shiftTemplateRepository,
 			PeriodService periodService, PinnedTemplateAssignmentRepository pinnedTemplateAssignmentRepository,
 			SolverConfigService solverConfigService,
 			EmployeeAvailabilityRepository employeeAvailabilityRepository,
-			ContinuitySeedService continuitySeedService,
-			com.midco.rota.service.HouseHistoryService houseHistoryService) {
+			ContinuitySeedService continuitySeedService) {
 		this.solverService = solverService;
 		this.deferredSolveRequestRepository = deferredSolveRequestRepository;
 		this.employeeRepository = employeeRepository;
@@ -72,7 +70,6 @@ public class SolverTrigger {
 		this.solverConfigService = solverConfigService;
 		this.employeeAvailabilityRepository = employeeAvailabilityRepository;
 		this.continuitySeedService = continuitySeedService;
-		this.houseHistoryService = houseHistoryService;
 	}
 
 	// Serialises solve scheduling. Without it, two near-simultaneous enqueues
@@ -174,19 +171,14 @@ public class SolverTrigger {
 		// Decide supervisor-only leads first, so template pinning can refuse to pin them
 		// onto care shifts (a stray standing pin must not break the supervisor rule).
 		markSupervisors(shiftAssignments, employees);
-		// Leave and People Planner house history before pinning, so a pin onto booked leave, or
-		// onto a house the carer has never worked, is skipped rather than locked in.
+		// Leave before pinning, so a pin onto booked leave is skipped rather than locked in.
+		// People Planner house history is NOT loaded: it is for tuning weights and checking
+		// solutions, never an input to the solve. Where a carer works comes from their
+		// services (preferred_service), which new staff get from day one.
 		applyAvailability(employees, window);
-		// People Planner house history: who is a regular where, and which houses can be
-		// judged. Before seeding, which only carries a carer forward at a house they're a
-		// regular at (the prior rota is itself a solver output, so it isn't evidence).
-		houseHistoryService.apply(employees, shiftTemplates);
 		// Link LONG_DAY → SLEEP_IN so the shadow-variable listener mirrors employees. Pairing is
 		// structural (house, date, type), so it's done first: pin checks look at the sleep-in too.
 		ShiftAssignmentFactory.linkFollowerPairs(shiftAssignments);
-		List<com.midco.rota.model.SkippedPin> skippedPins = applyTemplateBasedPinning(shiftAssignments, employees);
-		Rota problem = new Rota(employees, shiftAssignments);
-		problem.setSkippedPins(skippedPins); // saved with the solved rota for planners to review
 
 		com.midco.rota.opt.SolveProfile profile =
 				com.midco.rota.opt.SolveProfile.fromString(deferredSolveRequest.getProfile());
@@ -195,7 +187,16 @@ public class SolverTrigger {
 		// per solve, so a rule can be retuned or demoted without a restart. The
 		// numeric thresholds in SolverTuning are read when the constraint streams
 		// are first built, so a change there needs a restart to take effect.
-		problem.setConstraintConfiguration(solverConfigService.buildConstraintConfiguration(profile));
+		// Built before pinning: pins and carry-overs are checked against the house cap.
+		com.midco.rota.opt.RotaConstraintConfiguration configuration =
+				solverConfigService.buildConstraintConfiguration(profile);
+		int locationCap = locationCap(configuration);
+
+		List<com.midco.rota.model.SkippedPin> skippedPins = applyTemplateBasedPinning(shiftAssignments, employees,
+				locationCap);
+		Rota problem = new Rota(employees, shiftAssignments);
+		problem.setSkippedPins(skippedPins); // saved with the solved rota for planners to review
+		problem.setConstraintConfiguration(configuration);
 
 		// Continuity: seed each slot from who held it last published period, so the
 		// solver carries the roster forward. Runs after the availability map so a
@@ -256,7 +257,7 @@ public class SolverTrigger {
 		// Don't hand the solver a warm start that already breaks the supervisor rule:
 		// continuity seeding puts leads back on last period's care slots.
 		releaseSupervisorsFromCare(shiftAssignments);
-		releaseSeedsClashingWithFixed(shiftAssignments);
+		releaseSeedsClashingWithFixed(shiftAssignments, locationCap);
 
 		// Seed each follower from a leader that already carries an employee before the solve
 		// (a template pin, or a CONTINUITY seed-lock). FollowerEmployeeVariableListener only
@@ -458,7 +459,7 @@ public class SolverTrigger {
 	 * the fixed shifts (template pins, lead locks, and their followers),
 	 * then keep seeds in start order unless they — or their follower — overlap something kept.
 	 */
-	private void releaseSeedsClashingWithFixed(List<ShiftAssignment> assignments) {
+	private void releaseSeedsClashingWithFixed(List<ShiftAssignment> assignments, int locationCap) {
 		Map<Integer, List<ShiftAssignment>> byEmp = new HashMap<>();
 		for (ShiftAssignment sa : assignments) {
 			if (sa instanceof com.midco.rota.model.WorkShiftAssignment && sa.getEmployee() != null) {
@@ -467,6 +468,7 @@ public class SolverTrigger {
 		}
 		int released = 0;
 		int releasedSixOne = 0;
+		int releasedLocations = 0;
 		for (List<ShiftAssignment> list : byEmp.values()) {
 			List<ShiftAssignment> kept = new ArrayList<>();
 			List<ShiftAssignment> seeds = new ArrayList<>();
@@ -504,14 +506,18 @@ public class SolverTrigger {
 					days.add(seed.getShift().getShiftStart());
 					sixOne = com.midco.rota.opt.RotaConstraintProvider.sevenDayRuns(days) > 0;
 				}
-				if (clash || sixOne) {
+				// House cap: a carry-over must not take the carer to one house more than allowed.
+				boolean tooManyHouses = !clash && !sixOne && wouldExceedLocationCap(kept, seed, locationCap);
+				if (clash || sixOne || tooManyHouses) {
 					seed.setSeedLocked(false);
 					seed.setEmployee(null);
 					candidate.stream().skip(1).forEach(f -> f.setEmployee(null)); // its follower, if any
 					if (clash) {
 						released++;
-					} else {
+					} else if (sixOne) {
 						releasedSixOne++;
+					} else {
+						releasedLocations++;
 					}
 				} else {
 					kept.addAll(candidate);
@@ -524,6 +530,53 @@ public class SolverTrigger {
 		if (releasedSixOne > 0) {
 			logger.info("Released {} seeded shift(s) that would have been a 7th consecutive day (6:1)", releasedSixOne);
 		}
+		if (releasedLocations > 0) {
+			logger.info("Released {} seeded shift(s) that would have taken the carer past {} houses this period",
+					releasedLocations, locationCap);
+		}
+	}
+
+	/**
+	 * Houses allowed per carer this solve when "Max locations per period" is on (solver_tuning
+	 * maxLocationsPerPeriod), else 0 = no cap.
+	 */
+	private static int locationCap(com.midco.rota.opt.RotaConstraintConfiguration configuration) {
+		org.optaplanner.core.api.score.buildin.hardsoftlong.HardSoftLongScore weight = configuration.getMaxLocationsPerPeriod();
+		if (weight == null || weight.equals(org.optaplanner.core.api.score.buildin.hardsoftlong.HardSoftLongScore.ZERO)) {
+			return 0;
+		}
+		return com.midco.rota.opt.SolverTuning.current().getMaxLocationsPerPeriod();
+	}
+
+	/**
+	 * The {@code cap} houses to keep pins at for a carer pinned at more: highest service weight
+	 * (preferred_service) first, then most pins, then name (so the choice is stable run to run).
+	 * Keys are {@link com.midco.rota.opt.RotaConstraintProvider#locationKey} (upper case).
+	 */
+	public static Set<String> highestWeightHouses(Employee emp, Map<String, Integer> pinsByHouse, int cap) {
+		Map<String, Integer> weightByKey = new HashMap<>();
+		emp.getPreferredServiceWeightsMap().forEach((loc, w) -> weightByKey.merge(loc.trim().toUpperCase(), w, Math::max));
+		return pinsByHouse.keySet().stream()
+				.sorted(java.util.Comparator.comparingInt((String h) -> weightByKey.getOrDefault(h, 0)).reversed()
+						.thenComparing(h -> pinsByHouse.get(h), java.util.Comparator.reverseOrder())
+						.thenComparing(java.util.Comparator.naturalOrder()))
+				.limit(cap)
+				.collect(java.util.stream.Collectors.toSet());
+	}
+
+	/** True when {@code next} is at a house the carer doesn't already have in {@code held} and they're at the cap. */
+	public static boolean wouldExceedLocationCap(List<ShiftAssignment> held, ShiftAssignment next, int locationCap) {
+		if (locationCap <= 0 || !com.midco.rota.opt.RotaConstraintProvider.countsTowardLocationRules(next)) {
+			return false;
+		}
+		Set<String> houses = new HashSet<>();
+		for (ShiftAssignment sa : held) {
+			if (sa.getShift() != null && sa.getShift().getShiftTemplate() != null
+					&& com.midco.rota.opt.RotaConstraintProvider.countsTowardLocationRules(sa)) {
+				houses.add(com.midco.rota.opt.RotaConstraintProvider.locationKey(sa));
+			}
+		}
+		return !houses.contains(com.midco.rota.opt.RotaConstraintProvider.locationKey(next)) && houses.size() >= locationCap;
 	}
 
 	private static void addFollower(List<ShiftAssignment> into, ShiftAssignment sa) {
@@ -608,8 +661,9 @@ public class SolverTrigger {
 	 * of (days since periodStart) by 7.
 	 */
 	private List<com.midco.rota.model.SkippedPin> applyTemplateBasedPinning(List<ShiftAssignment> shiftAssignments,
-			List<Employee> employees) {
+			List<Employee> employees, int locationCap) {
 		List<com.midco.rota.model.SkippedPin> skipped = new ArrayList<>();
+		int skippedLocations = 0;
 		int pinnedCount = 0;
 		int skippedInactive = 0;
 		int skippedConflict = 0;
@@ -660,6 +714,35 @@ public class SolverTrigger {
 			Short week = pin.getWeekOfPeriod() != null ? pin.getWeekOfPeriod() : (short) 1;
 			String key = pin.getShiftTemplateId() + ":" + week;
 			pinsByTemplateAndWeek.computeIfAbsent(key, k -> new ArrayList<>()).add(pin);
+		}
+
+		// House cap: a carer pinned at more houses than allowed keeps the pins at their highest-
+		// weight services, not whichever houses happen to come first by date.
+		Map<Integer, Set<String>> housesToKeep = new HashMap<>();
+		if (locationCap > 0) {
+			Map<Integer, Map<String, Integer>> pinsByHouse = new HashMap<>();
+			for (ShiftAssignment sa : shiftAssignments) {
+				Shift s = sa.getShift();
+				if (s == null || s.getShiftTemplate() == null || s.getShiftStart() == null
+						|| !com.midco.rota.opt.RotaConstraintProvider.countsTowardLocationRules(sa)) {
+					continue;
+				}
+				List<PinnedTemplateAssignment> pins = pinsByTemplateAndWeek
+						.get(s.getShiftTemplate().getId().longValue() + ":" + weekOfPeriod(periodStart, s.getShiftStart()));
+				if (pins == null) {
+					continue;
+				}
+				for (PinnedTemplateAssignment pin : pins) {
+					pinsByHouse.computeIfAbsent(pin.getEmployeeId().intValue(), k -> new HashMap<>())
+							.merge(com.midco.rota.opt.RotaConstraintProvider.locationKey(sa), 1, Integer::sum);
+				}
+			}
+			pinsByHouse.forEach((empId, houses) -> {
+				Employee emp = employeeMap.get(empId);
+				if (emp != null && houses.size() > locationCap) {
+					housesToKeep.put(empId, highestWeightHouses(emp, houses, locationCap));
+				}
+			});
 		}
 
 		// Track assignments per employee per day (for conflict detection)
@@ -795,6 +878,23 @@ public class SolverTrigger {
 					continue;
 				}
 
+				// Check 5: house cap - a carer pinned at more houses than allowed keeps only the pins
+				// at their highest-weight services; the fallback catches anything that still slips past.
+				Set<String> keep = housesToKeep.get(empId);
+				boolean lessFamiliarHouse = keep != null
+						&& com.midco.rota.opt.RotaConstraintProvider.countsTowardLocationRules(assignment)
+						&& !keep.contains(com.midco.rota.opt.RotaConstraintProvider.locationKey(assignment));
+				if (lessFamiliarHouse
+						|| wouldExceedLocationCap(empPins == null ? List.of() : empPins, assignment, locationCap)) {
+					skippedLocations++;
+					skipped.add(skippedPin(shift, pin, employee,
+							"Would be more than " + locationCap + " houses this period (pins kept at their highest-weight services)"));
+					logger.warn("Skipping pin: {} {} {} {} would take them past {} houses this period", employee.getName(),
+							shift.getShiftTemplate().getLocation(), shift.getShiftStart(),
+							shift.getShiftTemplate().getShiftTypeCode(), locationCap);
+					continue;
+				}
+
 				// ✅ All checks passed - apply pin
 				assignment.setEmployee(employee);
 				assignment.setPinned(true);
@@ -824,6 +924,7 @@ public class SolverTrigger {
 		logger.info("  ⚠️ Skipped (straight after a waking night): {}", skippedRest);
 		logger.info("  ⚠️ Skipped (7th consecutive day, 6:1): {}", skippedSixOne);
 		logger.info("  ⚠️ Skipped (overlaps another pin): {}", skippedOverlap);
+		logger.info("  ⚠️ Skipped (past the house cap): {}", skippedLocations);
 		logger.info("  📋 Unassigned (for solver): {}", shiftAssignments.size() - pinnedCount);
 		return skipped;
 	}

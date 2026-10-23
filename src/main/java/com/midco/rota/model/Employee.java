@@ -272,7 +272,16 @@ public class Employee {
 	 * Get weightage for a specific location (0-100)
 	 */
 	public int getServiceWeightage(String serviceLocation) {
-		return getPreferredServiceWeightsMap().getOrDefault(serviceLocation, 0);
+		// Keys are trimmed when parsed, so trim the lookup too ("Flat B - LC " = "Flat B - LC").
+		return serviceLocation == null ? 0 : getPreferredServiceWeightsMap().getOrDefault(serviceLocation.trim(), 0);
+	}
+
+	/**
+	 * May this carer work at this house? Yes when it is one of their services (weight > 0), or
+	 * when they have no services listed at all (then anywhere in their region).
+	 */
+	public boolean worksAtService(String location) {
+		return !hasServicePreferences() || getServiceWeightage(location) > 0;
 	}
 
 	/**
@@ -351,8 +360,7 @@ public class Employee {
 			return false;
 		}
 
-		Integer weightage = getPreferredServiceWeightsMap().get(location);
-		return weightage != null && weightage >= 50;
+		return getServiceWeightage(location) >= 50;
 	}
 
 	/**

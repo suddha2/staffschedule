@@ -248,6 +248,14 @@ public class RotaConstraintConfiguration {
 	@ConstraintWeight("Carer never worked at this house")
 	private HardSoftLongScore carerNeverWorkedAtHouse = HardSoftLongScore.ZERO;
 
+	/** Only at the carer's own services (V038). Weight in constraint_setting; ZERO only registers the rule. */
+	@ConstraintWeight("Not one of the carer's services")
+	private HardSoftLongScore outsideCarerServices = HardSoftLongScore.ZERO;
+
+	/** Prefer the carer who lists the house highest (V038). Weight in constraint_setting; ZERO only registers the rule. */
+	@ConstraintWeight("Lower-weight service")
+	private HardSoftLongScore lowerWeightService = HardSoftLongScore.ZERO;
+
 	@ConstraintWeight("Penalize overloading individual employees")
 	private HardSoftLongScore overloadingEmployees = HardSoftLongScore.ofSoft(100);
 

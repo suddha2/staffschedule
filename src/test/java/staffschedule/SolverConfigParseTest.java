@@ -19,8 +19,8 @@ class SolverConfigParseTest {
 		SolverConfig cfg = SolverConfig.createFromXmlResource("solverConfig.xml");
 		assertNull(cfg.getPhaseConfigList(), "no custom phases: OptaPlanner defaults");
 		assertEquals(EnvironmentMode.REPRODUCIBLE, cfg.getEnvironmentMode());
-		assertEquals(120L, cfg.getTerminationConfig().getSecondsSpentLimit());
-		assertEquals(60L, cfg.getTerminationConfig().getUnimprovedSecondsSpentLimit());
+		assertEquals(300L, cfg.getTerminationConfig().getSecondsSpentLimit());
+		assertEquals(120L, cfg.getTerminationConfig().getUnimprovedSecondsSpentLimit());
 	}
 
 	@Test

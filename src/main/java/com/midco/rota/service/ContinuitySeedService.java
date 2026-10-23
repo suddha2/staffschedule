@@ -92,9 +92,8 @@ public class ContinuitySeedService {
 	 * DB) so it is unit-testable. The seed key for a new assignment on date D from
 	 * template T is (T, D-28). Pinned assignments are skipped; a seed carer that
 	 * is not in the pool, is unavailable that day, or would break a hard eligibility
-	 * rule (gender, required skill), or for whom People Planner doesn't back this house
-	 * (carer_house_history, when the house is tracked), is skipped (leaving the slot for
-	 * construction). Handles 2:1 by consuming the prior slot's carer list.
+	 * rule (gender, required skill, restriction, not one of their services) is skipped
+	 * (leaving the slot for construction). Handles 2:1 by consuming the prior slot's carer list.
 	 */
 	public int applySeed(List<ShiftAssignment> assignments, Map<String, List<Integer>> seedByKey,
 			Map<Integer, Employee> pool) {
@@ -139,12 +138,8 @@ public class ContinuitySeedService {
 						continue; // on leave that day — don't seed, let construction fill
 					}
 					if (breaksHardEligibility(carer, sa)) {
-						continue; // e.g. wrong gender: don't carry a past rule break forward (and lock it)
-					}
-					if (!HouseHistoryService.backsCarryOver(carer, sa.getShift().getShiftTemplate())) {
-						// Not one of this carer's own houses per People Planner. The prior rota is itself
-						// a solver output, so carrying this forward would copy its own guess; let the
-						// solver choose.
+						// e.g. wrong gender, or not one of the carer's services: don't carry a past
+						// rule break forward (and lock it)
 						continue;
 					}
 					sa.setSeededEmployeeId(carer.getId());
@@ -159,8 +154,8 @@ public class ContinuitySeedService {
 
 	/**
 	 * Would this carer break a HARD eligibility rule on this shift? Same checks the solver
-	 * scores (gender, required skills, restricted day / shift type / service, never worked at
-	 * the house). A carry-over must never lock in a rule break: once seed-locked under
+	 * scores (gender, required skills, restricted day / shift type / service, not one of the
+	 * carer's services). A carry-over must never lock in a rule break: once seed-locked under
 	 * CONTINUITY the solver can't move it, so it stays a hard violation period after period.
 	 * Template pin application uses the same check.
 	 */
@@ -181,8 +176,8 @@ public class ContinuitySeedService {
 		if (restriction != null) {
 			return "Carer is restricted from this " + restriction;
 		}
-		if (HouseHistoryService.neverWorkedAt(carer, t)) {
-			return "Carer has never worked at this house (needs a shadow shift first)";
+		if (com.midco.rota.opt.RotaConstraintProvider.isOutsideServices(carer, t)) {
+			return "Not one of the carer's services";
 		}
 		return null;
 	}

@@ -71,11 +71,17 @@ class NeverWorkedAndRestrictionRulesTest {
 	}
 
 	@Test
-	void pinsAndCarryOversGiveTheReason() {
+	void pinsAndCarryOversFollowTheCarersServicesNotPeoplePlannerHistory() {
 		WorkShiftAssignment audley = slot(template("FLAT 2 AUDLEY", ShiftType.LONG_DAY, true));
-		assertEquals("Carer has never worked at this house (needs a shadow shift first)",
-				ContinuitySeedService.hardEligibilityReason(carer("4 AUDLEY"), audley));
-		assertNull(ContinuitySeedService.hardEligibilityReason(carer("FLAT 2 AUDLEY"), audley));
+		Employee kofi = carer("4 AUDLEY"); // People Planner history elsewhere doesn't matter any more
+		kofi.setPreferredService(List.of("4 AUDLEY:60", "Alexandra Flat A - KC:40"));
+		assertEquals("Not one of the carer's services", ContinuitySeedService.hardEligibilityReason(kofi, audley));
+
+		Employee newStarter = new Employee(); // no People Planner history at all
+		newStarter.setPreferredService(List.of("FLAT 2 AUDLEY:100"));
+		assertNull(ContinuitySeedService.hardEligibilityReason(newStarter, audley));
+
+		assertNull(ContinuitySeedService.hardEligibilityReason(new Employee(), audley), "no services listed = anywhere");
 	}
 
 	@Test

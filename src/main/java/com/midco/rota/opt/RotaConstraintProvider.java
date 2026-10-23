@@ -151,6 +151,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 				prioritizedAllocation(factory), lastResortAssignmentPenalty(factory),
 				prioritizeHighPriorityLocations(factory),
 				serviceMixTarget(factory), carerNewToHouse(factory), carerNeverWorkedAtHouse(factory),
+				outsideCarerServices(factory), lowerWeightService(factory),
 
 				// Continuity of place
 				minDaysPerLocationPerWeek(factory), maxDaysPerLocationPerWeek(factory),
@@ -1011,6 +1012,54 @@ public class RotaConstraintProvider implements ConstraintProvider {
 				.asConstraint("Carer never worked at this house");
 	}
 
+	/**
+	 * A carer only works at the houses in their services (preferred_service, weight > 0); a carer
+	 * with no services listed may work anywhere in their region. New staff get their houses by
+	 * having them listed. Weight and hard/soft in constraint_setting (V038). Lead shifts are
+	 * exempt (pinned to the service's leads); a paired follower mirrors its leader.
+	 */
+	private Constraint outsideCarerServices(ConstraintFactory factory) {
+		return factory.forEach(ShiftAssignment.class)
+				.filter(sa -> sa.getEmployee() != null && sa.getShift() != null
+						&& !(sa instanceof com.midco.rota.model.FollowerShiftAssignment)
+						&& isOutsideServices(sa.getEmployee(), sa.getShift().getShiftTemplate()))
+				.penalizeConfigurable()
+				.asConstraint("Not one of the carer's services");
+	}
+
+	/** True when this house is not one of the carer's services (see {@link #outsideCarerServices}). */
+	public static boolean isOutsideServices(Employee emp, com.midco.rota.model.ShiftTemplate t) {
+		return emp != null && t != null && !isLeadShift(t) && !emp.worksAtService(t.getLocation());
+	}
+
+	/**
+	 * Priority by weight: per shift, 100 - the carer's weight at the house, so a slot goes to
+	 * the carer who lists it highest. "Service mix target" spreads each carer's shifts by the
+	 * same weights. 0 for carers with no services listed. Weight in constraint_setting (V038).
+	 */
+	private Constraint lowerWeightService(ConstraintFactory factory) {
+		return factory.forEach(ShiftAssignment.class)
+				.filter(sa -> sa.getEmployee() != null && sa.getShift() != null
+						&& !(sa instanceof com.midco.rota.model.FollowerShiftAssignment)
+						&& serviceWeightGap(sa.getEmployee(), sa.getShift().getShiftTemplate()) > 0)
+				.penalizeConfigurable(sa -> serviceWeightGap(sa.getEmployee(), sa.getShift().getShiftTemplate()))
+				.asConstraint("Lower-weight service");
+	}
+
+	/** 100 - the carer's weight at this house (0 when they list no services, or for lead shifts). */
+	public static int serviceWeightGap(Employee emp, com.midco.rota.model.ShiftTemplate t) {
+		if (emp == null || t == null || isLeadShift(t) || !emp.hasServicePreferences()) {
+			return 0;
+		}
+		return Math.max(0, 100 - Math.min(100, emp.getServiceWeightage(t.getLocation())));
+	}
+
+	/** A shift that requires the SHIFT_LEAD skill. */
+	public static boolean isLeadShift(com.midco.rota.model.ShiftTemplate t) {
+		List<String> required = t.getRequiredSkills();
+		return required != null && required.stream().anyMatch(s -> s != null && s.trim().equalsIgnoreCase("SHIFT_LEAD"));
+	}
+
 	/** 6:1 applies to permanent carers only (agreed 2026-10-13); zero-hours staff are not covered. */
 	public static boolean sixOneApplies(Employee emp) {
 		return emp != null && emp.getContractType() == ContractType.PERMANENT;
@@ -1267,20 +1316,39 @@ public class RotaConstraintProvider implements ConstraintProvider {
 				.asConstraint("Max days per location per week");
 	}
 
+	/**
+	 * A carer working one house today and a different one tomorrow. Each flat is its own
+	 * house (continuity is about the people supported, not the building). Lead shifts don't
+	 * count: leads are pinned across their services by design.
+	 */
 	private Constraint penalizeDailyLocationSwitches(ConstraintFactory factory) {
 		return factory.forEach(ShiftAssignment.class).filter(sa -> sa.getEmployee() != null)
-				.filter(RotaConstraintProvider::countsAsWork)
+				.filter(RotaConstraintProvider::countsTowardLocationRules)
 				.join(ShiftAssignment.class, Joiners.equal(ShiftAssignment::getEmployee),
 						Joiners.filtering((sa1, sa2) -> {
 							LocalDate date1 = sa1.getShift().getShiftStart();
 							LocalDate date2 = sa2.getShift().getShiftStart();
 							return date2.equals(date1.plusDays(1));
 						}))
-				.filter((sa1, sa2) -> {
-					String loc1 = sa1.getShift().getShiftTemplate().getLocation();
-					String loc2 = sa2.getShift().getShiftTemplate().getLocation();
-					return !loc1.equals(loc2);
-				}).penalizeConfigurable().asConstraint("Penalize daily location switches");
+				.filter((sa1, sa2) -> countsTowardLocationRules(sa2)
+						&& !locationKey(sa1).equals(locationKey(sa2)))
+				.penalizeConfigurable().asConstraint("Penalize daily location switches");
+	}
+
+	/** House name as the location rules compare it: trimmed, upper case ("Flat B - LC " = "Flat B - LC"). */
+	public static String locationKey(ShiftAssignment sa) {
+		String loc = sa.getShift().getShiftTemplate().getLocation();
+		return loc == null ? "" : loc.trim().toUpperCase();
+	}
+
+	/** Worked, non-lead shifts: the ones the house-count and house-switch rules look at. */
+	public static boolean countsTowardLocationRules(ShiftAssignment sa) {
+		if (!countsAsWork(sa)) {
+			return false;
+		}
+		String code = sa.getShift() == null || sa.getShift().getShiftTemplate() == null ? null
+				: sa.getShift().getShiftTemplate().getShiftTypeCode();
+		return !"SHIFT_LEAD".equals(code);
 	}
 
 	private Constraint rewardConsecutiveDaysAtLocation(ConstraintFactory factory) {
@@ -1377,7 +1445,7 @@ public class RotaConstraintProvider implements ConstraintProvider {
 		int total = weekShifts.size();
 		Map<String, Integer> actual = new java.util.HashMap<>();
 		for (ShiftAssignment sa : weekShifts) {
-			actual.merge(sa.getShift().getShiftTemplate().getLocation(), 1, Integer::sum);
+			actual.merge(sa.getShift().getShiftTemplate().getLocation().trim(), 1, Integer::sum); // weight keys are trimmed
 		}
 		Set<String> services = new HashSet<>(actual.keySet());
 		services.addAll(weights.keySet());
@@ -1389,12 +1457,18 @@ public class RotaConstraintProvider implements ConstraintProvider {
 		return (int) Math.round(deviation / 2.0);
 	}
 
+	/**
+	 * Keeps each carer to a small set of houses over the solve (solver_tuning
+	 * maxLocationsPerPeriod; a 4-week period for a normal rota). Each flat is its own house;
+	 * lead shifts don't count. Pins and carry-overs that would break it are skipped/released
+	 * before the solve (SolverTrigger).
+	 */
 	private Constraint maxLocationsPerEmployeePerPeriod(ConstraintFactory factory) {
 		final int maxLocations = SolverTuning.current().getMaxLocationsPerPeriod();
 		return factory.forEach(ShiftAssignment.class).filter(sa -> sa.getEmployee() != null)
-				.filter(RotaConstraintProvider::countsAsWork)
+				.filter(RotaConstraintProvider::countsTowardLocationRules)
 				.groupBy(ShiftAssignment::getEmployee,
-						ConstraintCollectors.countDistinct(sa -> sa.getShift().getShiftTemplate().getLocation()))
+						ConstraintCollectors.countDistinct(RotaConstraintProvider::locationKey))
 				.filter((emp, locationCount) -> locationCount > maxLocations)
 				.penalizeConfigurable((emp, locationCount) -> locationCount - maxLocations)
 				.asConstraint("Max locations per period");

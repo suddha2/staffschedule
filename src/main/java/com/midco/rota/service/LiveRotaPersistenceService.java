@@ -13,10 +13,13 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.midco.rota.model.Employee;
 import com.midco.rota.model.Rota;
+import com.midco.rota.model.Shift;
 import com.midco.rota.model.ShiftAssignment;
 import com.midco.rota.model.ShiftAssignmentFactory;
+import com.midco.rota.repository.EmployeeAvailabilityRepository;
 import com.midco.rota.repository.EmployeeRepository;
 import com.midco.rota.repository.RotaRepository;
+import com.midco.rota.util.AvailabilityCalendar;
 import com.midco.rota.util.IdealShiftCount;
 
 /**
@@ -31,10 +34,13 @@ public class LiveRotaPersistenceService {
 
 	private final RotaRepository rotaRepository;
 	private final EmployeeRepository employeeRepository;
+	private final EmployeeAvailabilityRepository employeeAvailabilityRepository;
 
-	public LiveRotaPersistenceService(RotaRepository rotaRepository, EmployeeRepository employeeRepository) {
+	public LiveRotaPersistenceService(RotaRepository rotaRepository, EmployeeRepository employeeRepository,
+			EmployeeAvailabilityRepository employeeAvailabilityRepository) {
 		this.rotaRepository = rotaRepository;
 		this.employeeRepository = employeeRepository;
+		this.employeeAvailabilityRepository = employeeAvailabilityRepository;
 	}
 
 	/**
@@ -76,9 +82,31 @@ public class LiveRotaPersistenceService {
 				sa.setPlanningId(String.valueOf(sa.getId()));
 			}
 		}
+		hydrateLeave(rota);
 		// Link LONG_DAY → SLEEP_IN so the shadow-variable listener mirrors employees.
 		ShiftAssignmentFactory.linkFollowerPairs(rota.getShiftAssignmentList());
 		return rota;
+	}
+
+	/**
+	 * Booked leave is transient on the employee, so a JPA load comes back without it and a live
+	 * session would not enforce it (HARD). People Planner house history is deliberately not
+	 * loaded: it is never an input to solving.
+	 */
+	private void hydrateLeave(Rota rota) {
+		List<Employee> employees = rota.getEmployeeList();
+		List<java.time.LocalDate> dates = rota.getShiftAssignmentList().stream().map(ShiftAssignment::getShift)
+				.filter(Objects::nonNull).map(Shift::getShiftStart).filter(Objects::nonNull).toList();
+		if (!employees.isEmpty() && !dates.isEmpty()) {
+			java.time.LocalDate start = java.util.Collections.min(dates);
+			java.time.LocalDate end = java.util.Collections.max(dates);
+			Map<Integer, Set<java.time.LocalDate>> unavailable = AvailabilityCalendar.build(
+					employeeAvailabilityRepository.findOverlapping(employees.stream().map(Employee::getId).toList(), start, end),
+					start, end);
+			for (Employee e : employees) {
+				e.setUnavailableDates(unavailable.get(e.getId()));
+			}
+		}
 	}
 
 	/**
