@@ -827,7 +827,7 @@ public class SolverTrigger {
 				if (com.midco.rota.opt.RotaConstraintProvider.sixOneApplies(employee)
 						&& com.midco.rota.opt.RotaConstraintProvider.sevenDayRuns(days) > 0) {
 					skippedSixOne++;
-					skipped.add(skippedPin(shift, pin, employee, "Would be a 7th day in a row (6:1, permanent carers)"));
+					skipped.add(skippedPin(shift, pin, employee, "Would be a 7th day in a row (6:1)"));
 					logger.warn("Skipping pin: {} onto {} {} {} would be a 7th consecutive day (6:1) - review this pin",
 							employee.getName(), shift.getShiftTemplate().getLocation(), shift.getShiftStart(),
 							shift.getShiftTemplate().getShiftTypeCode());

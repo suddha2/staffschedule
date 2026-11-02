@@ -25,7 +25,7 @@ import com.midco.rota.util.Gender;
 
 /**
  * Save-time rules (normal save and pin-all save): overlaps, wrong gender / missing skill,
- * and 6:1 for permanent carers only. A saved rota becomes standing pins, so these must not
+ * and 6:1 for every carer. A saved rota becomes standing pins, so these must not
  * get through.
  */
 class SaveTimeValidationTest {
@@ -90,8 +90,10 @@ class SaveTimeValidationTest {
 	}
 
 	@Test
-	void sixOneDoesNotApplyToZeroHoursStaff() {
-		assertTrue(svc.validateAssignments(days(carer(4, Gender.MALE, ContractType.ZERO_HOURS), 8)).isEmpty());
+	void sixOneAppliesToZeroHoursStaffToo() {
+		List<ConflictError> c = svc.validateAssignments(days(carer(4, Gender.MALE, ContractType.ZERO_HOURS), 8));
+		assertEquals(2, c.size());
+		assertTrue(c.get(0).getReason().contains("6:1"));
 	}
 
 	@Test

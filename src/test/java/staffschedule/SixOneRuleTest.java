@@ -14,7 +14,7 @@ import org.optaplanner.core.api.score.buildin.hardsoftlong.HardSoftLongScore;
 import com.midco.rota.opt.RotaConstraintConfiguration;
 import com.midco.rota.opt.RotaConstraintProvider;
 
-/** Compliance 6:1 - no permanent carer works 7 days in a row, counted across week boundaries. */
+/** Compliance 6:1 - no carer works 7 days in a row, counted across week boundaries. */
 class SixOneRuleTest {
 
 	private static final LocalDate MON = LocalDate.of(2026, 10, 12);
@@ -58,12 +58,11 @@ class SixOneRuleTest {
 	}
 
 	@Test
-	void appliesToPermanentCarersOnly() {
-		com.midco.rota.model.Employee perm = new com.midco.rota.model.Employee();
-		perm.setContractType(com.midco.rota.util.ContractType.PERMANENT);
-		com.midco.rota.model.Employee zh = new com.midco.rota.model.Employee();
-		zh.setContractType(com.midco.rota.util.ContractType.ZERO_HOURS);
-		assertTrue(RotaConstraintProvider.sixOneApplies(perm));
-		assertTrue(!RotaConstraintProvider.sixOneApplies(zh), "zero-hours staff are not covered by 6:1");
+	void appliesToEveryContractType() {
+		for (com.midco.rota.util.ContractType type : com.midco.rota.util.ContractType.values()) {
+			com.midco.rota.model.Employee carer = new com.midco.rota.model.Employee();
+			carer.setContractType(type);
+			assertTrue(RotaConstraintProvider.sixOneApplies(carer), type + " is covered by 6:1");
+		}
 	}
 }

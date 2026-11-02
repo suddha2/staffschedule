@@ -961,8 +961,8 @@ public class RotaConstraintProvider implements ConstraintProvider {
 	}
 
 	/**
-	 * Compliance 6:1 - no PERMANENT carer works 7 days in a row (zero-hours staff are not
-	 * covered: see {@link #sixOneApplies}). Counts every shift's start date
+	 * Compliance 6:1 - no carer works 7 days in a row, whatever their contract (see
+	 * {@link #sixOneApplies}). Counts every shift's start date
 	 * (sleep-ins included) across week boundaries, so two weeks can't chain into 12 days.
 	 * One match per 7-day run (8 days in a row = 2). Weight/severity in constraint_setting
 	 * (V031, HARD): a slot with no compliant carer is left empty rather than break it.
@@ -1060,9 +1060,9 @@ public class RotaConstraintProvider implements ConstraintProvider {
 		return required != null && required.stream().anyMatch(s -> s != null && s.trim().equalsIgnoreCase("SHIFT_LEAD"));
 	}
 
-	/** 6:1 applies to permanent carers only (agreed 2026-10-13); zero-hours staff are not covered. */
+	/** 6:1 applies to every carer, permanent and zero-hours alike (V039, 2026-11-02). */
 	public static boolean sixOneApplies(Employee emp) {
-		return emp != null && emp.getContractType() == ContractType.PERMANENT;
+		return emp != null;
 	}
 
 	/** Number of 7-consecutive-day windows in the worked dates (0 when every run is 6 days or fewer). */

@@ -32,7 +32,7 @@ public class PinValidationService {
 	 * <ul>
 	 * <li>same-day shifts that overlap in time;</li>
 	 * <li>wrong gender for the shift / missing a required skill;</li>
-	 * <li>compliance 6:1 - a permanent carer's 7th consecutive working day.</li>
+	 * <li>compliance 6:1 - a carer's 7th consecutive working day.</li>
 	 * </ul>
 	 * Each conflict carries a reason and a shift id so the grid can highlight it.
 	 */
@@ -80,7 +80,7 @@ public class PinValidationService {
 				}
 			});
 
-			// 3. Compliance 6:1 (permanent carers): flag every 7th-or-later consecutive day
+			// 3. Compliance 6:1: flag every 7th-or-later consecutive day
 			if (RotaConstraintProvider.sixOneApplies(emp)) {
 				int streak = 0;
 				LocalDate prev = null;
@@ -88,7 +88,7 @@ public class PinValidationService {
 					streak = (prev != null && prev.plusDays(1).equals(day.getKey())) ? streak + 1 : 1;
 					if (streak >= 7) {
 						conflicts.add(conflict(empId, empName, day.getKey(), day.getValue(),
-								"Day " + streak + " in a row - permanent carers need 1 day off in 7 (6:1)"));
+								"Day " + streak + " in a row - carers need 1 day off in 7 (6:1)"));
 					}
 					prev = day.getKey();
 				}
