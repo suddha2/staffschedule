@@ -84,6 +84,11 @@ public class LiveSolverSessionService {
 		}
 	}
 
+	/** The rotas with a live session open now. */
+	public java.util.Set<Long> activeRotaIds() {
+		return java.util.Set.copyOf(sessions.keySet());
+	}
+
 	/**
 	 * Start a live solver for {@code rotaId}. No-op (returns false) if one is
 	 * already active for that rota. Synchronized so two concurrent starts for the

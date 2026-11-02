@@ -127,6 +127,9 @@ public class ServiceLocationService {
 		if (location.contains(",") || location.contains(":")) {
 			throw new IllegalArgumentException("A rota name can't contain a comma or a colon");
 		}
+		if (location.length() > 50) { // shift_templates.location
+			throw new IllegalArgumentException("A rota name can be at most 50 characters");
+		}
 		if (rows.stream().anyMatch(r -> r != s && location.equalsIgnoreCase(nameOf(r)))) {
 			throw new IllegalArgumentException("This region already has a service called " + location);
 		}
