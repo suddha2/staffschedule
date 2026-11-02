@@ -11,6 +11,8 @@ public interface ServiceLocationRepository extends JpaRepository<ServiceLocation
 
     List<ServiceLocation> findByStaffrotaRegionAndActiveTrueOrderByNameAsc(String staffrotaRegion);
 
+    List<ServiceLocation> findByStaffrotaRegionOrderByNameAsc(String staffrotaRegion);
+
     /** Dropdown values for a region: the bridged staffrota string where known, else the canonical name. */
     @Query("select coalesce(s.staffrotaLocation, s.name) from ServiceLocation s "
             + "where s.staffrotaRegion = :region and s.active = true "

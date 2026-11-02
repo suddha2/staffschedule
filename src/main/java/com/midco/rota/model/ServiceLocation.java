@@ -48,6 +48,10 @@ public class ServiceLocation {
     @Column(name = "staffrota_location", length = 80)
     private String staffrotaLocation;
 
+    /** The service this one sits under (a flat's building, V040); null for a top-level service. */
+    @Column(name = "parent_id")
+    private Long parentId;
+
     @Column(name = "active", nullable = false)
     private boolean active = true;
 
@@ -60,5 +64,17 @@ public class ServiceLocation {
     public String getName() { return name; }
     public String getMobizioId() { return mobizioId; }
     public String getStaffrotaLocation() { return staffrotaLocation; }
+    public Long getParentId() { return parentId; }
     public boolean isActive() { return active; }
+
+    public void setExternalId(String externalId) { this.externalId = externalId; }
+    public void setRegionCode(String regionCode) { this.regionCode = regionCode; }
+    public void setRegionName(String regionName) { this.regionName = regionName; }
+    public void setStaffrotaRegion(String staffrotaRegion) { this.staffrotaRegion = staffrotaRegion; }
+    public void setServiceId(String serviceId) { this.serviceId = serviceId; }
+    public void setName(String name) { this.name = name; }
+    public void setMobizioId(String mobizioId) { this.mobizioId = mobizioId; }
+    public void setStaffrotaLocation(String staffrotaLocation) { this.staffrotaLocation = staffrotaLocation; }
+    public void setParentId(Long parentId) { this.parentId = parentId; }
+    public void setActive(boolean active) { this.active = active; }
 }

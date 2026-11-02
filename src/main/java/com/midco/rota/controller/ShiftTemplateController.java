@@ -456,6 +456,13 @@ public class ShiftTemplateController {
 		return ResponseEntity.ok(locations);
 	}
 
+	// The same locations for a dropdown: services with flats grouped, flats before the whole service.
+	@GetMapping("/regions/{region}/location-options")
+	public ResponseEntity<List<com.midco.rota.dto.LocationOption>> getLocationOptions(@PathVariable String region) {
+		return ResponseEntity.ok(com.midco.rota.dto.LocationOption
+				.from(serviceLocationRepository.findByStaffrotaRegionAndActiveTrueOrderByNameAsc(region)));
+	}
+
 	/**
 	 * GET templates ordered by priority
 	 */

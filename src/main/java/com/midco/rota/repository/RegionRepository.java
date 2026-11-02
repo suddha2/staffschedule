@@ -13,4 +13,7 @@ public interface RegionRepository extends JpaRepository<Region, String> {
     @Query("select distinct r.staffrotaRegion from Region r "
             + "where r.staffrotaRegion is not null and r.active = true order by r.staffrotaRegion")
     List<String> findOperatingRegions();
+
+    /** A People Planner region for an operating region (several can share one, e.g. GLOUCOXF). */
+    java.util.Optional<Region> findFirstByStaffrotaRegionAndActiveTrueOrderByCodeAsc(String staffrotaRegion);
 }
