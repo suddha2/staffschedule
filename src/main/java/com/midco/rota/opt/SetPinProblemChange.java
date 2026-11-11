@@ -13,9 +13,7 @@ import com.midco.rota.model.ShiftAssignment;
  * locks the current assignment so the solver won't move it; unpinning returns it
  * to the solver's control.
  *
- * <p>Note: SLEEP_IN and FLOATING are always pinned via
- * {@link ShiftAssignment#isPinned()} regardless of this flag, so this change is a
- * no-op for those types.
+ * <p>Note: a SLEEP_IN follower mirrors its long day, so pinning it alone has no effect.
  */
 public class SetPinProblemChange implements ProblemChange<Rota> {
 

@@ -140,8 +140,9 @@ public class ShiftTemplate {
 		this.id = id;
 	}
 
+	/** Trimmed: a stray trailing space made "Alexandra Flat B - LC " a second house in stats and grids. */
 	public void setLocation(String location) {
-		this.location = location;
+		this.location = location == null ? null : location.trim();
 	}
 
 	public void setShiftType(ShiftType shiftType) {

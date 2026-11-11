@@ -191,9 +191,10 @@ public class SolverTrigger {
 		com.midco.rota.opt.RotaConstraintConfiguration configuration =
 				solverConfigService.buildConstraintConfiguration(profile);
 		int locationCap = locationCap(configuration);
+		long restMins = hardMinRestMinutes(configuration);
 
 		List<com.midco.rota.model.SkippedPin> skippedPins = applyTemplateBasedPinning(shiftAssignments, employees,
-				locationCap);
+				locationCap, restMins);
 		Rota problem = new Rota(employees, shiftAssignments);
 		problem.setSkippedPins(skippedPins); // saved with the solved rota for planners to review
 		problem.setConstraintConfiguration(configuration);
@@ -246,18 +247,36 @@ public class SolverTrigger {
 					}
 				}
 			}
-			logger.info("CONTINUITY: locked {} seeded assignments for this solve ({} unlocked to resolve seed overlaps; not persisted)",
-					locked - unlocked, unlocked);
+			// Minimum rest: walk each carer's still-locked seeds in start order and unlock one that
+			// sits too close after the previous kept one (it can't be moved, so it would stay broken).
+			int unlockedRest = 0;
+			for (List<ShiftAssignment> list : lockedByEmp.values()) {
+				List<ShiftAssignment> keptLocked = new ArrayList<>();
+				for (ShiftAssignment sa : list) {
+					if (!sa.isSeedLocked()) {
+						continue;
+					}
+					if (com.midco.rota.opt.RotaConstraintProvider.shortRestNextTo(keptLocked, sa, restMins)) {
+						sa.setSeedLocked(false);
+						unlockedRest++;
+					} else {
+						keptLocked.add(sa);
+					}
+				}
+			}
+			unlocked += unlockedRest;
+			logger.info("CONTINUITY: locked {} seeded assignments for this solve ({} unlocked to resolve seed overlaps, {} of them for minimum rest; not persisted)",
+					locked - unlocked, unlocked, unlockedRest);
 		}
 
 		// Lead shifts are not left to the solver: pin each one to the lead who holds the
 		// required SHIFT_LEAD skill AND has that service in their preferred services.
 		// Runs after continuity seeding so it overrides any seeded non-lead carer.
-		pinLeadShifts(shiftAssignments, employees);
+		pinLeadShifts(shiftAssignments, employees, restMins);
 		// Don't hand the solver a warm start that already breaks the supervisor rule:
 		// continuity seeding puts leads back on last period's care slots.
 		releaseSupervisorsFromCare(shiftAssignments);
-		releaseSeedsClashingWithFixed(shiftAssignments, locationCap);
+		releaseSeedsClashingWithFixed(shiftAssignments, locationCap, restMins);
 
 		// Seed each follower from a leader that already carries an employee before the solve
 		// (a template pin, or a CONTINUITY seed-lock). FollowerEmployeeVariableListener only
@@ -340,7 +359,7 @@ public class SolverTrigger {
 	 * to the solver. Slots with no eligible lead are left for the solver (the HARD
 	 * "Missing required skill" rule then keeps non-leads off them).
 	 */
-	private void pinLeadShifts(List<ShiftAssignment> assignments, List<Employee> employees) {
+	private void pinLeadShifts(List<ShiftAssignment> assignments, List<Employee> employees, long restMins) {
 		List<Employee> leads = employees.stream()
 				.filter(Employee::isActive)
 				.filter(e -> hasSkill(e, LEAD_SKILL))
@@ -385,10 +404,12 @@ public class SolverTrigger {
 				if (com.midco.rota.opt.RotaConstraintProvider.restrictionBroken(lead, slot) != null) {
 					continue; // restrictions are HARD: a locked lead slot must not break one
 				}
-				boolean clash = byEmp.getOrDefault(lead.getId(), List.of()).stream()
-						.anyMatch(o -> o != slot && (isHardPinned(o) || isLeadLock(o))
-								&& (com.midco.rota.opt.ShiftOverlap.overlaps(o, slot)
-										|| com.midco.rota.opt.RotaConstraintProvider.restClash(o, slot)));
+				List<ShiftAssignment> leadFixed = byEmp.getOrDefault(lead.getId(), List.of()).stream()
+						.filter(o -> o != slot && (isHardPinned(o) || isLeadLock(o))).toList();
+				boolean clash = leadFixed.stream()
+						.anyMatch(o -> com.midco.rota.opt.ShiftOverlap.overlaps(o, slot)
+								|| com.midco.rota.opt.RotaConstraintProvider.restClash(o, slot))
+						|| com.midco.rota.opt.RotaConstraintProvider.shortRestNextTo(leadFixed, slot, restMins);
 				if (clash) {
 					continue;
 				}
@@ -413,7 +434,8 @@ public class SolverTrigger {
 			for (ShiftAssignment other : new ArrayList<>(leadList)) {
 				if (other != slot && !isHardPinned(other) && !isLeadLock(other)
 						&& (com.midco.rota.opt.ShiftOverlap.overlaps(other, slot)
-								|| com.midco.rota.opt.RotaConstraintProvider.restClash(other, slot))) {
+								|| com.midco.rota.opt.RotaConstraintProvider.restClash(other, slot)
+								|| com.midco.rota.opt.RotaConstraintProvider.shortRestPair(other, slot, restMins))) {
 					other.setSeedLocked(false);
 					other.setEmployee(null);
 					leadList.remove(other);
@@ -459,7 +481,7 @@ public class SolverTrigger {
 	 * the fixed shifts (template pins, lead locks, and their followers),
 	 * then keep seeds in start order unless they — or their follower — overlap something kept.
 	 */
-	private void releaseSeedsClashingWithFixed(List<ShiftAssignment> assignments, int locationCap) {
+	private void releaseSeedsClashingWithFixed(List<ShiftAssignment> assignments, int locationCap, long restMins) {
 		Map<Integer, List<ShiftAssignment>> byEmp = new HashMap<>();
 		for (ShiftAssignment sa : assignments) {
 			if (sa instanceof com.midco.rota.model.WorkShiftAssignment && sa.getEmployee() != null) {
@@ -490,7 +512,8 @@ public class SolverTrigger {
 				addFollower(candidate, seed);
 				boolean clash = candidate.stream().anyMatch(c -> kept.stream()
 						.anyMatch(k -> com.midco.rota.opt.ShiftOverlap.overlaps(k, c)
-								|| com.midco.rota.opt.RotaConstraintProvider.restClash(k, c)));
+								|| com.midco.rota.opt.RotaConstraintProvider.restClash(k, c)))
+						|| com.midco.rota.opt.RotaConstraintProvider.shortRestNextTo(kept, seed, restMins);
 				// Compliance 6:1: a carried-over shift must not give the carer a 7th day in a row on
 				// top of their pins and earlier carry-overs. Under CONTINUITY it would be locked and
 				// unfixable; under SPREAD the solver would spend the solve undoing it.
@@ -540,6 +563,18 @@ public class SolverTrigger {
 	 * Houses allowed per carer this solve when "Max locations per period" is on (solver_tuning
 	 * maxLocationsPerPeriod), else 0 = no cap.
 	 */
+	/**
+	 * Minimum rest in minutes that pins, carry-overs and lead locks must respect: only when
+	 * "Minimum rest between shifts" is on and HARD (a soft rule the solver may pay), else 0.
+	 */
+	private static long hardMinRestMinutes(com.midco.rota.opt.RotaConstraintConfiguration configuration) {
+		org.optaplanner.core.api.score.buildin.hardsoftlong.HardSoftLongScore weight = configuration.getMinRestBetweenShifts();
+		if (weight == null || weight.hardScore() == 0) {
+			return 0;
+		}
+		return com.midco.rota.opt.RotaConstraintProvider.minRestMinutes();
+	}
+
 	private static int locationCap(com.midco.rota.opt.RotaConstraintConfiguration configuration) {
 		org.optaplanner.core.api.score.buildin.hardsoftlong.HardSoftLongScore weight = configuration.getMaxLocationsPerPeriod();
 		if (weight == null || weight.equals(org.optaplanner.core.api.score.buildin.hardsoftlong.HardSoftLongScore.ZERO)) {
@@ -661,8 +696,9 @@ public class SolverTrigger {
 	 * of (days since periodStart) by 7.
 	 */
 	private List<com.midco.rota.model.SkippedPin> applyTemplateBasedPinning(List<ShiftAssignment> shiftAssignments,
-			List<Employee> employees, int locationCap) {
+			List<Employee> employees, int locationCap, long restMins) {
 		List<com.midco.rota.model.SkippedPin> skipped = new ArrayList<>();
+		int skippedShortRest = 0;
 		int skippedLocations = 0;
 		int pinnedCount = 0;
 		int skippedInactive = 0;
@@ -878,6 +914,18 @@ public class SolverTrigger {
 					continue;
 				}
 
+				// Check 4b: minimum rest next to the carer's pins already applied (date order, so the
+				// earlier pin stands and this one is left for the solver).
+				if (empPins != null && com.midco.rota.opt.RotaConstraintProvider.shortRestNextTo(empPins, assignment, restMins)) {
+					skippedShortRest++;
+					skipped.add(skippedPin(shift, pin, employee,
+							"Under " + (restMins / 60) + " hours' rest after the carer's previous pinned shift"));
+					logger.warn("Skipping pin: {} {} {} {} is under the minimum rest next to another pin", employee.getName(),
+							shift.getShiftTemplate().getLocation(), shift.getShiftStart(),
+							shift.getShiftTemplate().getShiftTypeCode());
+					continue;
+				}
+
 				// Check 5: house cap - a carer pinned at more houses than allowed keeps only the pins
 				// at their highest-weight services; the fallback catches anything that still slips past.
 				Set<String> keep = housesToKeep.get(empId);
@@ -922,6 +970,7 @@ public class SolverTrigger {
 		logger.info("  ⚠️ Skipped (gender/skill/restriction/never worked there): {}", skippedIneligible);
 		logger.info("  ⚠️ Skipped (on leave / unavailable): {}", skippedOnLeave);
 		logger.info("  ⚠️ Skipped (straight after a waking night): {}", skippedRest);
+		logger.info("  ⚠️ Skipped (under the minimum rest): {}", skippedShortRest);
 		logger.info("  ⚠️ Skipped (7th consecutive day, 6:1): {}", skippedSixOne);
 		logger.info("  ⚠️ Skipped (overlaps another pin): {}", skippedOverlap);
 		logger.info("  ⚠️ Skipped (past the house cap): {}", skippedLocations);

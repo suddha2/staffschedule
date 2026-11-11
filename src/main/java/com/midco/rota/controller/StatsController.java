@@ -155,8 +155,8 @@ public class StatsController {
 		String filename = "";
 		DeferredSolveRequest deferredSolveRequest = statsService.getRegionPeriodDetailForRotaID(id);
 		filename=filename+""+deferredSolveRequest.getRegion();
-		filename=filename+"_"+deferredSolveRequest.getStartDate().format(DateTimeFormatter.ofPattern("ddMMYYYY"));
-		filename=filename+"_"+deferredSolveRequest.getEndDate().format(DateTimeFormatter.ofPattern("ddMMYYYY"));
+		filename=filename+"_"+deferredSolveRequest.getStartDate().format(DateTimeFormatter.ofPattern("ddMMyyyy"));
+		filename=filename+"_"+deferredSolveRequest.getEndDate().format(DateTimeFormatter.ofPattern("ddMMyyyy"));
 		filename=filename+"_"+"stats.xlsx";
 		response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
 		//String filename = deferredSolveRequest.getRegion()+"_"+deferredSolveRequest.getStartDate()"stats.xlsx";
@@ -220,7 +220,7 @@ public class StatsController {
 			cell.setCellStyle(headerStyle);
 		}
 
-		DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm");
+		DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
 		for (ShiftAssignment sa : saList) {
 
 			Row row = sheet.createRow(rowIdx++);
@@ -361,7 +361,7 @@ public class StatsController {
 		CellStyle decimalStyle = workbook.createCellStyle();
 		decimalStyle.setDataFormat(df.getFormat("0.00"));
 		CellStyle dateStyle = workbook.createCellStyle();
-		dateStyle.setDataFormat(df.getFormat("dd-mm-yyyy"));
+		dateStyle.setDataFormat(df.getFormat("dd/mm/yyyy"));
 
 		int rowIdx = 0;
 		Row headerRow = sheet.createRow(rowIdx++);

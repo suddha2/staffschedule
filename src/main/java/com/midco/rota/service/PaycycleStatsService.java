@@ -79,7 +79,8 @@ public class PaycycleStatsService {
 			}
 
 			String region = template.getRegion();
-			String location = template.getLocation();
+			// Trimmed, so "Alexandra Flat B - LC " and "Alexandra Flat B - LC" are one service.
+			String location = template.getLocation() == null ? "" : template.getLocation().trim();
 			String type = template.getShiftTypeCode();
 			BigDecimal hours = shift.getDurationInHours();
 //			int weekIndex = (int) ChronoUnit.WEEKS.between(startDate, shift.getShiftStart());
@@ -127,8 +128,9 @@ public class PaycycleStatsService {
 						return st;
 					});
 
-			BigDecimal total = hours.multiply(BigDecimal.valueOf(template.getEmpCount()));
-			shiftStats.totalHours = shiftStats.totalHours.add(total);
+			// One assignment per seat: a 2-staff shift already has two assignments, so each
+			// adds one carer's hours. Multiplying by the staff count here counted it twice.
+			shiftStats.totalHours = shiftStats.totalHours.add(hours);
 			shiftStats.shiftCount += 1;
 
 			if (assignment.getEmployee() != null) {

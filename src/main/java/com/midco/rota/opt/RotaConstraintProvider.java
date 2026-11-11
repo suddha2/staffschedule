@@ -706,53 +706,117 @@ public class RotaConstraintProvider implements ConstraintProvider {
 	}
 
 	/**
-	 * Minimum rest between a carer's consecutive shifts, derived from actual times.
-	 * Config-gated: {@code SolverTuning.minRestHours == 0} (the default) means the rule
-	 * is OFF — set the hours in solver_tuning to switch it on, no deploy. A follower
-	 * (SLEEP_IN) right after its paired LONG_DAY is the intended pattern and is exempt;
-	 * overlapping shifts are left to the overlap constraint.
+	 * Minimum rest (solver_tuning {@code minRestHours}; 0 = off) between one shift and the
+	 * carer's NEXT shift, from actual times. A long day and its paired sleep-in are one block
+	 * that ends when the sleep-in ends, so a 07:00 sleep-in finish followed by an 08:00 day
+	 * elsewhere is 1 hour's rest. Exception: after a sleep-in, the next shift at the SAME
+	 * house needs no rest (live-in pattern: long day, sleep-in, long day). Only consecutive
+	 * shifts are compared, so the long-day-to-long-day gap of that pattern is never measured.
+	 * Overlaps are left to the overlap rule. Weight and hard/soft in constraint_setting (V043).
 	 */
 	private Constraint minRestBetweenShifts(ConstraintFactory factory) {
 		return factory.forEach(ShiftAssignment.class)
-				.filter(sa -> sa.getEmployee() != null && sa.getShift() != null
-						&& sa.getShift().getShiftTemplate() != null)
+				.filter(RotaConstraintProvider::restBlock)
 				.join(ShiftAssignment.class,
 						Joiners.equal(ShiftAssignment::getEmployee),
-						Joiners.lessThan(ShiftAssignment::getPlanningId))
-				.filter((a, b) -> restGapTooShort(a, b))
+						Joiners.lessThan(ShiftAssignment::getPlanningId),
+						Joiners.filtering((a, b) -> restBlock(b) && shortRestPair(a, b, minRestMinutes())))
+				.ifNotExists(ShiftAssignment.class,
+						Joiners.equal((a, b) -> a.getEmployee(), ShiftAssignment::getEmployee),
+						Joiners.filtering((a, b, z) -> z != a && z != b && restBlock(z) && startsBetween(a, b, z)))
 				.penalizeConfigurable()
 				.asConstraint("Minimum rest between shifts");
 	}
 
-	private static boolean restGapTooShort(ShiftAssignment a, ShiftAssignment b) {
-		int minRest = SolverTuning.current().getMinRestHours();
-		if (minRest <= 0) {
-			return false; // rule off
-		}
-		if (isPairedSequence(a, b)) {
-			return false; // sleep-in follows its long-day — intended, no rest needed
-		}
-		java.time.LocalDateTime aStart = startOf(a), aEnd = endOf(a), bStart = startOf(b), bEnd = endOf(b);
-		if (aStart == null || aEnd == null || bStart == null || bEnd == null) {
-			return false;
-		}
-		long gapMins;
-		if (!aEnd.isAfter(bStart)) {
-			gapMins = java.time.Duration.between(aEnd, bStart).toMinutes();      // a before b
-		} else if (!bEnd.isAfter(aStart)) {
-			gapMins = java.time.Duration.between(bEnd, aStart).toMinutes();      // b before a
-		} else {
-			return false; // overlap — handled by the overlap constraint
-		}
-		return gapMins >= 0 && gapMins < minRest * 60L;
+	/** solver_tuning minRestHours in minutes; 0 = rule off. */
+	public static long minRestMinutes() {
+		return Math.max(0, SolverTuning.current().getMinRestHours()) * 60L;
 	}
 
-	/** True if one of the pair is the other's paired follower (e.g. SLEEP_IN of a LONG_DAY). */
-	private static boolean isPairedSequence(ShiftAssignment a, ShiftAssignment b) {
-		if (a instanceof WorkShiftAssignment wa && wa.getPairedFollower() == b) {
-			return true;
+	/** A shift the rest rule looks at: assigned, timed, and not a paired follower (that is part of its leader's block). */
+	private static boolean restBlock(ShiftAssignment sa) {
+		return sa.getEmployee() != null && sa.getShift() != null && sa.getShift().getShiftTemplate() != null
+				&& !(sa instanceof com.midco.rota.model.FollowerShiftAssignment) && startOf(sa) != null && endOf(sa) != null;
+	}
+
+	/** z starts strictly between the starts of a and b (in either order): a and b are not consecutive. */
+	private static boolean startsBetween(ShiftAssignment a, ShiftAssignment b, ShiftAssignment z) {
+		java.time.LocalDateTime sa = startOf(a), sb = startOf(b), sz = startOf(z);
+		java.time.LocalDateTime lo = sa.isBefore(sb) ? sa : sb, hi = sa.isBefore(sb) ? sb : sa;
+		return sz.isAfter(lo) && sz.isBefore(hi);
+	}
+
+	/** The paired sleep-in carried by this leader for the same carer, or null. */
+	private static ShiftAssignment carriedSleepIn(ShiftAssignment sa) {
+		if (sa instanceof WorkShiftAssignment w && w.getPairedFollower() != null) {
+			ShiftAssignment f = w.getPairedFollower();
+			if ((f.getEmployee() == null || f.getEmployee() == sa.getEmployee()) && endOf(f) != null) {
+				return f; // before the solve the follower takes the leader's carer; during it, mirrors it
+			}
 		}
-		return b instanceof WorkShiftAssignment wb && wb.getPairedFollower() == a;
+		return null;
+	}
+
+	/** End of the block: the paired sleep-in's end when it runs later than the shift itself. */
+	private static java.time.LocalDateTime blockEnd(ShiftAssignment sa) {
+		java.time.LocalDateTime end = endOf(sa);
+		ShiftAssignment f = carriedSleepIn(sa);
+		return f != null && endOf(f).isAfter(end) ? endOf(f) : end;
+	}
+
+	/** The block includes a sleep-in: a sleep-in shift itself, or a long day carrying one. */
+	private static boolean endsWithSleepIn(ShiftAssignment sa) {
+		return !countsAsWork(sa) || carriedSleepIn(sa) != null;
+	}
+
+	/**
+	 * Rest from the earlier of the two blocks to the later one is under {@code minRestMins}.
+	 * Consecutiveness is the caller's job. Overlaps return false (the overlap rule owns them).
+	 */
+	public static boolean shortRestPair(ShiftAssignment a, ShiftAssignment b, long minRestMins) {
+		if (minRestMins <= 0 || a == b) {
+			return false;
+		}
+		ShiftAssignment first = startOf(a).isAfter(startOf(b)) ? b : a;
+		ShiftAssignment next = first == a ? b : a;
+		long gap = java.time.Duration.between(blockEnd(first), startOf(next)).toMinutes();
+		if (gap < 0 || gap >= minRestMins) {
+			return false;
+		}
+		boolean sameHouse = locationKey(first).equals(locationKey(next));
+		if (sameHouse && (endsWithSleepIn(first) || !countsAsWork(next))) {
+			return false; // sleep-in then the same house (or a sleep-in after a shift there): live-in pattern
+		}
+		return true;
+	}
+
+	/**
+	 * Pre-solve check (pins, carry-overs, lead locks): would {@code candidate} sit under the
+	 * minimum rest next to the carer's shift just before or just after it in {@code fixed}?
+	 * Followers in {@code fixed} are ignored; they are part of their leader's block.
+	 */
+	public static boolean shortRestNextTo(java.util.Collection<ShiftAssignment> fixed, ShiftAssignment candidate,
+			long minRestMins) {
+		if (minRestMins <= 0 || candidate.getShift() == null || startOf(candidate) == null || endOf(candidate) == null
+				|| candidate instanceof com.midco.rota.model.FollowerShiftAssignment) {
+			return false;
+		}
+		java.time.LocalDateTime start = startOf(candidate);
+		ShiftAssignment before = null, after = null;
+		for (ShiftAssignment f : fixed) {
+			if (f == candidate || f.getShift() == null || f.getShift().getShiftTemplate() == null
+					|| f instanceof com.midco.rota.model.FollowerShiftAssignment || startOf(f) == null || endOf(f) == null) {
+				continue;
+			}
+			java.time.LocalDateTime s = startOf(f);
+			if (s.isBefore(start) && (before == null || s.isAfter(startOf(before)))) {
+				before = f;
+			} else if (s.isAfter(start) && (after == null || s.isBefore(startOf(after)))) {
+				after = f;
+			}
+		}
+		return (before != null && shortRestPair(before, candidate, minRestMins))
+				|| (after != null && shortRestPair(candidate, after, minRestMins));
 	}
 
 	// ✅ FIXED: Back-to-back constraint (handles ONLY next-day transitions)

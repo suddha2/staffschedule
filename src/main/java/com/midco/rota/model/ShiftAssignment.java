@@ -121,22 +121,29 @@ public abstract class ShiftAssignment {
 	/**
 	 * Solver pin: a genuine (persisted) pin or the transient CONTINUITY seed-lock.
 	 * Honoured via {@code WorkShiftAssignment}'s {@code pinningFilter} — NOT FLOATING,
-	 * which stays solver-assignable (it's filled last, not pinned). Kept separate from
-	 * {@link #isPinned()} (which also reports FLOATING) so display/DTO behaviour is
-	 * unchanged.
+	 * which stays solver-assignable (it's filled last, not pinned). Same as
+	 * {@link #isPinned()}.
 	 */
 	public boolean isSolverPinned() {
 		return pinned || seedLocked;
 	}
 
+	/**
+	 * A real pin (standing/template pin or this solve's lock) — what the rota screens show
+	 * with a pin icon. FLOATING shifts used to report true here, so every floating shift with
+	 * a carer showed as pinned with no pin behind it; callers that skip floating shifts
+	 * (continuity seeding) now test {@link #isFloating()} themselves.
+	 */
 	public boolean isPinned() {
-		if (pinned || seedLocked) return true;
-		if (shift == null || shift.getShiftTemplate() == null) return false;
-		ShiftType type = shift.getShiftTemplate().getShiftType();
-		// FLOATING is reserved for the mobile publish-and-grab flow — solver leaves it null.
-		// SLEEP_IN is no longer pinned here: it's a shadow variable (FollowerShiftAssignment)
-		// that mirrors its paired LONG_DAY continuously.
-		return type == ShiftType.FLOATING;
+		return pinned || seedLocked;
+	}
+
+	/** FLOATING shift: filled last by the solver or grabbed on mobile; never carried over. */
+	@JsonIgnore
+	public boolean isFloating() {
+		return shift != null && shift.getShiftTemplate() != null
+				&& (shift.getShiftTemplate().getShiftType() == ShiftType.FLOATING
+						|| "FLOATING".equals(shift.getShiftTemplate().getShiftTypeCode()));
 	}
 
 	protected ShiftAssignment() {

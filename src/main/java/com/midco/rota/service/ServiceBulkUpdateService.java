@@ -55,7 +55,7 @@ public class ServiceBulkUpdateService {
 		List<Change> changes = plan(req);
 		Long id = jdbc.queryForObject("insert into service_bulk_update (region, action, name, new_name, changed_by, row_count) "
 				+ "values (?, ?, ?, ?, ?, ?) returning id", Long.class, req.region(), req.action(), req.name().trim(),
-				"REMOVE".equals(req.action()) ? null : req.newName().trim(), user, changes.size());
+				takesOff(req.action()) ? null : req.newName().trim(), user, changes.size());
 		for (Change c : changes) {
 			write(c.table(), c.rowId(), c.column(), c.oldValue(), c.newValue());
 			jdbc.update("insert into service_bulk_update_change (update_id, table_name, row_id, column_name, old_value, new_value) "
@@ -241,7 +241,12 @@ public class ServiceBulkUpdateService {
 				}
 			}
 			case "REMOVE" -> { }
-			default -> throw new IllegalArgumentException("Choose rename, merge or remove");
+			case "CLOSE" -> {
+				if (!known.contains(name)) {
+					throw new IllegalArgumentException(name + " is not a house in " + region);
+				}
+			}
+			default -> throw new IllegalArgumentException("Choose rename, merge, remove or close");
 		}
 		boolean merging = "MERGE".equals(action) && !name.equals(newName);
 
@@ -289,6 +294,22 @@ public class ServiceBulkUpdateService {
 				}
 			}
 		}
+		if ("CLOSE".equals(action)) {
+			// A closed house (moved or shut) also stops being rota'd: its active shift templates and
+			// service record are switched off (not deleted), so the next generation has no shifts
+			// there and undo brings them back. Past rotas keep their shifts (linked by template id).
+			for (Map<String, Object> s : jdbc.queryForList("select id from service_location "
+					+ "where staffrota_region = ? and btrim(staffrota_location) = ? and active", region, name)) {
+				Integer flats = jdbc.queryForObject("select count(*) from service_location where parent_id = ? and active",
+						Integer.class, s.get("id"));
+				if (flats != null && flats > 0) {
+					throw new IllegalArgumentException(name + " has flats. Remove them first");
+				}
+				changes.add(new Change("service_location", str(s, "id"), "active", "true", "false", null));
+			}
+			jdbc.queryForList("select id from shift_templates where region = ? and btrim(location) = ? and active", region, name)
+					.forEach(r -> changes.add(new Change("shift_templates", str(r, "id"), "active", "true", "false", null)));
+		}
 		if (changes.isEmpty()) {
 			throw new IllegalArgumentException("Nothing to change: no records use " + name);
 		}
@@ -324,9 +345,10 @@ public class ServiceBulkUpdateService {
 		return switch (table) {
 			case "carer_house_history" -> jdbc.queryForList("select location from carer_house_history where employee_id = ? and location = ?",
 					String.class, Long.parseLong(rowId), value).stream().findFirst().orElse(null);
-			case "service_location" -> "active".equals(column)
-					? String.valueOf(jdbc.queryForObject("select active from service_location where id = ?", Boolean.class, Long.parseLong(rowId)))
-					: jdbc.queryForObject("select staffrota_location from service_location where id = ?", String.class, Long.parseLong(rowId));
+			case "service_location", "shift_templates" -> "active".equals(column)
+					? String.valueOf(jdbc.queryForObject("select active from " + table + " where id = ?", Boolean.class, Long.parseLong(rowId)))
+					: jdbc.queryForObject("select " + safeColumn(table, column) + " from " + table + " where id = ?", String.class,
+							Long.parseLong(rowId));
 			default -> jdbc.queryForObject("select " + safeColumn(table, column) + " from " + table + " where id = ?", String.class,
 					Long.parseLong(rowId));
 		};
@@ -336,8 +358,8 @@ public class ServiceBulkUpdateService {
 		long id = Long.parseLong(rowId);
 		if ("carer_house_history".equals(table)) {
 			jdbc.update("update carer_house_history set location = ? where employee_id = ? and location = ?", value, id, oldValue);
-		} else if ("service_location".equals(table) && "active".equals(column)) {
-			jdbc.update("update service_location set active = ? where id = ?", Boolean.valueOf(value), id);
+		} else if (("service_location".equals(table) || "shift_templates".equals(table)) && "active".equals(column)) {
+			jdbc.update("update " + table + " set active = ? where id = ?", Boolean.valueOf(value), id);
 		} else {
 			jdbc.update("update " + table + " set " + safeColumn(table, column) + " = ? where id = ?", value, id);
 		}
@@ -377,6 +399,11 @@ public class ServiceBulkUpdateService {
 		return new TreeSet<>(jdbc.queryForList("select distinct btrim(location) from shift_templates where region = ? and active "
 				+ "union select coalesce(staffrota_location, name) from service_location where staffrota_region = ? and active",
 				String.class, region, region));
+	}
+
+	/** Remove and close take the name away; they have no new name. */
+	private static boolean takesOff(String action) {
+		return "REMOVE".equals(action) || "CLOSE".equals(action);
 	}
 
 	private static String checkedNewName(String raw) {

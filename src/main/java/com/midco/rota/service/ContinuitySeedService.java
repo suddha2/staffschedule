@@ -100,7 +100,7 @@ public class ContinuitySeedService {
 		// Group new assignments by their prior-slot key so a 2:1 slot's carers are shared out.
 		Map<String, List<ShiftAssignment>> byKey = new HashMap<>();
 		for (ShiftAssignment sa : assignments) {
-			if (sa.isPinned() || sa.getShift() == null || sa.getShift().getShiftTemplate() == null
+			if (sa.isPinned() || sa.isFloating() || sa.getShift() == null || sa.getShift().getShiftTemplate() == null
 					|| sa.getShift().getShiftStart() == null) {
 				continue;
 			}
