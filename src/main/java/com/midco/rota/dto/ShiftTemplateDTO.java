@@ -17,8 +17,7 @@ public class ShiftTemplateDTO {
     private DayOfWeek dayOfWeek;
     private LocalTime startTime;
     private LocalTime endTime;
-    private LocalTime breakStart;
-    private LocalTime breakEnd;
+    private int breakMinutes;
     private BigDecimal totalHours;
     private Gender requiredGender;
     private List<String> requiredSkills;
@@ -48,11 +47,8 @@ public class ShiftTemplateDTO {
     public LocalTime getEndTime() { return endTime; }
     public void setEndTime(LocalTime endTime) { this.endTime = endTime; }
     
-    public LocalTime getBreakStart() { return breakStart; }
-    public void setBreakStart(LocalTime breakStart) { this.breakStart = breakStart; }
-    
-    public LocalTime getBreakEnd() { return breakEnd; }
-    public void setBreakEnd(LocalTime breakEnd) { this.breakEnd = breakEnd; }
+    public int getBreakMinutes() { return breakMinutes; }
+    public void setBreakMinutes(int breakMinutes) { this.breakMinutes = breakMinutes; }
     
     public BigDecimal getTotalHours() { return totalHours; }
     public void setTotalHours(BigDecimal totalHours) { this.totalHours = totalHours; }
@@ -86,8 +82,7 @@ public class ShiftTemplateDTO {
         dto.setDayOfWeek(template.getDayOfWeek());
         dto.setStartTime(template.getStartTime());
         dto.setEndTime(template.getEndTime());
-        dto.setBreakStart(template.getBreakStart());
-        dto.setBreakEnd(template.getBreakEnd());
+        dto.setBreakMinutes(template.getBreakMinutes());
         dto.setTotalHours(template.getTotalHours());
         dto.setRequiredGender(template.getRequiredGender());
         dto.setRequiredSkills(template.getRequiredSkills());

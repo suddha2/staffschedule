@@ -1,6 +1,5 @@
 package com.midco.rota.controller;
 
-import java.math.BigDecimal;
 import java.time.DayOfWeek;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -30,6 +29,7 @@ import com.midco.rota.dto.ShiftTemplateBulkRequest;
 import com.midco.rota.dto.ShiftTemplateRequest;
 import com.midco.rota.model.ShiftTemplate;
 import com.midco.rota.repository.ShiftTemplateRepository;
+import com.midco.rota.service.ShiftTemplateRules;
 import com.midco.rota.util.ShiftType;
 
 @RestController
@@ -37,9 +37,29 @@ import com.midco.rota.util.ShiftType;
 public class ShiftTemplateController {
 
 	private final ShiftTemplateRepository shiftTemplateRepository;
+	private final ShiftTemplateRules rules;
 
-	public ShiftTemplateController(ShiftTemplateRepository shiftTemplateRepository) {
+	public ShiftTemplateController(ShiftTemplateRepository shiftTemplateRepository, ShiftTemplateRules rules) {
 		this.shiftTemplateRepository = shiftTemplateRepository;
+		this.rules = rules;
+	}
+
+	/** 400 listing why the template(s) can't be saved. */
+	private static ResponseEntity<Map<String, Object>> refused(List<String> problems) {
+		return ResponseEntity.badRequest().body(Map.of(
+				"error", problems.size() == 1 ? "This shift can't be saved: " + problems.get(0)
+						: "This shift can't be saved. Fix these first:",
+				"problems", problems));
+	}
+
+	/** Refuse and undo whatever this transaction has changed so far. */
+	private static ResponseEntity<Map<String, Object>> refusedRollback(List<String> problems) {
+		try {
+			org.springframework.transaction.interceptor.TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
+		} catch (org.springframework.transaction.NoTransactionException e) {
+			// called outside a transaction (unit tests): nothing was saved to undo
+		}
+		return refused(problems);
 	}
 
 	// ========== CRUD Operations ==========
@@ -94,7 +114,7 @@ public class ShiftTemplateController {
 						day.name(),
 						request.getShiftTypeCode(),
 						request.getStartTime(), request.getEndTime(),
-						request.getBreakStart(), request.getBreakEnd(),
+						request.getBreakMinutes(),
 						null);
 				if (!clashes.isEmpty()) {
 					Map<String, Object> entry = new HashMap<>();
@@ -121,8 +141,7 @@ public class ShiftTemplateController {
 				template.setShiftTypeCode(request.getShiftTypeCode());
 				template.setRegion(request.getRegion());
 				template.setActive(request.isActive());
-				template.setBreakEnd(request.getBreakEnd());
-				template.setBreakStart(request.getBreakStart());
+				template.setBreakMinutes(request.getBreakMinutes());
 				template.setEmpCount(request.getEmpCount());
 				template.setGender(request.getGender());
 				template.setLocation(request.getLocation());
@@ -147,16 +166,13 @@ public class ShiftTemplateController {
 				template.setFollower(request.isFollower());
 				template.setPairingMode(request.getPairingMode());
 				template.setPairedWithTemplateId(request.getPairedWithTemplateId());
-				// total_hours must be > 0 or findAllByRegion won't feed it to the solver;
-				// compute from the times if the caller didn't supply it.
-				BigDecimal totalHours = request.getTotalHours();
-				if (totalHours == null || totalHours.signum() <= 0) {
-					totalHours = computeTotalHours(request.getStartTime(), request.getEndTime(),
-							request.getBreakStart(), request.getBreakEnd());
-				}
-				template.setTotalHours(totalHours);
+				// total_hours is worked out from the times and break when it is saved.
 
 				created.add(template);
+			}
+			List<String> problems = rules.problems(created);
+			if (!problems.isEmpty()) {
+				return refused(problems);
 			}
 			created = shiftTemplateRepository.saveAll(created);
 
@@ -238,6 +254,10 @@ public class ShiftTemplateController {
 			created++;
 		}
 
+		List<String> problems = rules.problems(toSave);
+		if (!problems.isEmpty()) {
+			return refusedRollback(problems); // existing rows were changed in place above
+		}
 		shiftTemplateRepository.saveAll(toSave);
 		return ResponseEntity.ok(Map.of("created", created, "updated", updated, "deactivated", deactivated));
 	}
@@ -252,7 +272,10 @@ public class ShiftTemplateController {
 		if (com.midco.rota.opt.ShiftTypeMeta.isFollower(row.getShiftType())) {
 			t.setPairingMode(row.getPairingMode());
 		}
-		t.setTotalHours(computeTotalHours(row.getStartTime(), row.getEndTime(), t.getBreakStart(), t.getBreakEnd()));
+		// Break in minutes; a row that doesn't send one keeps the template's own.
+		if (row.getBreakMinutes() != null) {
+			t.setBreakMinutes(row.getBreakMinutes());
+		}
 		// Auto-tag the type's eligibility skill (e.g. SHIFT_LEAD) so it's lead-only without
 		// hand-editing. Types with no required_skill leave existing skills untouched.
 		if (row.getRequiredGender() != null) {
@@ -276,31 +299,6 @@ public class ShiftTemplateController {
 		}
 	}
 
-	/** Worked hours for a template's time window (handles overnight + break). Kept > 0
-	 *  so findAllByRegion feeds the template to the solver. */
-	private java.math.BigDecimal computeTotalHours(java.time.LocalTime start, java.time.LocalTime end,
-			java.time.LocalTime breakStart, java.time.LocalTime breakEnd) {
-		if (start == null || end == null) {
-			return java.math.BigDecimal.ZERO;
-		}
-		long mins = java.time.Duration.between(start, end).toMinutes();
-		if (mins < 0) {
-			mins += 24 * 60;
-		}
-		if (breakStart != null && breakEnd != null) {
-			long b = java.time.Duration.between(breakStart, breakEnd).toMinutes();
-			if (b < 0) {
-				b += 24 * 60;
-			}
-			mins -= b;
-		}
-		if (mins < 0) {
-			mins = 0;
-		}
-		return java.math.BigDecimal.valueOf(mins)
-				.divide(java.math.BigDecimal.valueOf(60), 2, java.math.RoundingMode.HALF_UP);
-	}
-
 	/**
 	 * PUT - Update existing shift template
 	 */
@@ -320,13 +318,18 @@ public class ShiftTemplateController {
 					shiftTemplateDetails.getDayOfWeek() != null ? shiftTemplateDetails.getDayOfWeek().name() : null,
 					shiftTemplateDetails.getShiftTypeCode(),
 					shiftTemplateDetails.getStartTime(), shiftTemplateDetails.getEndTime(),
-					shiftTemplateDetails.getBreakStart(), shiftTemplateDetails.getBreakEnd(),
+					shiftTemplateDetails.getBreakMinutes(),
 					id);
 			if (!clashes.isEmpty()) {
 				return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
 						"error", "An active shift template with the same slot and times already exists. " +
 								"Edit that template instead, or change a time / break to differentiate.",
 						"conflictingTemplateId", clashes.get(0).getId()));
+			}
+			// Checked on the incoming values, before the stored template is touched.
+			List<String> problems = rules.problems(shiftTemplateDetails);
+			if (!problems.isEmpty()) {
+				return refused(problems);
 			}
 
 			// Update all fields
@@ -336,9 +339,7 @@ public class ShiftTemplateController {
 			template.setDayOfWeek(shiftTemplateDetails.getDayOfWeek());
 			template.setStartTime(shiftTemplateDetails.getStartTime());
 			template.setEndTime(shiftTemplateDetails.getEndTime());
-			template.setBreakStart(shiftTemplateDetails.getBreakStart());
-			template.setBreakEnd(shiftTemplateDetails.getBreakEnd());
-			template.setTotalHours(shiftTemplateDetails.getTotalHours());
+			template.setBreakMinutes(shiftTemplateDetails.getBreakMinutes());
 			template.setRequiredGender(shiftTemplateDetails.getRequiredGender());
 			template.setRequiredSkills(shiftTemplateDetails.getRequiredSkills());
 			template.setPairingMode(shiftTemplateDetails.getPairingMode());
@@ -368,13 +369,20 @@ public class ShiftTemplateController {
 	 */
 	@PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER')")
 	@PatchMapping("/{id}/toggle-active")
-	public ResponseEntity<ShiftTemplate> toggleActive(@PathVariable Integer id) {
-		return shiftTemplateRepository.findById(id).map(template -> {
+	@org.springframework.transaction.annotation.Transactional
+	public ResponseEntity<?> toggleActive(@PathVariable Integer id) {
+		return shiftTemplateRepository.findById(id).<ResponseEntity<?>>map(template -> {
 			template.setActive(!template.isActive());
+			// Switching off is always allowed; switching on must pass the save checks.
+			List<String> problems = rules.problems(template);
+			if (!problems.isEmpty()) {
+				return refusedRollback(problems);
+			}
 			ShiftTemplate updated = shiftTemplateRepository.save(template);
 			return ResponseEntity.ok(updated);
 		}).orElse(ResponseEntity.notFound().build());
 	}
+
 
 	// ========== Query Operations ==========
 
@@ -492,6 +500,7 @@ public class ShiftTemplateController {
 	 */
 	@PreAuthorize("hasAnyRole('ADMIN','OPS_MANAGER')")
 	@PutMapping("/bulk-update")
+	@org.springframework.transaction.annotation.Transactional
 	public ResponseEntity<?> bulkUpdate(@RequestBody BulkUpdateRequest request) {
 		if (request == null || request.getLocation() == null || request.getShiftType() == null
 				|| request.getRegion() == null) {
@@ -520,9 +529,7 @@ public class ShiftTemplateController {
 		templates.forEach(template -> {
 			if (u.getStartTime() != null)      template.setStartTime(u.getStartTime());
 			if (u.getEndTime() != null)        template.setEndTime(u.getEndTime());
-			if (u.getBreakStart() != null)     template.setBreakStart(u.getBreakStart());
-			if (u.getBreakEnd() != null)       template.setBreakEnd(u.getBreakEnd());
-			if (u.getTotalHours() != null)     template.setTotalHours(u.getTotalHours());
+			if (u.getBreakMinutes() != null)   template.setBreakMinutes(u.getBreakMinutes());
 			if (u.getRequiredGender() != null) template.setRequiredGender(u.getRequiredGender());
 			if (u.getRequiredSkills() != null) template.setRequiredSkills(u.getRequiredSkills());
 			if (u.getEmpCount() != null)       template.setEmpCount(u.getEmpCount());
@@ -530,6 +537,10 @@ public class ShiftTemplateController {
 			if (u.getActive() != null)         template.setActive(u.getActive());
 		});
 
+		List<String> problems = rules.problems(templates);
+		if (!problems.isEmpty()) {
+			return refusedRollback(problems);
+		}
 		shiftTemplateRepository.saveAll(templates);
 
 		return ResponseEntity.ok(Map.of(
@@ -561,8 +572,7 @@ public class ShiftTemplateController {
 		dto.setDayOfWeek(template.getDayOfWeek());
 		dto.setStartTime(template.getStartTime());
 		dto.setEndTime(template.getEndTime());
-		dto.setBreakStart(template.getBreakStart());
-		dto.setBreakEnd(template.getBreakEnd());
+		dto.setBreakMinutes(template.getBreakMinutes());
 		dto.setTotalHours(template.getTotalHours());
 		dto.setRequiredGender(template.getRequiredGender());
 		dto.setRequiredSkills(template.getRequiredSkills());

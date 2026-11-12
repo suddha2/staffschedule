@@ -99,16 +99,14 @@ public interface ShiftTemplateRepository extends JpaRepository<ShiftTemplate, In
 
 	/**
 	 * Find any ACTIVE template whose natural-key tuple
-	 * (region, location, day, type, startTime, endTime, breakStart, breakEnd)
+	 * (region, location, day, type, startTime, endTime, breakMinutes)
 	 * matches the given values, excluding the row with {@code excludeId} (pass
 	 * {@code null} when called from POST). Used by both POST and PUT to reject
-	 * saves that would create a true duplicate, while still allowing the
-	 * legitimate 2-carer pattern of identical times with <i>different</i> break
-	 * windows.
+	 * saves that would create a true duplicate, while still allowing identical
+	 * times with a <i>different</i> break length.
 	 *
-	 * <p>Implemented as a native query so we can use PostgreSQL's
-	 * {@code IS NOT DISTINCT FROM} for null-safe equality on the break times,
-	 * and explicit {@code CAST}s on the nullable parameters. PostgreSQL JDBC
+	 * <p>Implemented as a native query with explicit {@code CAST}s on the
+	 * nullable parameters. PostgreSQL JDBC
 	 * cannot infer the type of a parameter that only appears in an {@code IS
 	 * NULL} check (would fail with "could not determine data type of parameter
 	 * $8"), so the casts are non-negotiable.
@@ -125,8 +123,7 @@ public interface ShiftTemplateRepository extends JpaRepository<ShiftTemplate, In
 			"  AND t.shift_type = :shiftType " +
 			"  AND t.start_time = :startTime " +
 			"  AND t.end_time = :endTime " +
-			"  AND t.break_start IS NOT DISTINCT FROM CAST(:breakStart AS time) " +
-			"  AND t.break_end   IS NOT DISTINCT FROM CAST(:breakEnd   AS time) " +
+			"  AND t.break_minutes = :breakMinutes " +
 			"  AND (CAST(:excludeId AS integer) IS NULL OR t.id <> CAST(:excludeId AS integer))",
 			nativeQuery = true)
 	List<ShiftTemplate> findActiveDuplicates(@Param("region") String region,
@@ -135,7 +132,6 @@ public interface ShiftTemplateRepository extends JpaRepository<ShiftTemplate, In
 			@Param("shiftType") String shiftType,
 			@Param("startTime") LocalTime startTime,
 			@Param("endTime") LocalTime endTime,
-			@Param("breakStart") LocalTime breakStart,
-			@Param("breakEnd") LocalTime breakEnd,
+			@Param("breakMinutes") int breakMinutes,
 			@Param("excludeId") Integer excludeId);
 }

@@ -22,6 +22,8 @@ public class ShiftTemplateBulkRequest {
         private LocalTime startTime;
         private LocalTime endTime;
         private Integer empCount;
+        /** Unpaid break in minutes (null = keep the template's own; 0 on a new template). */
+        private Integer breakMinutes;
         /** Follower types only (e.g. SLEEP_IN): STANDALONE = own carer, null/PAIRED = same carer as the long day. */
         private com.midco.rota.util.PairingMode pairingMode;
         /** Gender requirement for this type's templates (null = leave as is; the template stores ANY when unset). */
@@ -39,6 +41,8 @@ public class ShiftTemplateBulkRequest {
         public void setEndTime(LocalTime endTime) { this.endTime = endTime; }
         public Integer getEmpCount() { return empCount; }
         public void setEmpCount(Integer empCount) { this.empCount = empCount; }
+        public Integer getBreakMinutes() { return breakMinutes; }
+        public void setBreakMinutes(Integer breakMinutes) { this.breakMinutes = breakMinutes; }
         public com.midco.rota.util.PairingMode getPairingMode() { return pairingMode; }
         public void setPairingMode(com.midco.rota.util.PairingMode pairingMode) { this.pairingMode = pairingMode; }
         public com.midco.rota.util.Gender getRequiredGender() { return requiredGender; }

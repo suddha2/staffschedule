@@ -5,8 +5,6 @@ import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
-import java.util.Optional;
 
 import com.fasterxml.jackson.annotation.JsonIdentityInfo;
 import com.fasterxml.jackson.annotation.ObjectIdGenerators;
@@ -148,17 +146,8 @@ public class Shift {
 		if (!hasDurationInputs()) {
 			return BigDecimal.ZERO;
 		}
-		Duration duration = Duration.between(shiftStart.atTime(shiftTemplate.getStartTime()),
-				shiftEnd.atTime(shiftTemplate.getEndTime()));
-
-		Duration breakDuration = Optional.ofNullable(shiftTemplate.getBreakStart())
-				.flatMap(start -> Optional.ofNullable(shiftTemplate.getBreakEnd())
-						.map(end -> Duration.between(shiftStart.atTime(start), shiftStart.atTime(end))))
-				.orElse(Duration.ZERO);
-
-		long minutes = duration.minus(breakDuration).toMinutes();
-		BigDecimal hours = BigDecimal.valueOf(minutes).divide(BigDecimal.valueOf(60), 2, RoundingMode.HALF_UP);
-		return hours;
+		long minutes = getDurationInMins();
+		return BigDecimal.valueOf(minutes).divide(BigDecimal.valueOf(60), 2, RoundingMode.HALF_UP);
 	}
 
 	public long getDurationInMins() {
@@ -168,19 +157,8 @@ public class Shift {
 		Duration duration = Duration.between(shiftStart.atTime(shiftTemplate.getStartTime()),
 				shiftEnd.atTime(shiftTemplate.getEndTime()));
 
-		Duration breakDuration = Duration.ZERO;
-		if (shiftTemplate.getBreakStart() != null && shiftTemplate.getBreakEnd() != null) {
-			LocalTime breakStart = shiftTemplate.getBreakStart();
-			LocalTime breakEnd = shiftTemplate.getBreakEnd();
-
-			long breakMins = Duration.between(breakStart, breakEnd).toMinutes();
-			if (breakMins < 0) {
-				breakMins += 24 * 60; // Break spans midnight
-			}
-			breakDuration = Duration.ofMinutes(breakMins);
-		}
-
-		long minutes = duration.minus(breakDuration).toMinutes();
+		// Unpaid break, entered as a length on the template (V045).
+		long minutes = duration.toMinutes() - shiftTemplate.getBreakMinutes();
 		if (minutes < 0) {
 			minutes += 24 * 60;
 		}

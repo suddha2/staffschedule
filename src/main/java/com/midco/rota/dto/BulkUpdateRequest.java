@@ -79,9 +79,8 @@ public class BulkUpdateRequest {
 	public static class TemplateFieldUpdates {
 		private LocalTime startTime;
 		private LocalTime endTime;
-		private LocalTime breakStart;
-		private LocalTime breakEnd;
-		private BigDecimal totalHours;
+		/** Unpaid break in minutes (V045); total hours are worked out from the times and break. */
+		private Integer breakMinutes;
 		private Gender requiredGender;
 		private List<String> requiredSkills;
 		private Integer empCount;
@@ -104,28 +103,12 @@ public class BulkUpdateRequest {
 			this.endTime = endTime;
 		}
 
-		public LocalTime getBreakStart() {
-			return breakStart;
+		public Integer getBreakMinutes() {
+			return breakMinutes;
 		}
 
-		public void setBreakStart(LocalTime breakStart) {
-			this.breakStart = breakStart;
-		}
-
-		public LocalTime getBreakEnd() {
-			return breakEnd;
-		}
-
-		public void setBreakEnd(LocalTime breakEnd) {
-			this.breakEnd = breakEnd;
-		}
-
-		public BigDecimal getTotalHours() {
-			return totalHours;
-		}
-
-		public void setTotalHours(BigDecimal totalHours) {
-			this.totalHours = totalHours;
+		public void setBreakMinutes(Integer breakMinutes) {
+			this.breakMinutes = breakMinutes;
 		}
 
 		public Gender getRequiredGender() {

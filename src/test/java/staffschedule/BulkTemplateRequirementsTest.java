@@ -32,7 +32,8 @@ import com.midco.rota.util.Gender;
 class BulkTemplateRequirementsTest {
 
 	private final ShiftTemplateRepository repo = mock(ShiftTemplateRepository.class);
-	private final ShiftTemplateController controller = new ShiftTemplateController(repo);
+	private final ShiftTemplateController controller = new ShiftTemplateController(repo,
+			new com.midco.rota.service.ShiftTemplateRules(mock(com.midco.rota.repository.SolverTuningSettingRepository.class)));
 
 	@BeforeEach
 	void types() {
@@ -57,6 +58,7 @@ class BulkTemplateRequirementsTest {
 		r.setDays(List.of(DayOfWeek.MONDAY));
 		r.setStartTime(LocalTime.of(8, 0));
 		r.setEndTime(LocalTime.of(20, 0));
+		r.setBreakMinutes(60); // 12 h shift: needs a statutory break to be saved
 		r.setEmpCount(1);
 		r.setRequiredGender(g);
 		r.setRequiredSkills(skills);

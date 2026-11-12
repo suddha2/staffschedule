@@ -53,11 +53,9 @@ public class ShiftTemplate {
 	@Column(name = "end_time")
 	private LocalTime endTime;
 
-	@Column(name = "break_start")
-	private LocalTime breakStart;
-
-	@Column(name = "break_end")
-	private LocalTime breakEnd;
+	/** Unpaid break in minutes (V045). Worked time = (end - start) - break. */
+	@Column(name = "break_minutes", nullable = false)
+	private int breakMinutes;
 
 	@Column(name = "total_hours", precision = 4, scale = 2)
 	private BigDecimal totalHours;
@@ -249,20 +247,28 @@ public class ShiftTemplate {
 		this.dayOfWeek = dayOfWeek;
 	}
 
-	public LocalTime getBreakStart() {
-		return breakStart;
+	public int getBreakMinutes() {
+		return breakMinutes;
 	}
 
-	public void setBreakStart(LocalTime breakStart) {
-		this.breakStart = breakStart;
+	public void setBreakMinutes(Integer breakMinutes) {
+		this.breakMinutes = breakMinutes == null ? 0 : breakMinutes;
 	}
 
-	public LocalTime getBreakEnd() {
-		return breakEnd;
+	/** Minutes from start to end; an end at or before the start runs past midnight. 0 if a time is missing. */
+	@com.fasterxml.jackson.annotation.JsonIgnore
+	public long getSpanMinutes() {
+		if (startTime == null || endTime == null) {
+			return 0;
+		}
+		long mins = java.time.Duration.between(startTime, endTime).toMinutes();
+		return mins <= 0 ? mins + 24 * 60 : mins;
 	}
 
-	public void setBreakEnd(LocalTime breakEnd) {
-		this.breakEnd = breakEnd;
+	/** Worked (paid) minutes: the span less the break, never below zero. */
+	@com.fasterxml.jackson.annotation.JsonIgnore
+	public long getWorkedMinutes() {
+		return Math.max(0, getSpanMinutes() - breakMinutes);
 	}
 
 	public Gender getRequiredGender() {
@@ -285,8 +291,13 @@ public class ShiftTemplate {
 
 	@jakarta.persistence.PrePersist
 	@jakarta.persistence.PreUpdate
-	void defaultGenderToAny() {
+	void beforeSave() {
 		this.requiredGender = orAny(this.requiredGender);
+		// total_hours always follows the times and the break; nobody types it in.
+		if (startTime != null && endTime != null) {
+			this.totalHours = BigDecimal.valueOf(getWorkedMinutes())
+					.divide(BigDecimal.valueOf(60), 2, java.math.RoundingMode.HALF_UP);
+		}
 	}
 
 	public List<String> getRequiredSkills() {
